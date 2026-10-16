@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Configuration from environment variables
-// Supports both Vite client prefix (VITE_) and standard server/Node environment
 export const SUPABASE_URL =
   (typeof process !== 'undefined' && process.env?.SUPABASE_URL) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
@@ -22,9 +21,13 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 export interface SubscriptionRecord {
   id?: string | number;
   created_at?: string;
-  phone_number: string;
-  premium_status: 'active' | 'Active' | 'expired' | string;
+  phone_number?: string;
+  email?: string;
+  user_id?: string;
+  premium_status?: string;
   expires_at: string;
+  plan_name?: string;
+  amount?: number;
 }
 
 /**
@@ -41,12 +44,27 @@ export function normalizePhoneNumber(phone: string): string {
 }
 
 /**
+ * Generates all possible representation variants for a phone number
+ */
+export function getPhoneVariants(phone: string): string[] {
+  const clean0 = normalizePhoneNumber(phone);
+  const withoutLeadingZero = clean0.replace(/^0+/, '');
+  const clean255 = '255' + withoutLeadingZero;
+  return Array.from(new Set([
+    clean0,
+    clean255,
+    '+' + clean255,
+    withoutLeadingZero,
+    phone.trim(),
+    phone.replace(/\s+/g, '')
+  ])).filter(Boolean);
+}
+
+/**
  * Calculates exact subscription expiration date:
  * - TSh 1,000 = exactly 2 days
  * - TSh 3,000 = exactly 7 days
- * - TSh 10,000 = exactly 1 calendar month, preserving time of day
- *   Handles months with 28, 29, 30, or 31 days correctly.
- *   If the target month has no corresponding day (e.g. Jan 31 -> Feb 28/29), uses its last day.
+ * - TSh 10,000 = exactly 1 calendar month
  */
 export function calculateSubscriptionExpiration(
   amountOrPlan: number | string,
@@ -58,15 +76,11 @@ export function calculateSubscriptionExpiration(
     : (amountOrPlan === 'plan_30days' ? 10000 : (amountOrPlan === 'plan_7days' ? 3000 : 1000));
 
   if (amount >= 10000) {
-    // 1 calendar month, preserving time of day where possible
-    const currentDay = result.getDate();
     const currentMonth = result.getMonth();
     const currentYear = result.getFullYear();
-
     const targetMonth = (currentMonth + 1) % 12;
     const targetYear = currentMonth === 11 ? currentYear + 1 : currentYear;
 
-    // Get total days in the target month (e.g. 28, 29, 30, 31)
     const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
     const targetDay = Math.min(result.getUTCDate(), daysInTargetMonth);
 
@@ -80,65 +94,72 @@ export function calculateSubscriptionExpiration(
       result.getUTCMilliseconds()
     ));
   } else if (amount >= 3000) {
-    // Exactly 7 days
     result.setTime(result.getTime() + 7 * 24 * 60 * 60 * 1000);
     return result;
   } else {
-    // Exactly 2 days
     result.setTime(result.getTime() + 2 * 24 * 60 * 60 * 1000);
     return result;
   }
 }
 
 /**
- * Checks if a subscription record is currently active
+ * Checks if a subscription record is currently active:
+ * Flexible to match 'active', 'true', 'paid', or any future expires_at date.
  */
 export function isSubscriptionActive(sub?: SubscriptionRecord | null): boolean {
   if (!sub || !sub.expires_at) return false;
-  const statusLower = (sub.premium_status || '').toLowerCase();
-  if (statusLower !== 'active') return false;
-  return new Date(sub.expires_at).getTime() > Date.now();
+  const statusLower = (sub.premium_status || '').trim().toLowerCase();
+  
+  // Explicitly cancelled or expired
+  if (statusLower === 'expired' || statusLower === 'cancelled' || statusLower === 'inactive') {
+    return false;
+  }
+
+  // Future timestamp check
+  const expTime = new Date(sub.expires_at).getTime();
+  if (isNaN(expTime)) return false;
+
+  const isFuture = expTime > Date.now();
+  if (isFuture) return true;
+
+  // If status is affirmative and expTime is today or future
+  return isFuture;
 }
 
 /**
- * Query customer subscription directly from Supabase (checks 'Subscription' first, then 'subscriptions')
+ * Query customer subscription directly from Supabase by phone or email
  */
 export async function fetchCustomerSubscriptionFromSupabase(
-  rawPhone: string
+  identifier: string
 ): Promise<SubscriptionRecord | null> {
   if (!supabase) return null;
 
   try {
-    const clean0 = normalizePhoneNumber(rawPhone);
-    const clean255 = '255' + clean0.replace(/^0+/, '');
-    const phoneVariants = [clean0, clean255, '+' + clean255];
-
-    // Try 'Subscription' table first, then 'subscriptions'
+    const isEmail = identifier.includes('@');
     const tableNames = ['Subscription', 'subscriptions'];
+
     for (const tbl of tableNames) {
       try {
-        const { data, error } = await supabase
-          .from(tbl)
-          .select('*')
-          .in('phone_number', phoneVariants)
-          .order('expires_at', { ascending: false });
+        let query = supabase.from(tbl).select('*');
+
+        if (isEmail) {
+          query = query.ilike('email', identifier.trim());
+        } else {
+          const variants = getPhoneVariants(identifier);
+          query = query.in('phone_number', variants);
+        }
+
+        const { data, error } = await query.order('expires_at', { ascending: false });
 
         if (!error && data && data.length > 0) {
-          const now = Date.now();
           // Check if any record is still active
-          const activeSub = data.find((sub: SubscriptionRecord) => {
-            const st = (sub.premium_status || '').toLowerCase();
-            return st === 'active' && sub.expires_at && new Date(sub.expires_at).getTime() > now;
-          });
-
-          if (activeSub) {
-            return activeSub;
-          }
+          const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
+          if (activeSub) return activeSub;
 
           return data[0]; // Return most recent record
         }
-      } catch (tableErr) {
-        // Continue to fallback table
+      } catch {
+        // Fallback to next table
       }
     }
     return null;

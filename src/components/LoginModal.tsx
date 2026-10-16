@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import {
+  Smartphone, Mail, Lock, User as UserIcon, LogIn,
+  AlertCircle, X, Check, ShieldCheck
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Smartphone, AlertCircle, ArrowRight, X, ShieldCheck, Zap } from 'lucide-react';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -14,150 +17,322 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  title = "Ingia au Jisajili",
-  subtitle = "Weka namba yako ya simu kuanza kutazama bure kwa dakika 1 au kufungua kifurushi chako."
+  title = "Ingia au Jisajili NeliTv",
+  subtitle = "Tazama Live TV na Mechi zote za Ligi Kuu kwa ubora wa juu."
 }) => {
-  const { login } = useAuth();
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    loginWithPhone,
+    loginWithGoogle,
+    loginWithEmailAndPassword,
+    registerWithEmailAndPassword
+  } = useAuth();
+
+  const [activeTab, setActiveTab] = useState<'google_email' | 'phone'>('google_email');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+
+  // Phone state
+  const [phoneNumber, setPhoneNumber] = useState<string>('');
+  
+  // Email state
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [displayName, setDisplayName] = useState<string>('');
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [googleLoading, setGoogleLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  // Handle Google Sign In
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    try {
+      const res = await loginWithGoogle();
+      if (res.success) {
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setErrorMessage(res.error || 'Imeshindikana kuingia na Google.');
+      }
+    } catch {
+      setErrorMessage('Hitilafu ya mtandao wakati wa kuingia na Google.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
-    const clean = phoneNumber.trim().replace(/\D/g, '');
-    if (!clean || clean.length < 9) {
-      setError('Tafadhali andika namba sahihi ya simu (mfano: 0712 345 678 au 0655...)');
+  // Handle Email & Password
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setErrorMessage('Tafadhali jaza barua pepe na nenosiri.');
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMessage('Nenosiri linatakiwa kuwa na angalau herufi 6.');
       return;
     }
 
     setLoading(true);
+    setErrorMessage(null);
+
     try {
-      const res = await login(clean);
-      if (res.success) {
-        onClose();
-        if (onSuccess) onSuccess();
+      let res;
+      if (authMode === 'login') {
+        res = await loginWithEmailAndPassword(email, password);
       } else {
-        setError(res.error || 'Imeshindikana kuingia, tafadhali jaribu tena.');
+        res = await registerWithEmailAndPassword(email, password, displayName);
       }
-    } catch (err: any) {
-      setError(err.message || 'Hitilafu ya mtandao');
+
+      if (res.success) {
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setErrorMessage(res.error || 'Imeshindikana kuthibitisha akaunti.');
+      }
+    } catch {
+      setErrorMessage('Hitilafu ya mtandao. Jaribu tena.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickNumber = (sample: string) => {
-    setPhoneNumber(sample);
+  // Handle Phone Login
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = phoneNumber.replace(/\D/g, '');
+    if (clean.length < 9) {
+      setErrorMessage('Tafadhali weka namba sahihi ya simu ya Tanzania (mfano: 0712345678).');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const res = await loginWithPhone(phoneNumber);
+      if (res.success) {
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setErrorMessage(res.error || 'Imeshindikana kuingia.');
+      }
+    } catch {
+      setErrorMessage('Hitilafu ya mtandao. Jaribu tena.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in select-none">
-      <div className="relative w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-neutral-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+      <div className="w-full max-w-sm rounded-2xl bg-neutral-900 border border-neutral-800 p-5 sm:p-6 shadow-2xl text-neutral-100 space-y-4 relative">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-neutral-400 hover:text-white rounded-full hover:bg-neutral-800 transition"
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
           aria-label="Funga"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        {/* Brand header */}
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 font-black">
-            M
+        {/* Modal Header */}
+        <div className="text-center space-y-1 pr-6">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-600/10 border border-red-600/30 text-[11px] font-bold text-red-400 uppercase tracking-wider">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>NeliTv Akaunti</span>
           </div>
-          <div>
-            <h3 className="text-xl font-bold tracking-tight text-white">{title}</h3>
-            <p className="text-xs text-red-500 font-semibold">Your Max TV Tanzania</p>
-          </div>
+          <h2 className="text-lg font-black text-white">
+            {title}
+          </h2>
+          <p className="text-xs text-neutral-400">
+            {subtitle}
+          </p>
         </div>
 
-        <p className="text-xs sm:text-sm text-neutral-400 mb-5 leading-relaxed">
-          {subtitle}
-        </p>
+        {/* Auth Method Switcher Tabs */}
+        <div className="flex gap-1 p-1 bg-neutral-950 rounded-xl border border-neutral-800 text-xs font-semibold">
+          <button
+            onClick={() => { setActiveTab('google_email'); setErrorMessage(null); }}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition ${
+              activeTab === 'google_email' ? 'bg-red-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>Google & Email</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('phone'); setErrorMessage(null); }}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition ${
+              activeTab === 'phone' ? 'bg-red-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Namba ya Simu</span>
+          </button>
+        </div>
 
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5">
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span>{errorMessage}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-2">
-              Namba ya Simu (M-Pesa, Tigo, Airtel, Halotel)
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500 font-mono text-sm">
-                +255
-              </div>
-              <input
-                type="tel"
-                placeholder="0712 345 678"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                autoFocus
-                className="w-full pl-16 pr-4 py-3 bg-neutral-950 border border-neutral-800 rounded-xl text-white placeholder-neutral-600 focus:outline-none focus:border-red-600 font-mono transition text-sm sm:text-base"
-              />
+        {/* TAB 1: GOOGLE & EMAIL / PASSWORD */}
+        {activeTab === 'google_email' && (
+          <div className="space-y-3.5">
+            {/* ONE-CLICK GOOGLE SIGN IN BUTTON */}
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading || loading}
+              className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-neutral-100 active:scale-95 text-neutral-900 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-md transition disabled:opacity-50"
+            >
+              {googleLoading ? (
+                <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.15 0 9.99 0 12s.45 3.85 1.24 5.42l4.04-3.15z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                  />
+                </svg>
+              )}
+              <span>Ingia na Google</span>
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+              <div className="flex-1 h-px bg-neutral-800" />
+              <span>au tumia barua pepe</span>
+              <div className="flex-1 h-px bg-neutral-800" />
             </div>
-          </div>
 
-          {/* Quick suggestions */}
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
-            <span>Mfano wa haraka:</span>
-            <button
-              type="button"
-              onClick={() => handleQuickNumber('0712345678')}
-              className="text-red-400 hover:text-red-300 underline font-mono"
-            >
-              0712345678
-            </button>
-            <span>au</span>
-            <button
-              type="button"
-              onClick={() => handleQuickNumber('0655123456')}
-              className="text-red-400 hover:text-red-300 underline font-mono"
-            >
-              0655123456
-            </button>
-          </div>
+            {/* Email Form */}
+            <form onSubmit={handleEmailAuth} className="space-y-2.5">
+              {authMode === 'register' && (
+                <div className="relative">
+                  <UserIcon className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Jina lako kamili"
+                    className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                  />
+                </div>
+              )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 py-3.5 px-5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition active:scale-95 disabled:opacity-50"
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Inathibitisha...</span>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Barua pepe (example@gmail.com)"
+                  required
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                />
               </div>
-            ) : (
-              <>
-                <span>Endelea Kutazama</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
 
-        {/* Benefits footer */}
-        <div className="mt-5 pt-4 border-t border-neutral-800 space-y-1.5 text-xs text-neutral-400">
-          <div className="flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-red-500 shrink-0" />
-            <span>Kila mtumiaji mpya anapewa dakika 1 ya majaribio ya bure</span>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Nenosiri (herufi 6+)"
+                  required
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || googleLoading}
+                className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>{authMode === 'login' ? 'Ingia na Email' : 'Kamilisha Usajili'}</span>
+                  </>
+                )}
+              </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  className="text-[11px] text-neutral-400 hover:text-white transition"
+                >
+                  {authMode === 'login'
+                    ? 'Huna akaunti bado? Jisajili hapa'
+                    : 'Tayari una akaunti? Ingia hapa'}
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Hakuna nenosiri, unakumbukwa kwa namba yako ya simu</span>
-          </div>
-        </div>
+        )}
+
+        {/* TAB 2: PHONE NUMBER AUTH */}
+        {activeTab === 'phone' && (
+          <form onSubmit={handlePhoneSubmit} className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-neutral-400">
+                Namba ya Simu (M-Pesa, Tigo, Airtel, Halopesa)
+              </label>
+              <div className="relative">
+                <Smartphone className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="07XXXXXXXX au 06XXXXXXXX"
+                  required
+                  autoFocus
+                  className="w-full pl-9 pr-3 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs font-mono text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-neutral-500">
+              Ukiingia kwa simu, akaunti yako itaunganishwa mara moja na vifurushi unavyolipia bila kuhitaji nenosiri.
+            </p>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Ingia kwa Simu</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -8,13 +8,13 @@ import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Channel, CHANNELS_DATA } from './data/channels.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
+import { CinematicSplash } from './components/CinematicSplash.tsx';
 import { HomePage } from './pages/HomePage.tsx';
 import { WatchPage } from './pages/WatchPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
 import { PremiumPage } from './pages/PremiumPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
-import { Download, X } from 'lucide-react';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -36,40 +36,43 @@ function MainApp() {
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
 
-  // PWA install prompt state
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState<boolean>(false);
+  // Cinematic Intro Splash state
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    return !sessionStorage.getItem('nelitv_intro_seen');
+  });
+
+  const handleSplashComplete = () => {
+    setShowSplash(false);
+    sessionStorage.setItem('nelitv_intro_seen', 'true');
+  };
 
   // First-time user popup: if not logged in, trigger login modal
   useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem('yourmaxtv_welcome_seen');
-    if (!isLoggedIn && !hasSeenWelcome) {
+    const hasSeenWelcome = localStorage.getItem('nelitv_welcome_seen');
+    if (!isLoggedIn && !hasSeenWelcome && !showSplash) {
       const timer = setTimeout(() => {
         setLoginModalOpen(true);
-        localStorage.setItem('yourmaxtv_welcome_seen', 'true');
-      }, 1200);
+        localStorage.setItem('nelitv_welcome_seen', 'true');
+      }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isLoggedIn, setLoginModalOpen]);
+  }, [isLoggedIn, setLoginModalOpen, showSplash]);
 
-  // Anti-inspection and stream protection (disable right-click & F12 devtools shortcuts)
+  // Anti-inspection and stream protection
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent F12
       if (e.key === 'F12') {
         e.preventDefault();
         return;
       }
-      // Prevent Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C
       if (e.ctrlKey && e.shiftKey && ['i', 'j', 'c', 'I', 'J', 'C'].includes(e.key)) {
         e.preventDefault();
         return;
       }
-      // Prevent Ctrl+U (view source)
       if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
         e.preventDefault();
         return;
@@ -84,28 +87,6 @@ function MainApp() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
-
-  // Listen for PWA install prompt
-  useEffect(() => {
-    const handleBeforeInstall = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstallBanner(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-  }, []);
-
-  const handleInstallPwa = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setShowInstallBanner(false);
-    }
-    setDeferredPrompt(null);
-  };
 
   // Fetch live channels from server on mount
   useEffect(() => {
@@ -162,41 +143,25 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-black text-neutral-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
-      {/* Top Navigation */}
+      {/* 1. CINEMATIC VIDEO SPLASH INTRO */}
+      {showSplash && (
+        <CinematicSplash
+          onComplete={handleSplashComplete}
+          appName="NeliTv"
+        />
+      )}
+
+      {/* 2. TOP NAVIGATION */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
+        onOpenIntro={() => setShowSplash(true)}
       />
 
-      {/* PWA In-App Install Banner for Desktop & Mobile */}
-      {showInstallBanner && (
-        <div className="bg-red-600/90 text-white px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-semibold shadow-lg backdrop-blur-sm z-40">
-          <div className="flex items-center gap-2">
-            <Download className="w-4 h-4 shrink-0" />
-            <span>Weka Your Max TV kama Programu kwenye simu au kompyuta yako kwa urahisi</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleInstallPwa}
-              className="px-3 py-1 bg-white text-black font-bold rounded-lg hover:bg-neutral-200 transition"
-            >
-              Weka Programu
-            </button>
-            <button
-              onClick={() => setShowInstallBanner(false)}
-              className="p-1 hover:bg-red-700 rounded-md transition"
-              aria-label="Funga"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Pages Switcher */}
+      {/* 3. PAGES SWITCHER */}
       <main className="flex-1">
         {activeTab === 'home' && (
           <HomePage
@@ -258,22 +223,22 @@ function MainApp() {
         )}
       </main>
 
-      {/* Login Modal */}
+      {/* 4. LOGIN MODAL */}
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
-        title="Ingia au Jisajili"
-        subtitle="Weka namba yako ya simu ya Tanzania (mfano: 0712345678) ili kuanza majaribio ya bure ya dakika 1 au kufungua kifurushi chako."
+        title="Ingia au Jisajili NeliTv"
+        subtitle="Ingia na Google, Barua Pepe au Namba ya Simu kutazama moja kwa moja."
       />
 
-      {/* Clean Footer (NO Azam TV text, NO ClearKey text, NO HarakaPay text) */}
+      {/* 5. TV & PC CLEAN FOOTER */}
       <footer className="border-t border-neutral-900 bg-black py-8 px-4 text-center text-xs text-neutral-500 space-y-2">
         <p className="font-bold text-neutral-300 tracking-wide">
-          Your Max TV © {new Date().getFullYear()} · Tanzania Live TV Streaming
+          NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming
         </p>
-        <p className="text-neutral-500 max-w-sm mx-auto">
-          Tazama mechi za ligi kuu, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa juu popote ulipo.
+        <p className="text-neutral-500 max-w-sm mx-auto text-[11px]">
+          Tazama mechi za ligi kuu, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa juu kwenye TV, PC na Simu.
         </p>
       </footer>
     </div>

@@ -163,32 +163,52 @@ function calculateSubscriptionExpiration(
   }
 }
 
+function getPhoneVariants(phone: string): string[] {
+  const clean0 = normalizePhone(phone);
+  const withoutZero = clean0.replace(/^0+/, '');
+  const clean255 = '255' + withoutZero;
+  return Array.from(new Set([
+    clean0,
+    clean255,
+    '+' + clean255,
+    withoutZero,
+    phone.trim(),
+    phone.replace(/\s+/g, '')
+  ])).filter(Boolean);
+}
+
 /**
  * Query customer subscription directly from Supabase (checks 'Subscription' first, then 'subscriptions')
+ * Supports both phone numbers and emails
  */
-async function querySupabaseSubscription(rawPhone: string) {
+async function querySupabaseSubscription(identifier: string) {
   if (!supabase) return null;
   try {
-    const clean0 = normalizePhone(rawPhone);
-    const clean255 = '255' + clean0.replace(/^0+/, '');
-    const phoneVariants = [clean0, clean255, '+' + clean255];
-
+    const isEmail = identifier.includes('@');
     const tableNames = ['Subscription', 'subscriptions'];
+
     for (const tbl of tableNames) {
       try {
-        const { data, error } = await supabase
-          .from(tbl)
-          .select('*')
-          .in('phone_number', phoneVariants)
-          .order('expires_at', { ascending: false });
+        let query = supabase.from(tbl).select('*');
+
+        if (isEmail) {
+          query = query.ilike('email', identifier.trim());
+        } else {
+          const phoneVariants = getPhoneVariants(identifier);
+          query = query.in('phone_number', phoneVariants);
+        }
+
+        const { data, error } = await query.order('expires_at', { ascending: false });
 
         if (error || !data || data.length === 0) continue;
 
         const now = Date.now();
-        // Check if any record is still active
+        // Check if any record is still active (flexible check)
         const activeSub = data.find((sub: any) => {
-          const st = (sub.premium_status || '').toLowerCase();
-          return st === 'active' && sub.expires_at && new Date(sub.expires_at).getTime() > now;
+          if (!sub.expires_at) return false;
+          const st = (sub.premium_status || '').trim().toLowerCase();
+          const isNotExpired = st !== 'expired' && st !== 'cancelled' && st !== 'inactive';
+          return isNotExpired && new Date(sub.expires_at).getTime() > now;
         });
 
         if (activeSub) return activeSub;
@@ -217,11 +237,9 @@ async function querySupabaseSubscription(rawPhone: string) {
 
 /**
  * Saves or extends a subscription in Supabase and local store:
- * - If the same phone number purchases another subscription, extends the existing expiration
- *   from the later of the current expiration or the verified payment time.
- * - Does NOT overwrite a longer, still-valid expiration with a shorter one.
+ * - If the same phone number or email purchases another subscription, extends the existing expiration
  */
-async function saveOrExtendSupabaseSubscription(phone: string, amount: number) {
+async function saveOrExtendSupabaseSubscription(phone: string, amount: number, email?: string) {
   const clean0 = normalizePhone(phone);
   const now = new Date();
   let baseDate = now;
@@ -231,8 +249,7 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number) {
   // 1. Check Supabase
   if (supabase) {
     try {
-      const clean255 = '255' + clean0.replace(/^0+/, '');
-      const phoneVariants = [clean0, clean255, '+' + clean255];
+      const phoneVariants = getPhoneVariants(phone);
       const tableNames = ['Subscription', 'subscriptions'];
 
       for (const tbl of tableNames) {
@@ -641,6 +658,84 @@ app.post('/api/harakapay/collect', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Hitilafu ya mtandao wakati wa kuwasiliana na HarakaPay: ' + (error.message || 'Jaribu tena.')
+    });
+  }
+});
+
+// 6b. HarakaPay Resend USSD Push (Multi USSD Push support)
+app.post('/api/harakapay/resend-push', async (req: Request, res: Response) => {
+  try {
+    const { phone, planId, amount } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, error: 'Namba ya simu inahitajika' });
+    }
+
+    const cleanPhone = normalizePhone(phone);
+    let plan = VIFURUSHI_PLANS.find(p => p.id === planId);
+    if (!plan && amount) {
+      plan = VIFURUSHI_PLANS.find(p => p.priceTsh === Number(amount));
+    }
+    if (!plan) plan = VIFURUSHI_PLANS[0];
+
+    const description = `Your Max TV (Tuma Tena): ${plan.name} kwa namba ${cleanPhone}`;
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const webhookUrl = `${protocol}://${host}/api/harakapay/webhook`;
+
+    console.log(`[HarakaPay Resend Push] Phone=${cleanPhone}, Amount=${plan.priceTsh}`);
+
+    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': HARAKAPAY_API_KEY
+      },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        amount: plan.priceTsh,
+        description: description,
+        webhook_url: webhookUrl
+      })
+    });
+
+    const data: any = await response.json();
+    console.log('[HarakaPay Resend Response]', data);
+
+    if (data.success && data.order_id) {
+      const record: PaymentRecord = {
+        orderId: data.order_id,
+        phone: cleanPhone,
+        amount: data.amount || plan.priceTsh,
+        planId: plan.id,
+        planName: plan.name,
+        durationDays: plan.durationDays,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        rawResponse: data
+      };
+
+      paymentsStore[data.order_id] = record;
+      persistData();
+
+      return res.json({
+        success: true,
+        orderId: data.order_id,
+        amount: data.amount || plan.priceTsh,
+        message: 'Ombi jipya la USSD limetumwa kwenye simu yako! Tafadhali weka PIN sasa.',
+        phone: cleanPhone,
+        plan: plan
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: data.message || 'Haikuweza kutuma ombi jipya la USSD. Hakikisha simu iko hewani na ina salio.'
+      });
+    }
+  } catch (error: any) {
+    console.error('[HarakaPay Resend Error]', error);
+    res.status(500).json({
+      success: false,
+      error: 'Hitilafu ya mtandao: ' + (error.message || 'Jaribu tena.')
     });
   }
 });

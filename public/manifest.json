@@ -1,24 +1,41 @@
 {
-  "name": "Your Max TV",
-  "short_name": "Max TV",
-  "description": "Tazama Live TV, Michezo na Burudani Tanzania kwa Your Max TV.",
+  "id": "/",
+  "name": "NeliTv - Live TV & Sports",
+  "short_name": "NeliTv",
+  "description": "Tazama Live TV, Michezo ya Ligi Kuu, na Burudani ya Sinema bila kikomo kwenye NeliTv.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
+  "background_color": "#000000",
   "theme_color": "#e50914",
   "orientation": "any",
+  "categories": ["entertainment", "sports", "tv"],
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23e50914'/><polygon points='38,30 72,50 38,70' fill='%23ffffff'/></svg>",
-      "sizes": "192x192",
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23e50914'/><polygon points='38,30 72,50 38,70' fill='%23ffffff'/></svg>",
+      "src": "/icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live TV",
+      "short_name": "Live",
+      "description": "Tazama vituo vya moja kwa moja",
+      "url": "/?tab=watch"
+    },
+    {
+      "name": "Vifurushi",
+      "short_name": "Vifurushi",
+      "description": "Lipia au tazama vifurushi",
+      "url": "/?tab=premium"
     }
   ]
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  User, Smartphone, Crown, Trash2, LogOut, CheckCircle2,
+  User, Smartphone, Mail, Crown, Trash2, LogOut, CheckCircle2,
   AlertTriangle, RefreshCw
 } from 'lucide-react';
 
@@ -17,6 +17,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const {
     user,
     phone,
+    email,
+    displayName,
+    photoURL,
     isLoggedIn,
     hasActiveSubscription,
     trialRemainingSeconds,
@@ -30,7 +33,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
   const handleClearCache = () => {
     try {
-      localStorage.removeItem(`yourmaxtv_user_cache_${phone}`);
+      localStorage.removeItem('nelitv_user_profile');
       setCacheCleared(true);
       setTimeout(() => setCacheCleared(false), 2500);
       refreshProfile();
@@ -50,16 +53,16 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen pb-16 bg-[#0a0a0a] text-neutral-100 select-none">
+    <div className="min-h-screen pb-16 bg-[#080808] text-neutral-100 select-none">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
         {/* Title */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Akaunti Yangu
+              Akaunti Yangu - NeliTv
             </h1>
             <p className="text-xs sm:text-sm text-neutral-400">
-              Simamia namba yako ya simu na hali ya vifurushi
+              Simamia maelezo ya akaunti na vifurushi vya kutazama
             </p>
           </div>
 
@@ -69,15 +72,15 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               className="py-2 px-4 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-red-500/40 text-neutral-300 hover:text-red-500 text-xs font-semibold flex items-center gap-2 transition self-start sm:self-auto"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Badili Namba / Toka</span>
+              <span>Ondoka kwenye Akaunti</span>
             </button>
           ) : (
             <button
               onClick={onOpenLoginModal}
-              className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-2 transition"
+              className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 transition"
             >
-              <Smartphone className="w-4 h-4" />
-              <span>Ingia na Namba ya Simu</span>
+              <User className="w-4 h-4" />
+              <span>Ingia au Jisajili</span>
             </button>
           )}
         </div>
@@ -115,14 +118,35 @@ export const AccountPage: React.FC<AccountPageProps> = ({
             <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-6 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center text-red-500">
-                    <Smartphone className="w-6 h-6" />
-                  </div>
+                  {photoURL ? (
+                    <img
+                      src={photoURL}
+                      alt={displayName}
+                      className="w-12 h-12 rounded-2xl object-cover border border-neutral-700 shadow"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center text-red-500 font-black text-xl">
+                      {displayName.charAt(0).toUpperCase() || <User className="w-6 h-6" />}
+                    </div>
+                  )}
                   <div>
-                    <span className="text-xs text-neutral-400 block">Namba ya Simu</span>
-                    <h3 className="text-xl font-bold font-mono text-white">
-                      {phone || 'Hujaingia kwenye akaunti'}
+                    <h3 className="text-base sm:text-lg font-bold text-white">
+                      {displayName}
                     </h3>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400 mt-0.5">
+                      {email && (
+                        <span className="flex items-center gap-1 font-mono text-[11px] text-neutral-300">
+                          <Mail className="w-3 h-3 text-red-400" />
+                          <span>{email}</span>
+                        </span>
+                      )}
+                      {phone && (
+                        <span className="flex items-center gap-1 font-mono text-[11px] text-neutral-300">
+                          <Smartphone className="w-3 h-3 text-red-400" />
+                          <span>{phone}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -146,7 +170,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-neutral-400">Kifurushi cha Sasa:</span>
                   <span className="font-bold text-white">
-                    {user?.subscriptionPlan || 'Hakuna (Majaribio ya Sekunde 60)'}
+                    {user?.subscriptionPlan || (hasActiveSubscription ? 'Kifurushi Hai (Supabase)' : 'Majaribio ya Sekunde 60')}
                   </span>
                 </div>
 
@@ -170,7 +194,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               {!hasActiveSubscription && (
                 <button
                   onClick={onNavigateToPremium}
-                  className="w-full py-3 px-5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition"
+                  className="w-full py-3 px-5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition active:scale-95"
                 >
                   <Crown className="w-4 h-4" />
                   <span>Lipia Kifurushi Kipya (Kuanzia TZS 1,000)</span>
@@ -178,25 +202,28 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               )}
             </div>
 
-            {/* Cache Control */}
+            {/* Cache & Sync Control */}
             <div className="p-5 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-neutral-800 flex items-center justify-center text-neutral-400 shrink-0">
-                  <Trash2 className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-white">Futa Cache ya Namba Hii</h4>
+                  <h4 className="text-xs font-bold text-white">Rejesha Hali ya Malipo</h4>
                   <p className="text-[11px] text-neutral-400">
-                    Hifadhi ya kifaa hiki kurejesha upya chaneli na akaunti.
+                    Kagua taarifa zako mpya kutoka Supabase na server.
                   </p>
                 </div>
               </div>
 
               <button
-                onClick={handleClearCache}
+                onClick={() => {
+                  refreshProfile();
+                  handleClearCache();
+                }}
                 className="py-2 px-3.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold shrink-0 transition"
               >
-                {cacheCleared ? 'Imefutwa ✓' : 'Futa Cache'}
+                {cacheCleared ? 'Imesasishwa ✓' : 'Kagua Upya'}
               </button>
             </div>
           </div>
@@ -207,8 +234,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-white">Miamala ya Simu</h3>
-                <p className="text-xs text-neutral-400">Historia ya malipo yaliyofanyika kwa namba {phone}</p>
+                <h3 className="text-base font-bold text-white">Miamala ya Malipo</h3>
+                <p className="text-xs text-neutral-400">Historia ya malipo yaliyofanyika kwenye akaunti hii</p>
               </div>
               <button
                 onClick={refreshProfile}
@@ -221,7 +248,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
             {(!user?.payments || user.payments.length === 0) ? (
               <div className="text-center py-12 text-neutral-500 text-xs sm:text-sm">
-                Hakuna muamala uliorekodiwa kwa namba hii bado.
+                Hakuna muamala uliorekodiwa hapa bado. Ukilipia kifurushi utaona rekodi yake hapa.
               </div>
             ) : (
               <div className="overflow-x-auto">
