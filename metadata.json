@@ -1,0 +1,6 @@
+{
+  "name": "Your Max TV - Tanzania Live TV & Sports",
+  "description": "Tazama mechi za ligi kuu, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa juu kwenye Your Max TV.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
