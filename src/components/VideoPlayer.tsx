@@ -7,7 +7,7 @@ import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.t
 import {
   Volume2, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
-  Lock, ArrowRight, Languages, Radio, X
+  Lock, ArrowRight, Languages, Radio, X, Play
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -380,8 +380,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             try {
               await video.play();
               setIsPlaying(true);
-            } catch {
-              setIsPlaying(false);
+            } catch (playErr) {
+              console.warn('Initial play blocked, attempting muted autoplay:', playErr);
+              try {
+                video.muted = true;
+                setIsMuted(true);
+                await video.play();
+                setIsPlaying(true);
+              } catch {
+                setIsPlaying(false);
+              }
             }
           }
         } catch (error: any) {
@@ -399,7 +407,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   await video.play();
                   setIsPlaying(true);
                 } catch {
-                  setIsPlaying(false);
+                  try {
+                    video.muted = true;
+                    setIsMuted(true);
+                    await video.play();
+                    setIsPlaying(true);
+                  } catch {
+                    setIsPlaying(false);
+                  }
                 }
               }
               return;
@@ -622,6 +637,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[1px] pointer-events-none transition">
           <div className="w-12 h-12 rounded-full border-3 border-red-600 border-t-transparent animate-spin mb-3" />
           <span className="text-xs text-neutral-300 font-medium">Inaunganisha TV...</span>
+        </div>
+      )}
+
+      {/* Big Center Play Button when paused */}
+      {!isPlaying && !isBuffering && !isPaywallTriggered && !errorMessage && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            if (videoRef.current) {
+              videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+            }
+          }}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/35 backdrop-blur-[1px] cursor-pointer"
+        >
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-2xl transition transform hover:scale-110 active:scale-95">
+            <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white ml-1" />
+          </div>
+        </div>
+      )}
+
+      {/* Unmute prompt banner if playing muted */}
+      {isMuted && isPlaying && !isPaywallTriggered && (
+        <div className="absolute top-3 right-3 z-20">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMute();
+            }}
+            className="px-2.5 py-1 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg transition active:scale-95"
+          >
+            <VolumeX className="w-3.5 h-3.5 text-red-500" />
+            <span>Washa Sauti</span>
+          </button>
         </div>
       )}
 

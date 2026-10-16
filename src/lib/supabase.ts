@@ -140,23 +140,35 @@ export async function fetchCustomerSubscriptionFromSupabase(
 
     for (const tbl of tableNames) {
       try {
-        let query = supabase.from(tbl).select('*');
-
         if (isEmail) {
-          query = query.ilike('email', identifier.trim());
+          try {
+            const { data, error } = await supabase
+              .from(tbl)
+              .select('*')
+              .ilike('email', identifier.trim())
+              .order('expires_at', { ascending: false });
+
+            if (!error && data && data.length > 0) {
+              const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
+              if (activeSub) return activeSub;
+              return data[0];
+            }
+          } catch {
+            // If 'email' column does not exist, ignore and continue
+          }
         } else {
           const variants = getPhoneVariants(identifier);
-          query = query.in('phone_number', variants);
-        }
+          const { data, error } = await supabase
+            .from(tbl)
+            .select('*')
+            .in('phone_number', variants)
+            .order('expires_at', { ascending: false });
 
-        const { data, error } = await query.order('expires_at', { ascending: false });
-
-        if (!error && data && data.length > 0) {
-          // Check if any record is still active
-          const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
-          if (activeSub) return activeSub;
-
-          return data[0]; // Return most recent record
+          if (!error && data && data.length > 0) {
+            const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
+            if (activeSub) return activeSub;
+            return data[0];
+          }
         }
       } catch {
         // Fallback to next table

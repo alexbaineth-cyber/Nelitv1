@@ -36,14 +36,11 @@ function MainApp() {
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
 
-  // Cinematic Intro Splash state
-  const [showSplash, setShowSplash] = useState<boolean>(() => {
-    return !sessionStorage.getItem('nelitv_intro_seen');
-  });
+  // Cinematic Intro Splash state - always shows every time user reloads or enters the app
+  const [showSplash, setShowSplash] = useState<boolean>(true);
 
   const handleSplashComplete = () => {
     setShowSplash(false);
-    sessionStorage.setItem('nelitv_intro_seen', 'true');
   };
 
   // First-time user popup: if not logged in, trigger login modal

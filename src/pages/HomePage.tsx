@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
-import { Play, ChevronLeft, ChevronRight, Eye, Radio, Sparkles, Tv, ShieldCheck } from 'lucide-react';
-import { PWAInstallButton } from '../components/PWAInstallButton.tsx';
+import { Play, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -16,9 +15,6 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [focusedChannelIndex, setFocusedChannelIndex] = useState<number>(-1);
-
-  // Featured channel for grand TV & PC Hero Banner
-  const featuredChannel = channels.find(c => c.name.includes('Azam Sports 1')) || channels[0];
 
   // Categorize channels
   const sportsChannels = channels.filter(c => c.category.includes('sport'));
@@ -65,72 +61,8 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   return (
     <div className="min-h-screen pb-20 bg-[#080808] text-neutral-100 select-none">
-      {/* 1. CINEMATIC HERO BANNER FOR TV & PC */}
-      {featuredChannel && (
-        <div className="relative w-full h-[52vh] sm:h-[62vh] lg:h-[72vh] overflow-hidden bg-neutral-950">
-          {/* Background backdrop with rich gradient overlays */}
-          <div
-            className="absolute inset-0 bg-cover bg-center scale-105 transition-transform duration-1000 blur-[1px]"
-            style={{
-              backgroundImage: `url(${featuredChannel.thumbnailUrl || 'https://i.ibb.co/B29Xvb5P/azam-sport-1-01.png'})`
-            }}
-          />
-          {/* Multi-layered cinematic shadows for TV contrast */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent w-full lg:w-3/4" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-transparent to-black/60" />
-
-          {/* Hero Content Information */}
-          <div className="relative z-10 h-full max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 flex flex-col justify-end pb-10 sm:pb-16 max-w-2xl lg:max-w-3xl space-y-3 sm:space-y-4">
-            {/* Live TV Badge */}
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-600 text-white text-[11px] font-black uppercase tracking-wider animate-pulse">
-                <Radio className="w-3 h-3" />
-                <span>MOJA KWA MOJA</span>
-              </span>
-              <span className="text-xs font-semibold text-neutral-300">
-                NBC Premier League & Live Sports
-              </span>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-2xl sm:text-4xl lg:text-6xl font-black text-white tracking-tight leading-none drop-shadow-md">
-              {featuredChannel.name}
-            </h1>
-
-            {/* Description / Current Program */}
-            <p className="text-xs sm:text-sm lg:text-base text-neutral-300 line-clamp-2 sm:line-clamp-3 leading-relaxed">
-              {featuredChannel.currentProgram || featuredChannel.description}
-            </p>
-
-            {/* Call to Action Buttons for TV Remote / Mouse */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                onClick={() => onSelectChannel(featuredChannel)}
-                className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-sm sm:text-base flex items-center gap-2.5 shadow-xl shadow-red-600/30 transition focus:ring-4 focus:ring-white"
-              >
-                <Play className="w-5 h-5 fill-white" />
-                <span>Tazama Sasa</span>
-              </button>
-
-              <button
-                onClick={onNavigateToPremium}
-                className="px-5 py-3 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 active:scale-95 text-neutral-200 font-bold text-sm sm:text-base flex items-center gap-2 backdrop-blur-md transition"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Vifurushi vya 1,000 Tsh</span>
-              </button>
-
-              <PWAInstallButton variant="hero" className="hidden sm:flex" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. PWA & TV BANNER */}
-      <PWAInstallButton variant="banner" />
-
-      {/* 3. CATEGORY SELECTOR TABS (FOR TV & DESKTOP) */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-8">
+      {/* 1. CATEGORY SELECTOR TABS */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2">
           {categories.map((cat) => (
             <button

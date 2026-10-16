@@ -189,18 +189,33 @@ async function querySupabaseSubscription(identifier: string) {
 
     for (const tbl of tableNames) {
       try {
-        let query = supabase.from(tbl).select('*');
+        let data: any[] | null = null;
+        let queryError: any = null;
 
         if (isEmail) {
-          query = query.ilike('email', identifier.trim());
+          try {
+            const res = await supabase
+              .from(tbl)
+              .select('*')
+              .ilike('email', identifier.trim())
+              .order('expires_at', { ascending: false });
+            data = res.data;
+            queryError = res.error;
+          } catch {
+            // Email column may not exist yet
+          }
         } else {
           const phoneVariants = getPhoneVariants(identifier);
-          query = query.in('phone_number', phoneVariants);
+          const res = await supabase
+            .from(tbl)
+            .select('*')
+            .in('phone_number', phoneVariants)
+            .order('expires_at', { ascending: false });
+          data = res.data;
+          queryError = res.error;
         }
 
-        const { data, error } = await query.order('expires_at', { ascending: false });
-
-        if (error || !data || data.length === 0) continue;
+        if (queryError || !data || data.length === 0) continue;
 
         const now = Date.now();
         // Check if any record is still active (flexible check)

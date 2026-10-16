@@ -1,7 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { Search, Crown, User, LogIn, Tv, Play } from 'lucide-react';
-import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface NavbarProps {
   activeTab: 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
@@ -72,11 +71,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
           </button>
         </nav>
 
-        {/* 3. RIGHT ACTIONS: PWA INSTALL, SEARCH, VIFURUSHI, ACCOUNT */}
+        {/* 3. RIGHT ACTIONS: SEARCH, VIFURUSHI, ACCOUNT */}
         <div className="flex items-center gap-2 sm:gap-2.5">
-          {/* PWA INSTALL / DOWNLOAD BUTTON */}
-          <PWAInstallButton variant="navbar" />
-
           {/* SEARCH */}
           <button
             onClick={() => setActiveTab('search')}
