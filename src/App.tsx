@@ -8,7 +8,9 @@ import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Channel, CHANNELS_DATA } from './data/channels.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
+import { DownloadAppModal } from './components/DownloadAppModal.tsx';
 import { CinematicSplash } from './components/CinematicSplash.tsx';
+import { Download, QrCode, Smartphone, X } from 'lucide-react';
 import { HomePage } from './pages/HomePage.tsx';
 import { WatchPage } from './pages/WatchPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
@@ -38,22 +40,19 @@ function MainApp() {
 
   // Cinematic Intro Splash state - always shows every time user reloads or enters the app
   const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
+  const [downloadModalTab, setDownloadModalTab] = useState<'direct' | 'qr'>('direct');
+  const [showDownloadBanner, setShowDownloadBanner] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nelitv_hide_app_banner') !== 'true';
+    } catch {
+      return true;
+    }
+  });
 
   const handleSplashComplete = () => {
     setShowSplash(false);
   };
-
-  // First-time user popup: if not logged in, trigger login modal
-  useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem('nelitv_welcome_seen');
-    if (!isLoggedIn && !hasSeenWelcome && !showSplash) {
-      const timer = setTimeout(() => {
-        setLoginModalOpen(true);
-        localStorage.setItem('nelitv_welcome_seen', 'true');
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoggedIn, setLoginModalOpen, showSplash]);
 
   // Anti-inspection and stream protection
   useEffect(() => {
@@ -104,14 +103,6 @@ function MainApp() {
   // When a channel is selected
   const handleSelectChannel = (channel: Channel) => {
     setSelectedChannel(channel);
-
-    // If user is not logged in, prompt login first
-    if (!isLoggedIn) {
-      setPendingChannelToPlay(channel);
-      setLoginModalOpen(true);
-      return;
-    }
-
     setActiveTab('watch');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -156,6 +147,10 @@ function MainApp() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenIntro={() => setShowSplash(true)}
+        onOpenDownloadModal={() => {
+          setDownloadModalTab('direct');
+          setIsDownloadModalOpen(true);
+        }}
       />
 
       {/* 3. PAGES SWITCHER */}
@@ -229,7 +224,70 @@ function MainApp() {
         subtitle="Ingia na Google, Barua Pepe au Namba ya Simu kutazama moja kwa moja."
       />
 
-      {/* 5. TV & PC CLEAN FOOTER */}
+      {/* 5. DOWNLOAD APP MODAL (Scan QR & Direct Download) */}
+      <DownloadAppModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        initialTab={downloadModalTab}
+      />
+
+      {/* Floating Download Our App Prompt / SMS Banner */}
+      {showDownloadBanner && !showSplash && activeTab !== 'watch' && (
+        <div className="fixed bottom-4 right-4 z-40 max-w-sm w-[calc(100%-2rem)] rounded-2xl bg-neutral-900/95 border border-red-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center text-white shrink-0 shadow-md shadow-red-600/30">
+                <Smartphone className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs font-bold text-white tracking-tight">Pakua NeliTv App</h4>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-600/20 text-red-400 font-mono font-bold">APK</span>
+                </div>
+                <p className="text-[11px] text-neutral-400 truncate">
+                  Tazama mechi na TV bila kukwama
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowDownloadBanner(false);
+                try { localStorage.setItem('nelitv_hide_app_banner', 'true'); } catch {}
+              }}
+              className="p-1 text-neutral-400 hover:text-white rounded-lg transition"
+              title="Funga"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-neutral-800/80">
+            <button
+              onClick={() => {
+                setDownloadModalTab('direct');
+                setIsDownloadModalOpen(true);
+              }}
+              className="py-1.5 px-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-red-600/20"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Pakua APK</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setDownloadModalTab('qr');
+                setIsDownloadModalOpen(true);
+              }}
+              className="py-1.5 px-2.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 border border-neutral-700"
+            >
+              <QrCode className="w-3.5 h-3.5 text-amber-400" />
+              <span>Scan QR</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 6. TV & PC CLEAN FOOTER */}
       <footer className="border-t border-neutral-900 bg-black py-8 px-4 text-center text-xs text-neutral-500 space-y-2">
         <p className="font-bold text-neutral-300 tracking-wide">
           NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming

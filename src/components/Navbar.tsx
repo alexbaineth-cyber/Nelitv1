@@ -1,14 +1,15 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Search, Crown, User, LogIn, Tv, Play } from 'lucide-react';
+import { Search, Crown, User, LogIn, Tv, Play, Download } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
   setActiveTab: (tab: 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify') => void;
   onOpenIntro?: () => void;
+  onOpenDownloadModal?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenIntro }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenIntro, onOpenDownloadModal }) => {
   const { isLoggedIn, phone, email, displayName, photoURL, hasActiveSubscription, setLoginModalOpen } = useAuth();
 
   return (
@@ -71,8 +72,20 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
           </button>
         </nav>
 
-        {/* 3. RIGHT ACTIONS: SEARCH, VIFURUSHI, ACCOUNT */}
+        {/* 3. RIGHT ACTIONS: DOWNLOAD APP, SEARCH, VIFURUSHI, ACCOUNT */}
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* DOWNLOAD APP BUTTON */}
+          {onOpenDownloadModal && (
+            <button
+              onClick={onOpenDownloadModal}
+              title="Pakua NeliTv APK (Android & Smart TV)"
+              className="py-1.5 px-2.5 sm:px-3 sm:py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-700/20 active:scale-95"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Pakua App</span>
+            </button>
+          )}
+
           {/* SEARCH */}
           <button
             onClick={() => setActiveTab('search')}

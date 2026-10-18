@@ -178,41 +178,62 @@ function getPhoneVariants(phone: string): string[] {
 }
 
 /**
- * Query customer subscription directly from Supabase (checks 'Subscription' first, then 'subscriptions')
+ * Query customer subscription directly from Supabase (checks 'nelitv_subscriptions' first, then 'Subscription' / 'subscriptions')
  * Supports both phone numbers and emails
  */
 async function querySupabaseSubscription(identifier: string) {
   if (!supabase) return null;
   try {
     const isEmail = identifier.includes('@');
-    const tableNames = ['Subscription', 'subscriptions'];
+    const tableNames = ['nelitv_subscriptions', 'Subscription', 'subscriptions'];
 
     for (const tbl of tableNames) {
       try {
         let data: any[] | null = null;
         let queryError: any = null;
 
-        if (isEmail) {
-          try {
+        if (tbl === 'nelitv_subscriptions') {
+          if (isEmail) {
             const res = await supabase
-              .from(tbl)
+              .from('nelitv_subscriptions')
               .select('*')
-              .ilike('email', identifier.trim())
+              .ilike('user_email', identifier.trim())
               .order('expires_at', { ascending: false });
             data = res.data;
             queryError = res.error;
-          } catch {
-            // Email column may not exist yet
+          } else {
+            const phoneVariants = getPhoneVariants(identifier);
+            const res = await supabase
+              .from('nelitv_subscriptions')
+              .select('*')
+              .in('phone_number', phoneVariants)
+              .order('expires_at', { ascending: false });
+            data = res.data;
+            queryError = res.error;
           }
         } else {
-          const phoneVariants = getPhoneVariants(identifier);
-          const res = await supabase
-            .from(tbl)
-            .select('*')
-            .in('phone_number', phoneVariants)
-            .order('expires_at', { ascending: false });
-          data = res.data;
-          queryError = res.error;
+          if (isEmail) {
+            try {
+              const res = await supabase
+                .from(tbl)
+                .select('*')
+                .ilike('email', identifier.trim())
+                .order('expires_at', { ascending: false });
+              data = res.data;
+              queryError = res.error;
+            } catch {
+              // Email column may not exist yet
+            }
+          } else {
+            const phoneVariants = getPhoneVariants(identifier);
+            const res = await supabase
+              .from(tbl)
+              .select('*')
+              .in('phone_number', phoneVariants)
+              .order('expires_at', { ascending: false });
+            data = res.data;
+            queryError = res.error;
+          }
         }
 
         if (queryError || !data || data.length === 0) continue;
@@ -251,42 +272,27 @@ async function querySupabaseSubscription(identifier: string) {
 }
 
 /**
- * Saves or extends a subscription in Supabase and local store:
+ * Saves or extends a subscription in Supabase (nelitv_subscriptions & nelitv_payments) and local store:
  * - If the same phone number or email purchases another subscription, extends the existing expiration
  */
-async function saveOrExtendSupabaseSubscription(phone: string, amount: number, email?: string) {
+async function saveOrExtendSupabaseSubscription(phone: string, amount: number, email?: string, orderId?: string) {
   const clean0 = normalizePhone(phone);
   const now = new Date();
   let baseDate = now;
   let existingRecord: any = null;
-  let matchedTable = 'Subscription';
 
   // 1. Check Supabase
   if (supabase) {
     try {
-      const phoneVariants = getPhoneVariants(phone);
-      const tableNames = ['Subscription', 'subscriptions'];
-
-      for (const tbl of tableNames) {
-        try {
-          const { data } = await supabase
-            .from(tbl)
-            .select('*')
-            .in('phone_number', phoneVariants)
-            .order('expires_at', { ascending: false });
-
-          if (data && data.length > 0) {
-            existingRecord = data[0];
-            matchedTable = tbl;
-            if (existingRecord.expires_at) {
-              const expTime = new Date(existingRecord.expires_at).getTime();
-              if (expTime > now.getTime()) {
-                baseDate = new Date(expTime);
-              }
-            }
-            break;
+      const existing = await querySupabaseSubscription(clean0);
+      if (existing) {
+        existingRecord = existing;
+        if (existingRecord.expires_at) {
+          const expTime = new Date(existingRecord.expires_at).getTime();
+          if (expTime > now.getTime()) {
+            baseDate = new Date(expTime);
           }
-        } catch {}
+        }
       }
     } catch (e: any) {
       console.warn('[Supabase Check Existing]', e.message);
@@ -313,46 +319,63 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
   }
 
   const expiryIso = finalExpiry.toISOString();
+  const planId = amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days');
 
-  // Save to Supabase (try matchedTable, with fallback)
+  // Save to Supabase (nelitv_subscriptions & nelitv_payments)
   if (supabase) {
-    const targetTables = matchedTable === 'Subscription' ? ['Subscription', 'subscriptions'] : ['subscriptions', 'Subscription'];
-    let saved = false;
+    try {
+      // 1. Primary table: public.nelitv_subscriptions
+      const { error: subErr } = await supabase
+        .from('nelitv_subscriptions')
+        .upsert({
+          phone_number: clean0,
+          user_email: email || existingRecord?.user_email || null,
+          plan_id: planId,
+          premium_status: 'active',
+          amount_paid: amount,
+          activated_at: now.toISOString(),
+          expires_at: expiryIso,
+          updated_at: now.toISOString()
+        }, { onConflict: 'phone_number' });
 
-    for (const tbl of targetTables) {
-      if (saved) break;
-      try {
-        if (existingRecord && existingRecord.id) {
-          const { error } = await supabase
-            .from(tbl)
-            .update({
-              premium_status: 'active',
-              expires_at: expiryIso
-            })
-            .eq('id', existingRecord.id);
-
-          if (!error) {
-            console.log(`[Supabase ${tbl}] Updated subscription for ${clean0}: expires_at=${expiryIso}`);
-            saved = true;
-          }
-        } else {
-          const { error } = await supabase
-            .from(tbl)
-            .insert({
-              phone_number: clean0,
-              premium_status: 'active',
-              expires_at: expiryIso,
-              created_at: now.toISOString()
-            });
-
-          if (!error) {
-            console.log(`[Supabase ${tbl}] Inserted new subscription for ${clean0}: expires_at=${expiryIso}`);
-            saved = true;
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[Supabase ${tbl} Save Error]`, err.message);
+      if (subErr) {
+        console.warn('[Supabase nelitv_subscriptions Error]', subErr.message);
+      } else {
+        console.log(`[Supabase nelitv_subscriptions] Saved subscription for ${clean0}: expires_at=${expiryIso}`);
       }
+
+      // 2. Payments table: public.nelitv_payments
+      const orderIdToRecord = orderId || `HP-${Date.now()}`;
+      try {
+        await supabase
+          .from('nelitv_payments')
+          .upsert({
+            order_id: orderIdToRecord,
+            phone_number: clean0,
+            user_email: email || null,
+            amount: amount,
+            plan_id: planId,
+            status: 'completed',
+            payment_method: 'harakapay',
+            completed_at: now.toISOString()
+          }, { onConflict: 'order_id' });
+      } catch {}
+
+      // 3. Fallback to legacy Subscription table if present
+      try {
+        await supabase
+          .from('Subscription')
+          .upsert({
+            phone_number: clean0,
+            email: email || null,
+            premium_status: 'active',
+            expires_at: expiryIso,
+            plan_name: planId,
+            amount: amount
+          }, { onConflict: 'phone_number' });
+      } catch {}
+    } catch (err: any) {
+      console.warn('[Supabase Save Exception]', err.message);
     }
   }
 
@@ -441,8 +464,8 @@ async function getOrFetchCdnToken(force = false) {
   }
 
   cachedCdnToken = {
-    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyMTYyNjE2Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNmVkYTlmNTZlMmE5YzU5MSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.6OD9tFE-CBnuqKrGEV6VAUTFZza2qzYTR16VpOaqtIfXzZ7hC9bjy0mZi-lLya8DiQHYohB2fF3IInSiLIPbEg==",
-    exp: 1792162616,
+    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyMzQ5OTAzIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYjA1ZGQxNjY1NWVlMDE2YSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.x54TtA7qL3fXQ81oZ4V57xLVROztNUdkbPg39O7F5mzTur3bniWhL2hfQ68rsfz-8PZjrmDQOptCG8dneFjjhQ==",
+    exp: 1792349903,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
     source: "static_active"
   };
@@ -496,6 +519,51 @@ app.get('/api/vifurushi', (_req: Request, res: Response) => {
     success: true,
     data: VIFURUSHI_PLANS
   });
+});
+
+// 2.5 Secure Subscription Check for Client (Uses service_role key to bypass RLS)
+app.get('/api/subscription/check', async (req: Request, res: Response) => {
+  const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
+  const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
+  const identifier = phone || email;
+
+  if (!identifier) {
+    return res.json({ success: true, active: false, subscription: null });
+  }
+
+  try {
+    let activeSub = await querySupabaseSubscription(identifier);
+    const now = Date.now();
+
+    if (!activeSub && phone) {
+      const cleanP = normalizePhone(phone);
+      const local = usersStore[cleanP];
+      if (local && local.isSubscribed && local.subscriptionExpiresAt && new Date(local.subscriptionExpiresAt).getTime() > now) {
+        activeSub = {
+          phone_number: cleanP,
+          user_email: email || undefined,
+          plan_id: local.subscriptionPlan || 'plan_2days',
+          premium_status: 'active',
+          expires_at: local.subscriptionExpiresAt
+        };
+      }
+    }
+
+    const isActive = Boolean(
+      activeSub &&
+      activeSub.expires_at &&
+      (activeSub.premium_status === 'active' || (activeSub.premium_status && activeSub.premium_status.toLowerCase() !== 'expired')) &&
+      new Date(activeSub.expires_at).getTime() > now
+    );
+
+    return res.json({
+      success: true,
+      active: isActive,
+      subscription: activeSub || null
+    });
+  } catch (err: any) {
+    return res.json({ success: false, active: false, error: err.message });
+  }
 });
 
 // 3. User Authentication / Profile with Supabase Cross-Device Sync

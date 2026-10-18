@@ -127,37 +127,70 @@ export function isSubscriptionActive(sub?: SubscriptionRecord | null): boolean {
 }
 
 /**
- * Query customer subscription directly from Supabase by phone or email
+ * Query customer subscription:
+ * 1. Tries backend proxy /api/subscription/check (bypasses RLS safely with secret key)
+ * 2. Fallbacks to direct Supabase query on 'nelitv_subscriptions', 'Subscription', 'subscriptions'
  */
 export async function fetchCustomerSubscriptionFromSupabase(
   identifier: string
 ): Promise<SubscriptionRecord | null> {
+  const clean = identifier.trim();
+  if (!clean) return null;
+  const isEmail = clean.includes('@');
+
+  // 1. Primary: Backend endpoint with service_role privileges
+  try {
+    const param = isEmail ? `email=${encodeURIComponent(clean)}` : `phone=${encodeURIComponent(clean)}`;
+    const res = await fetch(`/api/subscription/check?${param}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && data.subscription) {
+        return {
+          id: data.subscription.id,
+          phone_number: data.subscription.phone_number || clean,
+          email: data.subscription.user_email || data.subscription.email || (isEmail ? clean : undefined),
+          premium_status: data.subscription.premium_status || (data.active ? 'active' : 'expired'),
+          expires_at: data.subscription.expires_at,
+          plan_name: data.subscription.plan_id || data.subscription.plan_name,
+          amount: data.subscription.amount_paid || data.subscription.amount
+        };
+      }
+    }
+  } catch {
+    // If backend endpoint fails (e.g. offline or client-only), proceed to direct check
+  }
+
+  // 2. Secondary direct Supabase query
   if (!supabase) return null;
 
   try {
-    const isEmail = identifier.includes('@');
-    const tableNames = ['Subscription', 'subscriptions'];
+    const tableNames = ['nelitv_subscriptions', 'Subscription', 'subscriptions'];
 
     for (const tbl of tableNames) {
       try {
         if (isEmail) {
-          try {
-            const { data, error } = await supabase
-              .from(tbl)
-              .select('*')
-              .ilike('email', identifier.trim())
-              .order('expires_at', { ascending: false });
+          const colName = tbl === 'nelitv_subscriptions' ? 'user_email' : 'email';
+          const { data, error } = await supabase
+            .from(tbl)
+            .select('*')
+            .ilike(colName, clean)
+            .order('expires_at', { ascending: false });
 
-            if (!error && data && data.length > 0) {
-              const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
-              if (activeSub) return activeSub;
-              return data[0];
-            }
-          } catch {
-            // If 'email' column does not exist, ignore and continue
+          if (!error && data && data.length > 0) {
+            const activeSub = data.find((sub: any) => isSubscriptionActive(sub));
+            const sub = activeSub || data[0];
+            return {
+              id: sub.id,
+              phone_number: sub.phone_number || clean,
+              email: sub.user_email || sub.email,
+              premium_status: sub.premium_status,
+              expires_at: sub.expires_at,
+              plan_name: sub.plan_id || sub.plan_name,
+              amount: sub.amount_paid || sub.amount
+            };
           }
         } else {
-          const variants = getPhoneVariants(identifier);
+          const variants = getPhoneVariants(clean);
           const { data, error } = await supabase
             .from(tbl)
             .select('*')
@@ -165,9 +198,17 @@ export async function fetchCustomerSubscriptionFromSupabase(
             .order('expires_at', { ascending: false });
 
           if (!error && data && data.length > 0) {
-            const activeSub = data.find((sub: SubscriptionRecord) => isSubscriptionActive(sub));
-            if (activeSub) return activeSub;
-            return data[0];
+            const activeSub = data.find((sub: any) => isSubscriptionActive(sub));
+            const sub = activeSub || data[0];
+            return {
+              id: sub.id,
+              phone_number: sub.phone_number || clean,
+              email: sub.user_email || sub.email,
+              premium_status: sub.premium_status,
+              expires_at: sub.expires_at,
+              plan_name: sub.plan_id || sub.plan_name,
+              amount: sub.amount_paid || sub.amount
+            };
           }
         }
       } catch {

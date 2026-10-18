@@ -76,6 +76,9 @@ const LOCAL_STORAGE_USER_KEY = 'nelitv_user_profile';
 const LOCAL_STORAGE_PHONE_KEY = 'nelitv_current_phone';
 const LOCAL_STORAGE_DATA_SAVER = 'nelitv_data_saver';
 
+const LOCAL_STORAGE_TRIAL_SECONDS = 'nelitv_trial_seconds_left';
+const LOCAL_STORAGE_TRIAL_DONE = 'nelitv_trial_completed';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [phone, setPhone] = useState<string>(() => localStorage.getItem(LOCAL_STORAGE_PHONE_KEY) || '');
@@ -88,8 +91,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  const [trialRemainingSeconds, setTrialRemainingSeconds] = useState<number>(60);
-  const [trialCompleted, setTrialCompleted] = useState<boolean>(false);
+  // Persistent trial tracking: prevents timer from restarting upon reload/refresh!
+  const [trialRemainingSeconds, setTrialRemainingSeconds] = useState<number>(() => {
+    try {
+      if (localStorage.getItem(LOCAL_STORAGE_TRIAL_DONE) === 'true') {
+        return 0;
+      }
+      const saved = localStorage.getItem(LOCAL_STORAGE_TRIAL_SECONDS);
+      if (saved !== null) {
+        const val = parseInt(saved, 10);
+        return isNaN(val) ? 60 : Math.max(0, Math.min(60, val));
+      }
+      const userStored = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+      if (userStored) {
+        const u = JSON.parse(userStored);
+        if (u.trialCompleted) return 0;
+        if (typeof u.trialSecondsUsed === 'number') {
+          return Math.max(0, 60 - u.trialSecondsUsed);
+        }
+      }
+    } catch {}
+    return 60;
+  });
+
+  const [trialCompleted, setTrialCompleted] = useState<boolean>(() => {
+    try {
+      if (localStorage.getItem(LOCAL_STORAGE_TRIAL_DONE) === 'true') {
+        return true;
+      }
+      const saved = localStorage.getItem(LOCAL_STORAGE_TRIAL_SECONDS);
+      if (saved !== null && parseInt(saved, 10) <= 0) {
+        return true;
+      }
+      const userStored = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
+      if (userStored) {
+        const u = JSON.parse(userStored);
+        if (u.trialCompleted || (typeof u.trialSecondsUsed === 'number' && u.trialSecondsUsed >= 60)) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  });
+
   const [lowBandwidthMode, setLowBandwidthModeState] = useState<boolean>(() => {
     return localStorage.getItem(LOCAL_STORAGE_DATA_SAVER) === 'true';
   });
@@ -109,9 +153,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
     userData.hasActiveSubscription = hasActive;
 
-    const remaining = Math.max(0, 60 - (userData.trialSecondsUsed || 0));
-    setTrialRemainingSeconds(hasActive ? 60 : remaining);
-    setTrialCompleted(hasActive ? false : (userData.trialCompleted || remaining <= 0));
+    if (hasActive) {
+      setTrialRemainingSeconds(60);
+      setTrialCompleted(false);
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_TRIAL_DONE);
+        localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, '60');
+      } catch {}
+    } else {
+      let remaining = 60;
+      const saved = localStorage.getItem(LOCAL_STORAGE_TRIAL_SECONDS);
+      if (saved !== null) {
+        remaining = Math.max(0, parseInt(saved, 10) || 0);
+      } else if (typeof userData.trialSecondsUsed === 'number') {
+        remaining = Math.max(0, 60 - userData.trialSecondsUsed);
+      }
+      const isDone = userData.trialCompleted || remaining <= 0 || localStorage.getItem(LOCAL_STORAGE_TRIAL_DONE) === 'true';
+      setTrialRemainingSeconds(isDone ? 0 : remaining);
+      setTrialCompleted(isDone);
+      if (isDone) {
+        try {
+          localStorage.setItem(LOCAL_STORAGE_TRIAL_DONE, 'true');
+          localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, '0');
+        } catch {}
+      }
+    }
 
     try {
       localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userData));
@@ -381,14 +447,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const recordTrialSecondWatched = async () => {
-    if (!user && !phone) return;
     if (user?.hasActiveSubscription) return;
     if (trialCompleted) return;
 
-    const newRemaining = Math.max(0, trialRemainingSeconds - 1);
-    setTrialRemainingSeconds(newRemaining);
-    if (newRemaining <= 0) {
-      setTrialCompleted(true);
+    setTrialRemainingSeconds((prev) => {
+      const newRemaining = Math.max(0, prev - 1);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, String(newRemaining));
+        if (newRemaining <= 0) {
+          localStorage.setItem(LOCAL_STORAGE_TRIAL_DONE, 'true');
+          setTrialCompleted(true);
+        }
+      } catch {}
+      return newRemaining;
+    });
+
+    if (user) {
+      user.trialSecondsUsed = Math.min(60, (user.trialSecondsUsed || 0) + 1);
+      if (user.trialSecondsUsed >= 60) {
+        user.trialCompleted = true;
+        setTrialCompleted(true);
+      }
+      try {
+        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(user));
+      } catch {}
     }
 
     if (phone) {
@@ -407,6 +489,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             setTrialRemainingSeconds(data.trialRemainingSeconds);
             setTrialCompleted(data.trialCompleted);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, String(data.trialRemainingSeconds));
+              if (data.trialCompleted) {
+                localStorage.setItem(LOCAL_STORAGE_TRIAL_DONE, 'true');
+              }
+            } catch {}
             if (user) {
               user.trialSecondsUsed = data.trialSecondsUsed;
               user.trialCompleted = data.trialCompleted;
@@ -417,13 +505,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } catch {
-        if (user) {
-          user.trialSecondsUsed = (user.trialSecondsUsed || 0) + 1;
-          if (user.trialSecondsUsed >= 60) {
-            user.trialCompleted = true;
-            setTrialCompleted(true);
-          }
-        }
+        // Fallback already saved locally
       }
     }
   };

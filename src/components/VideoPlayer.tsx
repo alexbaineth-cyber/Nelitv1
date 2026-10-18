@@ -7,8 +7,34 @@ import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.t
 import {
   Volume2, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
-  Lock, ArrowRight, Languages, Radio, X, Play
+  Lock, ArrowRight, Languages, Radio, X, Play,
+  Sliders, Check
 } from 'lucide-react';
+
+// Install shaka polyfill once at module initialization
+try {
+  shaka.polyfill.installAll();
+} catch {}
+
+function hexToBase64(hexString: string): string {
+  try {
+    const clean = hexString.replace(/[^0-9a-fA-F]/g, '');
+    let binary = '';
+    for (let i = 0; i < clean.length; i += 2) {
+      binary += String.fromCharCode(parseInt(clean.substr(i, 2), 16));
+    }
+    return btoa(binary);
+  } catch {
+    return '';
+  }
+}
+
+function hexToBase64Url(hexString: string): string {
+  const b64 = hexToBase64(hexString);
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export type QualityOption = 'auto' | '1080' | '720' | '480' | '360';
 
 interface VideoPlayerProps {
   channel: Channel;
@@ -50,6 +76,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [stallCount, setStallCount] = useState<number>(0);
   const [showControls, setShowControls] = useState<boolean>(true);
   const controlsTimeoutRef = useRef<any>(null);
+
+  // Quality & Internet Stability state
+  const [selectedQuality, setSelectedQuality] = useState<QualityOption>('auto');
+  const [currentResolution, setCurrentResolution] = useState<string>('Auto');
+  const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
 
   // Direct Pay popup state for mobile quick payment
   const [showDirectPayModal, setShowDirectPayModal] = useState<boolean>(false);
@@ -110,7 +141,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
-    if ((e.target as HTMLElement).closest('button, input, select, a')) {
+    if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
+      return;
+    }
+    if ((e.target as HTMLElement).closest('button, input, select, a, form')) {
       return;
     }
     if (showControls) {
@@ -133,16 +167,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     shaka.polyfill.installAll();
   }, []);
 
-  // Check trial expiration
+  // Check trial expiration & explicitly pause or destroy video source (audio stream)
+  // when subscription overlay is visible, preventing audio leaks
   useEffect(() => {
-    if (!hasActiveSubscription && trialCompleted) {
-      setIsPaywallTriggered(true);
-      if (videoRef.current) {
-        videoRef.current.pause();
-        setIsPlaying(false);
+    const isLocked = !hasActiveSubscription && trialCompleted;
+    setIsPaywallTriggered(isLocked);
+
+    if (isLocked) {
+      setIsPlaying(false);
+      setIsBuffering(false);
+
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.pause();
+          video.muted = true;
+          video.volume = 0;
+          video.removeAttribute('src');
+          video.load();
+        } catch (e) {
+          console.warn('Audio leak teardown note:', e);
+        }
       }
-    } else {
-      setIsPaywallTriggered(false);
+
+      if (shakaPlayerRef.current) {
+        try {
+          shakaPlayerRef.current.unload().catch(() => {});
+        } catch {}
+      }
+
+      if (hlsPlayerRef.current) {
+        try {
+          hlsPlayerRef.current.stopLoad();
+          hlsPlayerRef.current.detachMedia();
+        } catch {}
+      }
     }
   }, [hasActiveSubscription, trialCompleted]);
 
@@ -191,6 +250,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       await cleanup();
       if (!isMounted) return;
 
+      // Never initialize or load video/audio stream if subscription paywall is active
+      if (!hasActiveSubscription && trialCompleted) {
+        if (videoRef.current) {
+          try {
+            videoRef.current.pause();
+            videoRef.current.muted = true;
+            videoRef.current.volume = 0;
+            videoRef.current.removeAttribute('src');
+            videoRef.current.load();
+          } catch {}
+        }
+        setIsBuffering(false);
+        setIsPlaying(false);
+        return;
+      }
+
       const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
       let targetUrl = channel.streamUrl;
 
@@ -223,25 +298,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           await player.attach(video);
           shakaPlayerRef.current = player;
 
-          // Build exhaustive ClearKey map (includes both hyphenated and unhyphenated IDs)
-          const clearKeysConfig: Record<string, string> = {
+          // Build exhaustive ClearKey map (hex, dashes, base64, base64url)
+          const clearKeysConfig: Record<string, string> = {};
+          const rawKeyMap = {
             ...ALL_KNOWN_CLEAR_KEYS,
             ...(channel.clearKeys || {})
           };
-          for (const [k, v] of Object.entries(clearKeysConfig)) {
-            const clean = k.replace(/-/g, '').toLowerCase();
-            clearKeysConfig[clean] = v;
-            if (clean.length === 32) {
-              const formatted = `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20)}`;
-              clearKeysConfig[formatted] = v;
+
+          for (const [k, v] of Object.entries(rawKeyMap)) {
+            const cleanK = k.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+            const cleanV = v.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+
+            // 1. Hex unhyphenated
+            clearKeysConfig[cleanK] = cleanV;
+
+            // 2. Hex with UUID hyphens
+            if (cleanK.length === 32) {
+              const dashed = `${cleanK.slice(0, 8)}-${cleanK.slice(8, 12)}-${cleanK.slice(12, 16)}-${cleanK.slice(16, 20)}-${cleanK.slice(20)}`;
+              clearKeysConfig[dashed] = cleanV;
             }
+
+            // 3. Base64 & Base64url for browser CDM
+            const b64K = hexToBase64(cleanK);
+            const b64V = hexToBase64(cleanV);
+            const b64uK = hexToBase64Url(cleanK);
+            const b64uV = hexToBase64Url(cleanV);
+
+            if (b64K && b64V) clearKeysConfig[b64K] = b64V;
+            if (b64uK && b64uV) clearKeysConfig[b64uK] = b64uV;
           }
 
           player.configure({
             drm: {
               clearKeys: clearKeysConfig,
-              servers: {},
-              preferredKeySystems: ['org.w3.clearkey']
+              servers: {}
             },
             streaming: {
               bufferingGoal: 4,          // Fast initial load
@@ -264,9 +354,33 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             },
             abr: {
-              enabled: true,             // Auto quality adaptation based on user network
-              defaultBandwidthEstimate: 350000 // Start at fast low quality then scale up
+              enabled: selectedQuality === 'auto', // Automatic quality adaptation according to internet stability
+              defaultBandwidthEstimate: 1200000,
+              switchInterval: 3,                 // Smooth transitions based on network speed
+              bandwidthDowngradeTarget: 0.9,     // Quick downshift on slow network
+              bandwidthUpgradeTarget: 0.75       // Safe upshift when connection is stable
             }
+          });
+
+          // Track current active resolution when ABR changes
+          player.addEventListener('adaptation', () => {
+            try {
+              const tracks = player.getVariantTracks();
+              const active = tracks.find((t: any) => t.active);
+              if (active && active.height && isMounted) {
+                setCurrentResolution(`${active.height}p`);
+              }
+            } catch {}
+          });
+
+          player.addEventListener('variantchanged', () => {
+            try {
+              const tracks = player.getVariantTracks();
+              const active = tracks.find((t: any) => t.active);
+              if (active && active.height && isMounted) {
+                setCurrentResolution(`${active.height}p`);
+              }
+            } catch {}
           });
 
           // Track available audio languages
@@ -276,6 +390,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               const langs = Array.from(new Set(tracks.map((t: any) => t.language).filter(Boolean))) as string[];
               if (langs.length > 0 && isMounted) {
                 setAvailableLanguages(langs);
+              }
+              const active = tracks.find((t: any) => t.active);
+              if (active && active.height && isMounted) {
+                setCurrentResolution(`${active.height}p`);
               }
             } catch {}
           });
@@ -315,9 +433,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             if (!isMounted) return;
             clearTimeout(stallTimer);
 
-            // 1. Handle DRM error 4012 (Missing keys) - auto heal
-            if (err.code === 4012) {
-              const missingKeys = err?.data?.[0]?.missingKeys as string[] | undefined;
+            // 1. Handle DRM errors (Missing keys, 4012 in v4 or 6007/6008/6012 in v5) - auto heal
+            if (err.code === 4012 || err.code === 6007 || err.code === 6008 || err.code === 6012) {
+              const missingKeys = (Array.isArray(err?.data) ? err.data[0] : err?.data?.[0]?.missingKeys) as string[] | string | undefined;
               if (missingKeys && missingKeys.length > 0 && channel.clearKeys) {
                 const secretKey = Object.values(channel.clearKeys)[0];
                 if (secretKey) {
@@ -494,14 +612,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isMounted = false;
       cleanup();
     };
-  }, [channel.id, retryCount]);
+  }, [channel.id, retryCount, hasActiveSubscription, trialCompleted]);
 
   // Video listeners
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const handlePlay = () => setIsPlaying(true);
+    const handlePlay = () => {
+      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
+        if (videoRef.current) {
+          try {
+            videoRef.current.pause();
+            videoRef.current.muted = true;
+            videoRef.current.volume = 0;
+          } catch {}
+        }
+        setIsPlaying(false);
+        return;
+      }
+      setIsPlaying(true);
+    };
+
     const handlePause = () => {
       // If it paused due to buffer stall, try auto resuming to live edge
       if (!isPaywallTriggered) {
@@ -523,6 +655,69 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.removeEventListener('playing', handlePlaying);
     };
   }, [isPaywallTriggered]);
+
+  // Quality Switcher with Automatic Internet Adaptation
+  const handleSelectQuality = (q: QualityOption) => {
+    setSelectedQuality(q);
+    setShowQualityMenu(false);
+
+    if (shakaPlayerRef.current) {
+      const player = shakaPlayerRef.current;
+      if (q === 'auto') {
+        player.configure({
+          abr: {
+            enabled: true,
+            defaultBandwidthEstimate: 1200000,
+            switchInterval: 3,
+            bandwidthDowngradeTarget: 0.9,
+            bandwidthUpgradeTarget: 0.75
+          }
+        });
+        setCurrentResolution('Auto');
+      } else {
+        // Disable ABR and select specific variant track
+        player.configure({ abr: { enabled: false } });
+        const targetHeight = parseInt(q, 10);
+        try {
+          const tracks = player.getVariantTracks();
+          let bestTrack = tracks.find((t: any) => t.height === targetHeight);
+          if (!bestTrack) {
+            bestTrack = tracks.reduce((prev: any, curr: any) => {
+              return Math.abs((curr.height || 0) - targetHeight) < Math.abs((prev.height || 0) - targetHeight) ? curr : prev;
+            }, tracks[0]);
+          }
+          if (bestTrack) {
+            player.selectVariantTrack(bestTrack, /* clearBuffer */ false);
+            setCurrentResolution(`${bestTrack.height || targetHeight}p`);
+          }
+        } catch (err) {
+          console.warn('Track selection note:', err);
+        }
+      }
+    } else if (hlsPlayerRef.current) {
+      const hls = hlsPlayerRef.current;
+      if (q === 'auto') {
+        hls.currentLevel = -1; // Auto ABR in HLS.js
+        setCurrentResolution('Auto');
+      } else {
+        const targetHeight = parseInt(q, 10);
+        const levels = hls.levels || [];
+        let bestIdx = -1;
+        let minDiff = 99999;
+        levels.forEach((lvl: any, idx: number) => {
+          const diff = Math.abs((lvl.height || 0) - targetHeight);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestIdx = idx;
+          }
+        });
+        if (bestIdx >= 0) {
+          hls.currentLevel = bestIdx;
+          setCurrentResolution(`${levels[bestIdx].height || targetHeight}p`);
+        }
+      }
+    }
+  };
 
   // Language Track Switcher
   const toggleLanguage = () => {
@@ -562,8 +757,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // YouTube-style keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
+      // Don't trigger if user is typing in an input or if subscription paywall is active
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+        return;
+      }
+      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
         return;
       }
 
@@ -608,7 +806,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isPaywallTriggered, hasActiveSubscription, trialCompleted]);
 
   const formatSeconds = (sec: number) => {
     const s = Math.max(0, sec);
@@ -913,8 +1111,74 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </span>
           </div>
 
-          {/* Right: Audio Language Switcher & Fullscreen */}
+          {/* Right: Quality Switcher, Audio Language Switcher & Fullscreen */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quality Selector with Automatic Internet Stability Adjustment */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowQualityMenu(prev => !prev);
+                  resetControlsTimeout();
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                title="Badili Ubora wa Video (Quality / Mtandao)"
+              >
+                <Sliders className="w-3.5 h-3.5 text-red-500" />
+                <span className="hidden xs:inline sm:inline">
+                  {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
+                </span>
+                <span className="xs:hidden sm:hidden">
+                  {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
+                </span>
+              </button>
+
+              {/* Floating Quality Menu */}
+              {showQualityMenu && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-neutral-900 border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
+                >
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                    <span>Ubora wa Video</span>
+                    <span className="text-amber-400 text-[9px] font-normal">Kulingana na mtandao</span>
+                  </div>
+
+                  <button
+                    onClick={() => handleSelectQuality('auto')}
+                    className="w-full px-3 py-2 text-left hover:bg-neutral-800 flex items-center justify-between transition"
+                  >
+                    <div>
+                      <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
+                      <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
+                    </div>
+                    {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-red-500" />}
+                  </button>
+
+                  <div className="my-1 border-t border-neutral-800" />
+
+                  {[
+                    { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
+                    { id: '720', label: '720p HD', desc: 'Imependekezwa' },
+                    { id: '480', label: '480p SD', desc: 'Kawaida' },
+                    { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectQuality(item.id as QualityOption)}
+                      className="w-full px-3 py-1.5 text-left hover:bg-neutral-800 flex items-center justify-between transition"
+                    >
+                      <div>
+                        <div className="text-white font-medium">{item.label}</div>
+                        <div className="text-[10px] text-neutral-500">{item.desc}</div>
+                      </div>
+                      {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-red-500" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Audio Language Switcher */}
             <button
               onClick={(e) => {
