@@ -8,7 +8,7 @@ export interface CdnTokenData {
   fetchedAt?: number;
 }
 
-const FALLBACK_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyMzQ5OTAzIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYjA1ZGQxNjY1NWVlMDE2YSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.x54TtA7qL3fXQ81oZ4V57xLVROztNUdkbPg39O7F5mzTur3bniWhL2hfQ68rsfz-8PZjrmDQOptCG8dneFjjhQ==";
+const FALLBACK_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNDU2MTk0Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNTcwMjFlNjI2ODE1YTFhMSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.yNpHsgNvpmY6nozvFdTLwiYdHKml1ohSqwAi345Vn9Pm3wDurPKvdTSCH2G9miNA6GJwtWGw_0N5L1czNgHvnQ==";
 
 let inMemoryToken: CdnTokenData | null = null;
 let lastFetchTime = 0;
@@ -90,7 +90,7 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
   inMemoryToken = {
     token: FALLBACK_TOKEN,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
-    exp: 1792349903,
+    exp: 1792456194,
     source: "static_active",
     fetchedAt: nowMs
   };

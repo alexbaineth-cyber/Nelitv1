@@ -298,7 +298,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           await player.attach(video);
           shakaPlayerRef.current = player;
 
-          // Build exhaustive ClearKey map (hex, dashes, base64, base64url)
+          // Build clean ClearKey map (exact 32-character lowercase hex keys)
           const clearKeysConfig: Record<string, string> = {};
           const rawKeyMap = {
             ...ALL_KNOWN_CLEAR_KEYS,
@@ -309,23 +309,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const cleanK = k.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
             const cleanV = v.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
 
-            // 1. Hex unhyphenated
-            clearKeysConfig[cleanK] = cleanV;
-
-            // 2. Hex with UUID hyphens
-            if (cleanK.length === 32) {
-              const dashed = `${cleanK.slice(0, 8)}-${cleanK.slice(8, 12)}-${cleanK.slice(12, 16)}-${cleanK.slice(16, 20)}-${cleanK.slice(20)}`;
-              clearKeysConfig[dashed] = cleanV;
+            // Only exact 32-character hex pairs are valid for W3C ClearKey EME
+            if (cleanK.length === 32 && cleanV.length === 32) {
+              clearKeysConfig[cleanK] = cleanV;
             }
-
-            // 3. Base64 & Base64url for browser CDM
-            const b64K = hexToBase64(cleanK);
-            const b64V = hexToBase64(cleanV);
-            const b64uK = hexToBase64Url(cleanK);
-            const b64uV = hexToBase64Url(cleanV);
-
-            if (b64K && b64V) clearKeysConfig[b64K] = b64V;
-            if (b64uK && b64uV) clearKeysConfig[b64uK] = b64uV;
           }
 
           player.configure({
@@ -439,14 +426,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               if (missingKeys && missingKeys.length > 0 && channel.clearKeys) {
                 const secretKey = Object.values(channel.clearKeys)[0];
                 if (secretKey) {
+                  const cleanSecret = secretKey.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
                   const updatedKeys: Record<string, string> = { ...clearKeysConfig };
-                  for (const mk of missingKeys) {
-                    const clean = mk.replace(/-/g, '').toLowerCase();
-                    updatedKeys[mk] = secretKey;
-                    updatedKeys[clean] = secretKey;
-                    if (clean.length === 32) {
-                      const fmt = `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20)}`;
-                      updatedKeys[fmt] = secretKey;
+                  const keyArr = Array.isArray(missingKeys) ? missingKeys : [missingKeys];
+                  for (const mk of keyArr) {
+                    const clean = mk.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+                    if (clean.length === 32 && cleanSecret.length === 32) {
+                      updatedKeys[clean] = cleanSecret;
                     }
                   }
                   try {
@@ -477,7 +463,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 setIsPlaying(true);
                 return;
               } catch (reloadErr) {
-                console.warn('Token auto-reload retry:', reloadErr);
+                console.warn('Token auto-reload retry note:', reloadErr);
+                // Proxy fallback attempt
+                try {
+                  const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
+                  await player.load(proxyUrl);
+                  setIsBuffering(false);
+                  await video.play();
+                  setIsPlaying(true);
+                  return;
+                } catch {}
               }
             }
 
@@ -538,6 +533,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               return;
             } catch (retryErr) {
               console.warn('Retry with fresh token note:', retryErr);
+              // Proxy fallback attempt
+              try {
+                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
+                await shakaPlayerRef.current.load(proxyUrl);
+                clearTimeout(stallTimer);
+                if (isMounted) {
+                  setIsBuffering(false);
+                  video.muted = true;
+                  setIsMuted(true);
+                  await video.play();
+                  setIsPlaying(true);
+                  return;
+                }
+              } catch (proxyErr) {
+                console.warn('Proxy fallback note:', proxyErr);
+              }
             }
           }
           clearTimeout(stallTimer);
@@ -748,9 +759,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  const handleRetry = () => {
+  const handleRetry = async () => {
     setErrorMessage(null);
     setIsBuffering(true);
+    try {
+      await getLiveCdnToken(true);
+    } catch {}
     setRetryCount(prev => prev + 1);
   };
 

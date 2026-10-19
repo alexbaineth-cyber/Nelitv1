@@ -464,8 +464,8 @@ async function getOrFetchCdnToken(force = false) {
   }
 
   cachedCdnToken = {
-    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyMzQ5OTAzIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYjA1ZGQxNjY1NWVlMDE2YSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.x54TtA7qL3fXQ81oZ4V57xLVROztNUdkbPg39O7F5mzTur3bniWhL2hfQ68rsfz-8PZjrmDQOptCG8dneFjjhQ==",
-    exp: 1792349903,
+    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNDU2MTk0Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNTcwMjFlNjI2ODE1YTFhMSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.yNpHsgNvpmY6nozvFdTLwiYdHKml1ohSqwAi345Vn9Pm3wDurPKvdTSCH2G9miNA6GJwtWGw_0N5L1czNgHvnQ==",
+    exp: 1792456194,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
     source: "static_active"
   };
@@ -667,6 +667,45 @@ app.get('/api/cdn-token', async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   res.json(tokenData);
+});
+
+// 5.5 Stream Proxy Fallback (Bypasses any ISP / client blocking or CORS restrictions)
+app.get('/api/proxy-stream', async (req: Request, res: Response) => {
+  const targetUrl = req.query.url as string;
+  if (!targetUrl || !targetUrl.startsWith('http')) {
+    return res.status(400).send('Invalid url parameter');
+  }
+
+  try {
+    const upstreamRes = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        ...(req.headers.range ? { Range: req.headers.range as string } : {})
+      }
+    });
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Date');
+    const contentType = upstreamRes.headers.get('content-type') || 'application/dash+xml';
+    res.setHeader('Content-Type', contentType);
+    if (upstreamRes.headers.get('content-length')) {
+      res.setHeader('Content-Length', upstreamRes.headers.get('content-length')!);
+    }
+    if (upstreamRes.headers.get('accept-ranges')) {
+      res.setHeader('Accept-Ranges', upstreamRes.headers.get('accept-ranges')!);
+    }
+    if (upstreamRes.headers.get('content-range')) {
+      res.setHeader('Content-Range', upstreamRes.headers.get('content-range')!);
+    }
+
+    res.status(upstreamRes.status);
+    const arrayBuffer = await upstreamRes.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    res.status(502).send('Proxy error: ' + err.message);
+  }
 });
 
 // 6. HarakaPay Collect Payment (USSD Push)
