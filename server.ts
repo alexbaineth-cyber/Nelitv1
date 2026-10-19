@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { Readable } from 'stream';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -511,6 +512,75 @@ app.get('/api/channels', async (_req: Request, res: Response) => {
       source: tokenData.source
     }
   });
+});
+
+// 1.5 Low-Latency Streaming Proxy for DRM DASH/HLS segments and manifests
+app.all('/api/proxy-stream', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  const targetUrl = req.query.url as string;
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing target url parameter' });
+  }
+
+  try {
+    const parsed = new URL(targetUrl);
+    const allowed = ['azamtvltd.co.tz', 'streamzone.fun', 'zapitv.com', 'skygo.mn', 'cloudfront.net', 'akamaized.net', 'warnermediacdn.com'];
+    if (!allowed.some(domain => parsed.hostname.includes(domain))) {
+      return res.status(403).json({ error: 'Host not allowed' });
+    }
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range as string;
+    }
+
+    const response = await fetch(targetUrl, {
+      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+      headers
+    });
+
+    res.status(response.status);
+
+    const contentType = response.headers.get('content-type');
+    if (contentType) res.setHeader('Content-Type', contentType);
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    const acceptRanges = response.headers.get('accept-ranges');
+    if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+
+    if (req.method === 'HEAD') {
+      return res.end();
+    }
+
+    if (contentType && (contentType.includes('dash+xml') || targetUrl.includes('.mpd'))) {
+      const text = await response.text();
+      return res.send(text);
+    }
+
+    if (response.body) {
+      // @ts-ignore
+      Readable.fromWeb(response.body).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    console.warn('[Proxy stream error]:', err.message);
+    res.status(502).json({ error: 'Proxy failed: ' + err.message });
+  }
 });
 
 // 2. Pricing Plans (Vifurushi)

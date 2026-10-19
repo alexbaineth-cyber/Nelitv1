@@ -47,32 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
           )}
         </div>
 
-        {/* 2. NAVIGATION LINKS FOR TV & PC */}
-        <nav className="hidden md:flex items-center gap-1 text-xs font-semibold">
-          <button
-            onClick={() => setActiveTab('home')}
-            className={`px-3 py-1.5 rounded-lg transition ${
-              activeTab === 'home'
-                ? 'bg-neutral-800 text-white font-bold'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-            }`}
-          >
-            Mwanzo
-          </button>
-
-          <button
-            onClick={() => setActiveTab('watch')}
-            className={`px-3 py-1.5 rounded-lg transition ${
-              activeTab === 'watch'
-                ? 'bg-neutral-800 text-white font-bold'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-            }`}
-          >
-            Live TV
-          </button>
-        </nav>
-
-        {/* 3. RIGHT ACTIONS: DOWNLOAD APP, SEARCH, VIFURUSHI, ACCOUNT */}
+        {/* 2. RIGHT ACTIONS: DOWNLOAD APP, SEARCH, VIFURUSHI, ACCOUNT */}
         <div className="flex items-center gap-2 sm:gap-2.5">
           {/* DOWNLOAD APP BUTTON */}
           {onOpenDownloadModal && (

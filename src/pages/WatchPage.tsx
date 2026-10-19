@@ -9,6 +9,7 @@ import {
 interface WatchPageProps {
   currentChannel: Channel;
   channels?: Channel[];
+  onBack?: () => void;
   onSelectChannel: (channel: Channel) => void;
   onNavigateToPremium: (planId?: string) => void;
   onOpenLoginModal: () => void;
@@ -18,6 +19,7 @@ interface WatchPageProps {
 export const WatchPage: React.FC<WatchPageProps> = ({
   currentChannel,
   channels = CHANNELS_DATA,
+  onBack,
   onSelectChannel,
   onNavigateToPremium,
   onOpenLoginModal,
@@ -94,6 +96,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             <VideoPlayer
               key={currentChannel.id}
               channel={currentChannel}
+              onBack={onBack}
               onSelectPlanClick={onNavigateToPremium}
               onOpenLoginModal={onOpenLoginModal}
               onPaymentInitiated={onPaymentInitiated}

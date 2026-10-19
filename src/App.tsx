@@ -167,6 +167,10 @@ function MainApp() {
           <WatchPage
             currentChannel={selectedChannel}
             channels={channels}
+            onBack={() => {
+              setActiveTab('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             onSelectChannel={handleSelectChannel}
             onNavigateToPremium={handleNavigateToPremiumWithPlan}
             onOpenLoginModal={() => setLoginModalOpen(true)}

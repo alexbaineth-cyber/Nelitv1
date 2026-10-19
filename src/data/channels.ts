@@ -82,7 +82,8 @@ export function updateGlobalAzamToken(newToken: string) {
 }
 
 export const makeAzamUrl = (slug: string) =>
-  `https://cdnedgch2.azamtvltd.co.tz/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd`;
+  `https://cdnedgch2.azamtvltd.co.tz/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd?cdntoken=${encodeURIComponent(ACTIVE_AZAM_TOKEN)}`;
+
 
 export const CHANNELS_DATA: Channel[] = [
   {

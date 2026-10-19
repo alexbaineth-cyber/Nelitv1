@@ -122,6 +122,7 @@ export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData
   const cleanHost = host.replace(/\/+$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Preferred Azam path-tokenized URL: https://cdnedgch2.azamtvltd.co.tz/tok_<token>/live/eds/...
-  return `${cleanHost}/tok_${tokenData.token}${cleanPath}`;
+  // Preferred Azam path-tokenized URL with dual auth (path token + cdntoken param for edge nodes)
+  return `${cleanHost}/tok_${tokenData.token}${cleanPath}?cdntoken=${encodeURIComponent(tokenData.token)}`;
 }
+

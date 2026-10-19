@@ -7,7 +7,7 @@ import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.t
 import {
   Volume2, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
-  Lock, ArrowRight, Languages, Radio, X, Play,
+  Lock, ArrowRight, ArrowLeft, Languages, Radio, X, Play,
   Sliders, Check
 } from 'lucide-react';
 
@@ -38,6 +38,7 @@ export type QualityOption = 'auto' | '1080' | '720' | '480' | '360';
 
 interface VideoPlayerProps {
   channel: Channel;
+  onBack?: () => void;
   onSelectPlanClick?: (planId?: string) => void;
   onOpenLoginModal?: () => void;
   onPaymentInitiated?: (orderId: string, amount: number, phone: string, planName: string) => void;
@@ -45,6 +46,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   channel,
+  onBack,
   onSelectPlanClick,
   onOpenLoginModal,
   onPaymentInitiated
@@ -62,6 +64,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
+  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNDU2MTk0Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNTcwMjFlNjI2ODE1YTFhMSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.yNpHsgNvpmY6nozvFdTLwiYdHKml1ohSqwAi345Vn9Pm3wDurPKvdTSCH2G9miNA6GJwtWGw_0N5L1czNgHvnQ==');
+  const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
@@ -273,6 +277,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (isAzam) {
         try {
           const tokenData = await getLiveCdnToken(retryCount > 0);
+          activeTokenRef.current = tokenData.token;
+          activeCdnHostRef.current = tokenData.cdnHost;
           targetUrl = buildPlayableStreamUrl(channel, tokenData);
         } catch (e) {
           console.warn('Token resolution fallback:', e);
@@ -321,32 +327,82 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 4,          // Fast initial load
-              rebufferingGoal: 2,        // Quick recovery from lag
-              bufferBehind: 8,
+              bufferingGoal: 10,           // Keeps ~2.5 segments ahead so network fluctuations never interrupt playback
+              rebufferingGoal: 2,         // Resumes in 2s as soon as 1 packet is ready
+              bufferBehind: 15,           // Keeps 15s behind in memory for stability
+              safeSeekOffset: 5,          // 5s back from encoder cutting edge to avoid starvation
+              smallGapLimit: 0.8,         // Silently skips timestamp micro-gaps
+              jumpLargeGaps: true,        // Automatically leaps over broadcaster timeline drops
+              stallEnabled: true,         // Detects browser decoder stalls
+              stallThreshold: 1.5,
+              stallSkip: 0.5,
+              segmentPrefetchLimit: 2,    // Pre-fetches next segment ahead of time for zero gap
+              alwaysStreamText: false,
+              ignoreTextStreamFailures: true,
               retryParameters: {
-                maxAttempts: 4,
-                baseDelay: 500,
-                backoffFactor: 1.5
+                maxAttempts: 5,
+                baseDelay: 300,
+                backoffFactor: 1.3
               }
             },
             manifest: {
               dash: {
-                autoCorrectDrift: true
+                autoCorrectDrift: true,
+                ignoreMinBufferTime: true
               },
               retryParameters: {
-                maxAttempts: 4,
-                baseDelay: 500,
-                backoffFactor: 1.5
+                maxAttempts: 5,
+                baseDelay: 300,
+                backoffFactor: 1.3
               }
             },
             abr: {
-              enabled: selectedQuality === 'auto', // Automatic quality adaptation according to internet stability
-              defaultBandwidthEstimate: 1200000,
-              switchInterval: 3,                 // Smooth transitions based on network speed
-              bandwidthDowngradeTarget: 0.9,     // Quick downshift on slow network
-              bandwidthUpgradeTarget: 0.75       // Safe upshift when connection is stable
+              enabled: selectedQuality === 'auto',
+              defaultBandwidthEstimate: 850000,   // Start on lightweight 480p/360p for near-instant 1-second startup
+              switchInterval: 4,                  // Smooth transitions without thrashing
+              bandwidthDowngradeTarget: 0.95,     // Instant downshift on network dip before it buffers
+              bandwidthUpgradeTarget: 0.70        // Conservative upshift so user only climbs to 720p/1080p when buffer is solid
             }
+          });
+
+          // Register Shaka Request Filter for Azam TV:
+          // Injects active CDN host and active token on ALL MPD manifest & media segment chunks
+          player.getNetworkingEngine().clearAllRequestFilters();
+          player.getNetworkingEngine().registerRequestFilter((_type: any, request: any) => {
+            const currentToken = activeTokenRef.current;
+            const currentHost = activeCdnHostRef.current;
+
+            if (!request.uris || request.uris.length === 0) return;
+
+            request.uris = request.uris.map((uri: string) => {
+              let updatedUri = uri;
+              if (updatedUri.includes('azamtvltd') || updatedUri.includes('azam')) {
+                // 1. Force hostname to active CDN host
+                try {
+                  const targetHostUrl = new URL(currentHost);
+                  const reqUrl = new URL(updatedUri);
+                  reqUrl.hostname = targetHostUrl.hostname;
+                  reqUrl.protocol = targetHostUrl.protocol;
+                  if (targetHostUrl.port) reqUrl.port = targetHostUrl.port;
+                  updatedUri = reqUrl.toString();
+                } catch {}
+
+                // 2. Inject token in path: replace /tok_.../ or insert before /live/eds/
+                if (/\/tok_[^/]+\//.test(updatedUri)) {
+                  updatedUri = updatedUri.replace(/\/tok_[^/]+\//, `/tok_${currentToken}/`);
+                } else if (updatedUri.includes('/live/eds/')) {
+                  updatedUri = updatedUri.replace('/live/eds/', `/tok_${currentToken}/live/eds/`);
+                }
+
+                // 3. Guarantee ?cdntoken= query param is set
+                try {
+                  const u = new URL(updatedUri);
+                  u.searchParams.set('cdntoken', currentToken);
+                  updatedUri = u.toString();
+                } catch {}
+              }
+              return updatedUri;
+            });
           });
 
           // Track current active resolution when ABR changes
@@ -385,12 +441,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Auto-recovery when stalled or buffering
+          // Smooth buffering handling: do not discard downloaded buffer prematurely
           player.addEventListener('buffering', (event: any) => {
             if (!isMounted) return;
             setIsBuffering(event.buffering);
 
-            // Auto-heal: if buffering in live stream, jump to live edge
+            // Only if deeply stalled for more than 8 seconds, gently sync to live edge
             if (event.buffering) {
               const timer = setTimeout(() => {
                 if (videoRef.current && isMounted && !videoRef.current.paused) {
@@ -398,7 +454,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     player.goToLive();
                   } catch {}
                 }
-              }, 2500);
+              }, 8000);
               return () => clearTimeout(timer);
             }
           });
@@ -453,9 +509,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             // 2. Handle CDN Token expiration / Network 1003 / 1001 / 1002 / 403 / 401
             const httpCode = err?.data?.[1];
-            if (isAzam || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003) {
+            if (isAzam || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
               try {
                 const freshToken = await getLiveCdnToken(true);
+                activeTokenRef.current = freshToken.token;
+                activeCdnHostRef.current = freshToken.cdnHost;
                 const freshUrl = buildPlayableStreamUrl(channel, freshToken);
                 await player.load(freshUrl);
                 setIsBuffering(false);
@@ -511,6 +569,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             autoTokenRetried = true;
             try {
               const freshToken = await getLiveCdnToken(true);
+              activeTokenRef.current = freshToken.token;
+              activeCdnHostRef.current = freshToken.cdnHost;
               const freshUrl = buildPlayableStreamUrl(channel, freshToken);
               await shakaPlayerRef.current.load(freshUrl);
               clearTimeout(stallTimer);
@@ -562,11 +622,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
-            maxBufferLength: 6,
-            maxMaxBufferLength: 12,
-            lowLatencyMode: true,
-            backBufferLength: 4,
-            liveSyncDurationCount: 2
+            maxBufferLength: 12,
+            maxMaxBufferLength: 24,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 6,
+            lowLatencyMode: false,
+            backBufferLength: 15,
+            startLevel: -1,
+            autoStartLoad: true,
+            capLevelToPlayerSize: true,
           });
           hlsPlayerRef.current = hls;
 
@@ -678,10 +742,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         player.configure({
           abr: {
             enabled: true,
-            defaultBandwidthEstimate: 1200000,
-            switchInterval: 3,
-            bandwidthDowngradeTarget: 0.9,
-            bandwidthUpgradeTarget: 0.75
+            defaultBandwidthEstimate: 850000,
+            switchInterval: 4,
+            bandwidthDowngradeTarget: 0.95,
+            bandwidthUpgradeTarget: 0.70
           }
         });
         setCurrentResolution('Auto');
@@ -869,29 +933,53 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Unmute prompt banner if playing muted */}
-      {isMuted && isPlaying && !isPaywallTriggered && (
-        <div className="absolute top-3 right-3 z-20">
+      {/* Top Bar inside Player: Back Button, Channel Name & Trial Countdown */}
+      {!isPaywallTriggered && (
+        <div
+          className={`absolute inset-x-0 top-0 z-30 p-3 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent transition-all duration-300 ${
+            showControls ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none -translate-y-2'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Back Button inside player */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              toggleMute();
+              if (onBack) {
+                onBack();
+              } else if (window.history.length > 1) {
+                window.history.back();
+              }
             }}
-            className="px-2.5 py-1 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg transition active:scale-95"
+            className="py-1.5 px-3 rounded-xl bg-black/60 hover:bg-red-600 backdrop-blur-md border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-lg group cursor-pointer"
+            title="Rudi kwenye chaneli zote"
           >
-            <VolumeX className="w-3.5 h-3.5 text-red-500" />
-            <span>Washa Sauti</span>
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition" />
+            <span>Rudi</span>
           </button>
-        </div>
-      )}
 
-      {/* Top Left: Transparent subtle 1-Minute Trial Countdown (NO obstructive LIVE button) */}
-      {!hasActiveSubscription && !isPaywallTriggered && (
-        <div className="absolute top-3 left-3 z-20 pointer-events-none">
-          <div className="px-2.5 py-1 rounded-full bg-black/45 backdrop-blur-md border border-white/10 text-[11px] font-medium text-neutral-200 flex items-center gap-1.5 shadow-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="text-neutral-400">Majaribio:</span>
-            <span className="font-mono font-bold text-amber-300">{formatSeconds(trialRemainingSeconds)}</span>
+          {/* Right items: Unmute & Trial counter */}
+          <div className="flex items-center gap-2">
+            {!hasActiveSubscription && (
+              <div className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-medium text-neutral-200 flex items-center gap-1.5 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-neutral-400 hidden xs:inline">Majaribio:</span>
+                <span className="font-mono font-bold text-amber-300">{formatSeconds(trialRemainingSeconds)}</span>
+              </div>
+            )}
+
+            {isMuted && isPlaying && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMute();
+                }}
+                className="px-2.5 py-1 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer"
+              >
+                <VolumeX className="w-3.5 h-3.5 text-red-500" />
+                <span>Washa Sauti</span>
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Play, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { MobileAppDownloadHero } from '../components/MobileAppDownloadHero.tsx';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -61,6 +62,9 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   return (
     <div className="min-h-screen pb-20 bg-[#080808] text-neutral-100 select-none">
+      {/* 0. DEDICATED MOBILE APP DOWNLOAD HERO (Mobile Only: Logo juu, Jina chini, Verified tick, Download button) */}
+      <MobileAppDownloadHero />
+
       {/* 1. CATEGORY SELECTOR TABS */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2">
