@@ -1,7 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
-import { Play, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
-import { MobileAppDownloadHero } from '../components/MobileAppDownloadHero.tsx';
+import { Play, Eye, Sparkles, Tv, Flame } from 'lucide-react';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -41,7 +40,6 @@ export const HomePage: React.FC<HomePageProps> = ({
   // Smart TV Remote & Keyboard D-pad navigation listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Avoid hijacking input fields
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
 
       if (e.key === 'ArrowRight') {
@@ -61,21 +59,18 @@ export const HomePage: React.FC<HomePageProps> = ({
   }, [focusedChannelIndex, filteredChannels, onSelectChannel]);
 
   return (
-    <div className="min-h-screen pb-20 bg-[#080808] text-neutral-100 select-none">
-      {/* 0. DEDICATED MOBILE APP DOWNLOAD HERO (Mobile Only: Logo juu, Jina chini, Verified tick, Download button) */}
-      <MobileAppDownloadHero />
-
-      {/* 1. CATEGORY SELECTOR TABS */}
+    <div className="min-h-screen pb-24 bg-[#070A0F] text-neutral-100 select-none">
+      {/* 1. CATEGORY SELECTOR TABS WITH NEON GRADIENT ACCENT */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2">
           {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
                 selectedCategory === cat.id
-                  ? 'bg-white text-black shadow-lg scale-105'
-                  : 'bg-neutral-900 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800'
+                  ? 'bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-400 text-black font-black shadow-lg shadow-pink-500/25 scale-105'
+                  : 'bg-neutral-900/90 text-neutral-300 hover:text-white hover:bg-neutral-800 border border-neutral-800'
               }`}
             >
               {cat.label}
@@ -84,52 +79,52 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 4. MAIN CHANNELS CONTENT */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6 space-y-10">
+      {/* 2. MAIN CHANNELS CONTENT ORGANIZED IN VERTICAL RESPONSIVE GRIDS */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6 space-y-12">
         {selectedCategory === 'all' ? (
           <>
-            {/* Row 1: Live Sports & Azam Sports */}
-            <ChannelRow
+            {/* Section 1: Live Sports & Azam Sports (Vertical Grid) */}
+            <ChannelGridSection
               title="⚽ Mechi za Moja kwa Moja & Ligi Kuu"
               subtitle="Azam Sports HD, NBC Premier League, na Ligi za Kimataifa"
               channels={sportsChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Row 2: Movies & Sinema Zetu */}
-            <ChannelRow
+            {/* Section 2: Movies & Sinema Zetu (Vertical Grid) */}
+            <ChannelGridSection
               title="🎬 Sinema Zetu & Filamu Kali"
               subtitle="Filamu za Kibongo, tamthilia pendwa na action movies masaa 24"
               channels={moviesChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Row 3: Entertainment & Tanzania Local */}
-            <ChannelRow
+            {/* Section 3: Entertainment & Tanzania Local (Vertical Grid) */}
+            <ChannelGridSection
               title="📺 Burudani za Kitanzania & Tamthilia"
               subtitle="Vipindi maarufu vya familia, muziki wa Bongo Flava na utamaduni"
               channels={entertainmentChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Row 4: News & Information */}
-            <ChannelRow
+            {/* Section 4: News & Information (Vertical Grid) */}
+            <ChannelGridSection
               title="📰 Habari & Taarifa za Uhakika"
               subtitle="Matukio ya papo hapo Tanzania na ulimwenguni kote"
               channels={newsChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Row 5: Kids & Cartoons */}
-            <ChannelRow
+            {/* Section 5: Kids & Cartoons (Vertical Grid) */}
+            <ChannelGridSection
               title="🧸 Watoto & Katuni za Familia"
               subtitle="Elimu, burudani na vicheko kwa ajili ya watoto nyumbani"
               channels={kidsChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Row 6: Africa Channels */}
-            <ChannelRow
+            {/* Section 6: Africa Channels (Vertical Grid) */}
+            <ChannelGridSection
               title="🌍 Chaneli za Afrika Mashariki na Kusini"
               subtitle="Matangazo mbalimbali kutoka pande zote za bara la Afrika"
               channels={africaChannels}
@@ -138,47 +133,26 @@ export const HomePage: React.FC<HomePageProps> = ({
           </>
         ) : (
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4">
-              Chaneli Zinazopatikana ({filteredChannels.length})
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            <div className="flex items-baseline justify-between mb-5">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-pink-500" />
+                  <span>Chaneli Zilizochaguliwa ({filteredChannels.length})</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Chagua kituo unachotaka kuanza kutazama sasa
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-5">
               {filteredChannels.map((channel, idx) => (
-                <div
+                <ChannelCard
                   key={channel.id}
-                  onClick={() => onSelectChannel(channel)}
-                  className={`group relative rounded-2xl bg-neutral-900 border overflow-hidden cursor-pointer transition-all transform hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-red-950/40 ${
-                    focusedChannelIndex === idx
-                      ? 'ring-4 ring-red-500 scale-105 border-transparent'
-                      : 'border-neutral-800 hover:border-neutral-700'
-                  }`}
-                >
-                  <div className="aspect-video w-full bg-neutral-950 relative overflow-hidden">
-                    <img
-                      src={channel.thumbnailUrl}
-                      alt={channel.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-600 text-white">
-                        LIVE
-                      </span>
-                      <div className="flex items-center gap-1 text-[10px] text-neutral-300 bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                        <Eye className="w-3 h-3 text-red-500" />
-                        <span>{channel.viewerCount || 500}+</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    <h3 className="font-bold text-xs sm:text-sm text-white line-clamp-1 group-hover:text-red-400 transition">
-                      {channel.name}
-                    </h3>
-                    <p className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
-                      {channel.currentProgram || channel.description}
-                    </p>
-                  </div>
-                </div>
+                  channel={channel}
+                  isFocused={focusedChannelIndex === idx}
+                  onSelectChannel={onSelectChannel}
+                />
               ))}
             </div>
           </div>
@@ -188,130 +162,120 @@ export const HomePage: React.FC<HomePageProps> = ({
   );
 };
 
-interface ChannelRowProps {
+interface ChannelGridSectionProps {
   title: string;
   subtitle?: string;
   channels: Channel[];
   onSelectChannel: (channel: Channel) => void;
 }
 
-const ChannelRow: React.FC<ChannelRowProps> = ({
+const ChannelGridSection: React.FC<ChannelGridSectionProps> = ({
   title,
   subtitle,
   channels,
   onSelectChannel
 }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const { scrollLeft, clientWidth } = scrollRef.current;
-      const scrollAmount = clientWidth * 0.75;
-      scrollRef.current.scrollTo({
-        left: direction === 'left' ? scrollLeft - scrollAmount : scrollLeft + scrollAmount,
-        behavior: 'smooth'
-      });
-    }
-  };
-
   if (channels.length === 0) return null;
 
   return (
-    <div className="space-y-3 group/row relative">
-      {/* Row Header */}
-      <div className="flex items-baseline justify-between px-1">
+    <section className="space-y-4">
+      {/* Section Header */}
+      <div className="flex items-baseline justify-between border-b border-neutral-900 pb-2.5">
         <div>
-          <h2 className="text-base sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          <h2 className="text-base sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
             <span>{title}</span>
           </h2>
           {subtitle && (
             <p className="text-xs text-neutral-400 mt-0.5">{subtitle}</p>
           )}
         </div>
+        <span className="text-[11px] font-mono text-cyan-400 font-semibold">
+          {channels.length} {channels.length === 1 ? 'kituo' : 'vituo'}
+        </span>
       </div>
 
-      {/* Row Horizontal Slider with Arrows */}
-      <div className="relative">
-        {/* Left Arrow */}
-        <button
-          onClick={() => scroll('left')}
-          className="absolute left-0 top-0 bottom-0 z-20 w-10 sm:w-12 bg-black/80 hover:bg-black text-white flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity backdrop-blur-sm"
-          aria-label="Scroll left"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
+      {/* Pure Vertical Grid (No horizontal overflow slider) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4.5">
+        {channels.map((channel) => (
+          <ChannelCard
+            key={channel.id}
+            channel={channel}
+            onSelectChannel={onSelectChannel}
+          />
+        ))}
+      </div>
+    </section>
+  );
+};
 
-        {/* Scrollable Container */}
-        <div
-          ref={scrollRef}
-          className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto scrollbar-none scroll-smooth pb-2 pt-1 px-1"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {channels.map((channel) => (
-            <div
-              key={channel.id}
-              onClick={() => onSelectChannel(channel)}
-              className="w-48 sm:w-60 md:w-64 lg:w-72 shrink-0 group/card relative rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-neutral-700 overflow-hidden cursor-pointer transition-all transform hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-red-950/40"
-            >
-              {/* Thumbnail Container */}
-              <div className="aspect-video w-full bg-neutral-950 relative overflow-hidden">
-                <img
-                  src={channel.thumbnailUrl}
-                  alt={channel.name}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
-                  loading="lazy"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent opacity-80" />
+interface ChannelCardProps {
+  channel: Channel;
+  isFocused?: boolean;
+  onSelectChannel: (channel: Channel) => void;
+}
 
-                {/* Live Badge */}
-                <div className="absolute top-2 left-2">
-                  <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-600 text-white shadow">
-                    LIVE
-                  </span>
-                </div>
+const ChannelCard: React.FC<ChannelCardProps> = ({
+  channel,
+  isFocused,
+  onSelectChannel
+}) => {
+  return (
+    <div
+      onClick={() => onSelectChannel(channel)}
+      className={`group relative rounded-2xl bg-neutral-900/90 border overflow-hidden cursor-pointer transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-xl hover:shadow-pink-500/15 ${
+        isFocused
+          ? 'ring-4 ring-pink-500 scale-105 border-transparent shadow-2xl shadow-pink-500/40'
+          : 'border-neutral-800 hover:border-pink-500/50'
+      }`}
+    >
+      {/* 16:9 Thumbnail Container */}
+      <div className="aspect-video w-full bg-neutral-950 relative overflow-hidden">
+        <img
+          src={channel.thumbnailUrl}
+          alt={channel.name}
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent opacity-80" />
 
-                {/* Viewers Count */}
-                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] text-neutral-300 font-medium">
-                  <div className="flex items-center gap-1 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full">
-                    <Eye className="w-3 h-3 text-red-500" />
-                    <span>{(channel.viewerCount || 500).toLocaleString()}</span>
-                  </div>
-                  {channel.isAzam && (
-                    <span className="text-[10px] font-semibold text-neutral-400 bg-black/60 px-1.5 py-0.5 rounded">
-                      HD 1080p
-                    </span>
-                  )}
-                </div>
-
-                {/* Play Button Overlay on hover */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
-                  <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg transform group-hover/card:scale-110 transition-transform">
-                    <Play className="w-5 h-5 fill-white ml-0.5" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Info Block */}
-              <div className="p-3">
-                <h3 className="font-bold text-xs sm:text-sm text-white group-hover/card:text-red-400 transition line-clamp-1">
-                  {channel.name}
-                </h3>
-                <p className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
-                  {channel.currentProgram || channel.description}
-                </p>
-              </div>
-            </div>
-          ))}
+        {/* Live Neon Badge */}
+        <div className="absolute top-2 left-2">
+          <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-md bg-gradient-to-r from-pink-600 to-cyan-500 text-white shadow-md shadow-pink-600/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+            <span>LIVE</span>
+          </span>
         </div>
 
-        {/* Right Arrow */}
-        <button
-          onClick={() => scroll('right')}
-          className="absolute right-0 top-0 bottom-0 z-20 w-10 sm:w-12 bg-black/80 hover:bg-black text-white flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity backdrop-blur-sm"
-          aria-label="Scroll right"
-        >
-          <ChevronRight className="w-6 h-6" />
-        </button>
+        {/* Viewers Count & HD resolution tag */}
+        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] sm:text-[11px] text-neutral-300 font-medium">
+          <div className="flex items-center gap-1 bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
+            <Eye className="w-3 h-3 text-cyan-400" />
+            <span>{(channel.viewerCount || 650).toLocaleString()}</span>
+          </div>
+
+          {channel.isAzam && (
+            <span className="text-[9px] font-bold text-amber-300 bg-black/70 border border-amber-500/30 px-1.5 py-0.5 rounded-md backdrop-blur-sm">
+              HD 1080p
+            </span>
+          )}
+        </div>
+
+        {/* Hover Play Icon Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40 backdrop-blur-[2px]">
+          <div className="w-11 h-11 rounded-full bg-gradient-to-r from-pink-600 to-cyan-500 text-white flex items-center justify-center shadow-lg shadow-pink-600/40 transform group-hover:scale-110 transition-transform">
+            <Play className="w-5 h-5 fill-white ml-0.5" />
+          </div>
+        </div>
+      </div>
+
+      {/* Info Block */}
+      <div className="p-3">
+        <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-pink-400 transition line-clamp-1">
+          {channel.name}
+        </h3>
+        <p className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
+          {channel.currentProgram || channel.description}
+        </p>
       </div>
     </div>
   );

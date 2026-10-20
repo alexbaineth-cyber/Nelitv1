@@ -8,8 +8,9 @@ import {
   Volume2, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
   Lock, ArrowRight, ArrowLeft, Languages, Radio, X, Play,
-  Sliders, Check
+  Sliders, Check, Gauge
 } from 'lucide-react';
+import { QualityMeterModal } from './QualityMeterModal.tsx';
 
 // Install shaka polyfill once at module initialization
 try {
@@ -64,7 +65,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
-  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNDU2MTk0Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNTcwMjFlNjI2ODE1YTFhMSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.yNpHsgNvpmY6nozvFdTLwiYdHKml1ohSqwAi345Vn9Pm3wDurPKvdTSCH2G9miNA6GJwtWGw_0N5L1czNgHvnQ==');
+  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==');
   const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -85,6 +86,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [selectedQuality, setSelectedQuality] = useState<QualityOption>('auto');
   const [currentResolution, setCurrentResolution] = useState<string>('Auto');
   const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
+  const [showQualityMeterModal, setShowQualityMeterModal] = useState<boolean>(false);
+  const [bufferSeconds, setBufferSeconds] = useState<number>(30);
+  const [bitrateKbps, setBitrateKbps] = useState<number>(1800);
+
+  // Monitor real-time buffer health and bitrate
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (videoRef.current) {
+        const vid = videoRef.current;
+        const cur = vid.currentTime;
+        let buf = 0;
+        for (let i = 0; i < vid.buffered.length; i++) {
+          if (vid.buffered.start(i) <= cur && cur <= vid.buffered.end(i)) {
+            buf = Math.max(0, vid.buffered.end(i) - cur);
+            break;
+          }
+        }
+        setBufferSeconds(buf);
+      }
+      if (shakaPlayerRef.current) {
+        try {
+          const stats = shakaPlayerRef.current.getStats();
+          if (stats && stats.streamBandwidth) {
+            setBitrateKbps(Math.round(stats.streamBandwidth / 1000));
+          } else if (stats && stats.estimatedBandwidth) {
+            setBitrateKbps(Math.round(stats.estimatedBandwidth / 1000));
+          }
+        } catch {}
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Direct Pay popup state for mobile quick payment
   const [showDirectPayModal, setShowDirectPayModal] = useState<boolean>(false);
@@ -327,17 +361,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 10,           // Keeps ~2.5 segments ahead so network fluctuations never interrupt playback
-              rebufferingGoal: 2,         // Resumes in 2s as soon as 1 packet is ready
-              bufferBehind: 15,           // Keeps 15s behind in memory for stability
-              safeSeekOffset: 5,          // 5s back from encoder cutting edge to avoid starvation
-              smallGapLimit: 0.8,         // Silently skips timestamp micro-gaps
-              jumpLargeGaps: true,        // Automatically leaps over broadcaster timeline drops
+              bufferingGoal: 30,          // 30s buffer reservoir as requested to eliminate buffering
+              rebufferingGoal: 3,         // Quick resume in 3s
+              bufferBehind: 30,           // Keeps 30s behind in memory for stability
+              safeSeekOffset: 30,         // 30s safe delay from live encoder edge
+              gapDetectionThreshold: 0.8, // Silently skips timestamp micro-gaps
               stallEnabled: true,         // Detects browser decoder stalls
-              stallThreshold: 1.5,
+              stallThreshold: 2.0,
               stallSkip: 0.5,
-              segmentPrefetchLimit: 2,    // Pre-fetches next segment ahead of time for zero gap
-              alwaysStreamText: false,
+              segmentPrefetchLimit: 3,    // Pre-fetches next 3 segments ahead of time
               ignoreTextStreamFailures: true,
               retryParameters: {
                 maxAttempts: 5,
@@ -346,9 +378,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             },
             manifest: {
+              defaultPresentationDelay: 30, // 30 seconds delay behind live TV broadcast for continuous stream
               dash: {
                 autoCorrectDrift: true,
-                ignoreMinBufferTime: true
+                ignoreMinBufferTime: true,
+                ignoreSuggestedPresentationDelay: true // Overrides broadcaster 2s delay with our 30s reservoir
               },
               retryParameters: {
                 maxAttempts: 5,
@@ -441,20 +475,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Smooth buffering handling: do not discard downloaded buffer prematurely
+          // Smooth buffering handling: maintain 30s buffer reservoir behind TV broadcast
           player.addEventListener('buffering', (event: any) => {
             if (!isMounted) return;
             setIsBuffering(event.buffering);
 
-            // Only if deeply stalled for more than 8 seconds, gently sync to live edge
+            // If deeply stalled, smoothly sync to 30 seconds behind live TV edge
             if (event.buffering) {
               const timer = setTimeout(() => {
                 if (videoRef.current && isMounted && !videoRef.current.paused) {
                   try {
-                    player.goToLive();
+                    const seekRange = player.seekRange();
+                    if (seekRange && Number.isFinite(seekRange.end)) {
+                      const safeLiveTime = Math.max(seekRange.start, seekRange.end - 30);
+                      videoRef.current.currentTime = safeLiveTime;
+                    }
                   } catch {}
                 }
-              }, 8000);
+              }, 6000);
               return () => clearTimeout(timer);
             }
           });
@@ -872,9 +910,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           break;
         case 'arrowright':
         case 'l':
-          // Resync to live edge
-          if (shakaPlayerRef.current) {
-            try { shakaPlayerRef.current.goToLive(); } catch {}
+          // Resync to safe 30s buffer reservoir behind live edge
+          if (shakaPlayerRef.current && videoRef.current) {
+            try {
+              const seekRange = shakaPlayerRef.current.seekRange();
+              if (seekRange && Number.isFinite(seekRange.end)) {
+                videoRef.current.currentTime = Math.max(seekRange.start, seekRange.end - 30);
+              }
+            } catch {}
           }
           break;
         default:
@@ -1295,6 +1338,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
             </button>
 
+            {/* Quality Meter (Kipimo cha Ubora) */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowQualityMeterModal(true);
+                resetControlsTimeout();
+              }}
+              className="px-2 sm:px-2.5 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-cyan-500/30 shadow-sm"
+              title="Kipimo cha Ubora na Buffer ya Sekunde 30"
+            >
+              <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline text-cyan-300 font-mono text-[11px]">{bufferSeconds.toFixed(0)}s buffer</span>
+            </button>
+
             {/* Fullscreen */}
             <button
               onClick={(e) => {
@@ -1310,6 +1367,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Quality Meter Modal */}
+      <QualityMeterModal
+        isOpen={showQualityMeterModal}
+        onClose={() => setShowQualityMeterModal(false)}
+        resolution={currentResolution}
+        bitrateKbps={bitrateKbps}
+        bufferSeconds={bufferSeconds}
+        selectedQuality={selectedQuality}
+      />
     </div>
   );
 };

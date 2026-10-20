@@ -19,32 +19,26 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
         <div className="flex items-center gap-3">
           <button
             onClick={() => setActiveTab('home')}
-            className="flex items-center gap-2 group focus:outline-none"
+            className="flex items-center gap-2.5 group focus:outline-none cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center text-white shadow-lg shadow-red-600/30 group-hover:scale-105 transition">
-              <Tv className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[1.5px] shadow-lg shadow-pink-500/25 group-hover:scale-105 transition">
+              <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center p-1">
+                <img
+                  src="/logo.png"
+                  alt="NeliTv Logo"
+                  className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(255,0,122,0.4)]"
+                />
+              </div>
             </div>
             <div className="flex items-center tracking-tight">
-              <span className="font-extrabold text-xl text-white group-hover:text-red-500 transition">
-                NELI
+              <span className="font-extrabold text-xl text-white group-hover:text-pink-400 transition">
+                Neli
               </span>
-              <span className="font-black text-xl text-red-600 ml-0.5">
-                TV
+              <span className="font-black text-xl text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-cyan-400 ml-0.5">
+                Tv
               </span>
             </div>
           </button>
-
-          {/* Intro Replay Icon */}
-          {onOpenIntro && (
-            <button
-              onClick={onOpenIntro}
-              title="Tazama Cinema Intro"
-              className="hidden lg:flex items-center gap-1 text-[11px] text-neutral-400 hover:text-white px-2 py-1 rounded-md hover:bg-neutral-900 transition"
-            >
-              <Play className="w-3 h-3 text-red-500 fill-red-500" />
-              <span>Intro</span>
-            </button>
-          )}
         </div>
 
         {/* 2. RIGHT ACTIONS: DOWNLOAD APP, SEARCH, VIFURUSHI, ACCOUNT */}
@@ -54,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
             <button
               onClick={onOpenDownloadModal}
               title="Pakua NeliTv APK (Android & Smart TV)"
-              className="py-1.5 px-2.5 sm:px-3 sm:py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-emerald-700/20 active:scale-95"
+              className="py-1.5 px-2.5 sm:px-3 sm:py-2 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-pink-600/25 active:scale-95"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Pakua App</span>
@@ -80,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
             onClick={() => setActiveTab('premium')}
             className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
               activeTab === 'premium'
-                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+                ? 'bg-gradient-to-r from-amber-500 via-pink-600 to-cyan-500 text-black font-black shadow-lg shadow-pink-500/25'
                 : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-800'
             }`}
           >
@@ -94,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
               onClick={() => setActiveTab('account')}
               className={`p-1 sm:pl-2.5 sm:pr-2 sm:py-1.5 rounded-xl border flex items-center gap-2 text-xs font-semibold transition ${
                 activeTab === 'account'
-                  ? 'border-red-600 bg-neutral-900 text-white'
+                  ? 'border-pink-500 bg-neutral-900 text-white shadow-sm shadow-pink-500/20'
                   : 'border-neutral-800 bg-neutral-900/60 text-neutral-300 hover:bg-neutral-800 hover:text-white'
               }`}
             >
@@ -105,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
                   className="w-7 h-7 rounded-lg object-cover border border-neutral-700"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-lg bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 font-bold">
+                <div className="w-7 h-7 rounded-lg bg-pink-600/20 border border-pink-500/30 flex items-center justify-center text-pink-400 font-bold">
                   {displayName.charAt(0).toUpperCase() || <User className="w-3.5 h-3.5" />}
                 </div>
               )}
@@ -116,7 +110,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
           ) : (
             <button
               onClick={() => setLoginModalOpen(true)}
-              className="py-1.5 px-3 sm:py-2 sm:px-3.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-red-600/20 active:scale-95"
+              className="py-1.5 px-3 sm:py-2 sm:px-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-pink-600/20 active:scale-95"
             >
               <LogIn className="w-3.5 h-3.5" />
               <span>Ingia</span>

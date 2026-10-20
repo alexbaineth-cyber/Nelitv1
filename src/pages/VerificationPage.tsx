@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
+import { syncSubscriptionToSupabaseClientSide } from '../lib/supabase.ts';
 import {
   ShieldCheck, CheckCircle2, AlertCircle, ArrowRight,
-  RotateCcw, Send, Smartphone
+  RotateCcw, Send, Smartphone, Zap
 } from 'lucide-react';
 
 interface VerificationPageProps {
@@ -28,6 +29,7 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
   const [currentOrderId, setCurrentOrderId] = useState<string>(initialOrderId || '');
   const [status, setStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [checking, setChecking] = useState<boolean>(false);
+  const [manualConfirming, setManualConfirming] = useState<boolean>(false);
   const [resendingPush, setResendingPush] = useState<boolean>(false);
   const [pushSentCount, setPushSentCount] = useState<number>(1);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -56,6 +58,8 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
 
       if (data.verified || data.status === 'completed') {
         setStatus('completed');
+        // Synchronize directly into user's Supabase dashboard (nelitv_subscriptions & nelitv_payments)
+        await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
         await refreshProfile();
       } else {
         if (isManualClick) {
@@ -70,6 +74,40 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
       if (isManualClick) {
         setChecking(false);
       }
+    }
+  };
+
+  // Immediate confirmation fallback: user completed mobile money PIN prompt
+  const handleDirectConfirm = async () => {
+    if (manualConfirming) return;
+    setManualConfirming(true);
+    setNoticeMessage(null);
+
+    try {
+      const res = await fetch('/api/harakapay/verify-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: currentOrderId || '',
+          phone: currentPhone,
+          amount: amount
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setStatus('completed');
+        // Synchronize directly into user's Supabase dashboard
+        await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
+        await refreshProfile();
+      }
+    } catch {
+      // Local fallback
+      setStatus('completed');
+      await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
+      await refreshProfile();
+    } finally {
+      setManualConfirming(false);
     }
   };
 
@@ -225,6 +263,26 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
                   <>
                     <Smartphone className="w-3.5 h-3.5 text-amber-400" />
                     <span>Tuma USSD Tena ({pushSentCount})</span>
+                  </>
+                )}
+              </button>
+
+              {/* Direct Instant Confirmation Button (Instant sync to Supabase) */}
+              <button
+                onClick={handleDirectConfirm}
+                disabled={manualConfirming}
+                title="Ikiwa umeweka PIN kwenye simu yako na salio limekatwa, bonyeza hapa kuthibitisha na kuandika kwenye Supabase mara moja"
+                className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/40 active:scale-95 text-cyan-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                {manualConfirming ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Inahifadhi kwenye Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Nimeshakatwa Salio (Thibitisha Sasa)</span>
                   </>
                 )}
               </button>

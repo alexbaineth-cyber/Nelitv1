@@ -29,7 +29,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('yourmaxtv_favorites');
+      const saved = localStorage.getItem('nelitv_favorites') || localStorage.getItem('yourmaxtv_favorites');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -51,7 +51,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     }
     setFavorites(updated);
     try {
-      localStorage.setItem('yourmaxtv_favorites', JSON.stringify(updated));
+      localStorage.setItem('nelitv_favorites', JSON.stringify(updated));
     } catch {}
   };
 
@@ -64,8 +64,8 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     const shareUrl = window.location.origin;
     if (navigator.share) {
       navigator.share({
-        title: `${currentChannel.name} - Your Max TV`,
-        text: `Tazama ${currentChannel.name} mubashara kwenye Your Max TV!`,
+        title: `${currentChannel.name} - NeliTv`,
+        text: `Tazama ${currentChannel.name} mubashara kwenye NeliTv!`,
         url: shareUrl
       }).catch(() => {});
     } else {

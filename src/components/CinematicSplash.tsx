@@ -139,17 +139,20 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
 
       {/* Main Theatrical Content */}
       <div className="relative z-10 flex flex-col items-center text-center px-4">
-        {/* Animated TV Crest Logo */}
+        {/* Animated 3D Neon NeliTv Crest Logo */}
         <div
-          className={`w-20 h-20 sm:w-28 sm:h-28 mb-4 rounded-3xl bg-gradient-to-br from-red-600 to-red-950 p-[2px] shadow-2xl transition-all duration-1000 transform ${
-            phase === 'intro' ? 'scale-75 opacity-0' : phase === 'glow' ? 'scale-95 opacity-80' : 'scale-100 opacity-100 shadow-red-600/40'
+          className={`w-24 h-24 sm:w-32 sm:h-32 mb-4 rounded-3xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[2.5px] shadow-2xl transition-all duration-1000 transform ${
+            phase === 'intro' ? 'scale-75 opacity-0' : phase === 'glow' ? 'scale-95 opacity-80' : 'scale-100 opacity-100 shadow-pink-500/30'
           }`}
         >
-          <div className="w-full h-full rounded-3xl bg-neutral-950 flex items-center justify-center relative overflow-hidden">
+          <div className="w-full h-full rounded-3xl bg-neutral-950/90 flex items-center justify-center relative overflow-hidden p-2">
             {/* Shimmer light sweep */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/15 to-transparent translate-x-[-100%] animate-[shimmer_2s_infinite]" />
-            <Tv className="w-10 h-10 sm:w-14 sm:h-14 text-red-500" />
-            <Play className="w-5 h-5 sm:w-7 sm:h-7 text-white fill-white absolute" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent translate-x-[-100%] animate-[shimmer_2s_infinite]" />
+            <img
+              src="/logo.png"
+              alt="NeliTv Logo"
+              className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(255,0,122,0.4)]"
+            />
           </div>
         </div>
 
@@ -161,10 +164,10 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
               : 'translate-y-4 opacity-0 scale-95'
           }`}
         >
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-b from-white via-neutral-100 to-neutral-400 drop-shadow-[0_10px_20px_rgba(229,9,20,0.5)]">
-            {appName.toUpperCase()}
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-pink-500 to-cyan-400 drop-shadow-[0_10px_25px_rgba(255,0,122,0.4)]">
+            {appName}
           </h1>
-          <div className="mt-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold tracking-widest text-red-400 uppercase">
+          <div className="mt-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold tracking-widest text-cyan-300 uppercase">
             <span>Live Sports</span>
             <span className="text-neutral-600">·</span>
             <span>NBC Premier League</span>
@@ -186,10 +189,9 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
         <div className="mt-8 flex items-center gap-4">
           <button
             onClick={onComplete}
-            className="px-4 py-1.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-white text-xs font-semibold backdrop-blur-sm transition active:scale-95 flex items-center gap-1.5"
+            className="px-5 py-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 hover:text-white text-xs font-semibold backdrop-blur-md transition active:scale-95 flex items-center gap-2 shadow-lg"
           >
-            <span>Ruka Intro</span>
-            <span className="text-[10px] text-neutral-500">(ESC)</span>
+            <span>Ruka Utangulizi</span>
           </button>
           
           <button
@@ -197,7 +199,7 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
               setAudioEnabled(!audioEnabled);
               if (!audioEnabled) playCinematicSound();
             }}
-            className="p-1.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-white transition"
+            className="p-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-white transition"
             title={audioEnabled ? "Zima Sauti ya Intro" : "Washa Sauti ya Intro"}
           >
             {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}

@@ -118,7 +118,7 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
         <div className="text-center max-w-lg mx-auto space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-wider">
             <Crown className="w-3.5 h-3.5" />
-            <span>Vifurushi vya Your Max TV</span>
+            <span>Vifurushi vya NeliTv</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">

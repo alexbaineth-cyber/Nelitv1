@@ -33,6 +33,16 @@ if (supabase) {
 
 app.use(express.json());
 
+// Global Security Headers for Browser Safety & Certificate Compliance (Anti-Dangerous-Site / Safe Browsing)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  next();
+});
+
 // In-memory + file-backed storage for users & payments
 const DATA_DIR = path.join(__dirname, '.data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -345,22 +355,29 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
         console.log(`[Supabase nelitv_subscriptions] Saved subscription for ${clean0}: expires_at=${expiryIso}`);
       }
 
-      // 2. Payments table: public.nelitv_payments
+      // 2. Payments table: public.nelitv_payments (Exact match to user's schema)
       const orderIdToRecord = orderId || `HP-${Date.now()}`;
       try {
-        await supabase
+        const { error: payErr } = await supabase
           .from('nelitv_payments')
           .upsert({
             order_id: orderIdToRecord,
             phone_number: clean0,
-            user_email: email || null,
             amount: amount,
             plan_id: planId,
             status: 'completed',
             payment_method: 'harakapay',
             completed_at: now.toISOString()
           }, { onConflict: 'order_id' });
-      } catch {}
+
+        if (payErr) {
+          console.warn('[Supabase nelitv_payments Error]', payErr.message);
+        } else {
+          console.log(`[Supabase nelitv_payments] Saved completed payment for order ${orderIdToRecord}`);
+        }
+      } catch (e: any) {
+        console.warn('[Supabase nelitv_payments exception]', e.message);
+      }
 
       // 3. Fallback to legacy Subscription table if present
       try {
@@ -465,8 +482,8 @@ async function getOrFetchCdnToken(force = false) {
   }
 
   cachedCdnToken = {
-    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNDU2MTk0Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiNTcwMjFlNjI2ODE1YTFhMSIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.yNpHsgNvpmY6nozvFdTLwiYdHKml1ohSqwAi345Vn9Pm3wDurPKvdTSCH2G9miNA6GJwtWGw_0N5L1czNgHvnQ==",
-    exp: 1792456194,
+    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==",
+    exp: 1792521597,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
     source: "static_active"
   };
@@ -495,7 +512,7 @@ app.get('/api/channels', async (_req: Request, res: Response) => {
     } catch {}
     if (!p.startsWith('/')) p = `/${p}`;
 
-    const freshUrl = `${host}/tok_${tokenData.token}${p}`;
+    const freshUrl = `${host}/tok_${tokenData.token}${p}?cdntoken=${encodeURIComponent(tokenData.token)}`;
     return {
       ...ch,
       streamUrl: freshUrl,
@@ -789,7 +806,7 @@ app.post('/api/harakapay/collect', async (req: Request, res: Response) => {
     const cleanPhone = normalizePhone(phone);
     const plan = VIFURUSHI_PLANS.find(p => p.id === planId) || VIFURUSHI_PLANS[0];
 
-    const description = `Your Max TV: ${plan.name} (${plan.durationText}) kwa namba ${cleanPhone}`;
+    const description = `NeliTv: ${plan.name} (${plan.durationText}) kwa namba ${cleanPhone}`;
 
     // Get current host for webhook if available
     const host = req.get('host') || 'localhost:3000';
@@ -831,6 +848,27 @@ app.post('/api/harakapay/collect', async (req: Request, res: Response) => {
       paymentsStore[data.order_id] = record;
       persistData();
 
+      // Log pending payment into Supabase nelitv_payments table
+      if (supabase) {
+        try {
+          const { error: insErr } = await supabase
+            .from('nelitv_payments')
+            .upsert({
+              order_id: data.order_id,
+              phone_number: cleanPhone,
+              amount: data.amount || plan.priceTsh,
+              plan_id: plan.id,
+              status: 'pending',
+              payment_method: 'harakapay',
+              created_at: new Date().toISOString()
+            }, { onConflict: 'order_id' });
+          if (insErr) console.warn('[Supabase nelitv_payments pending log err]', insErr.message);
+          else console.log(`[Supabase nelitv_payments] Logged pending order ${data.order_id}`);
+        } catch (e: any) {
+          console.warn('[Supabase nelitv_payments pending exception]', e.message);
+        }
+      }
+
       return res.json({
         success: true,
         orderId: data.order_id,
@@ -869,7 +907,7 @@ app.post('/api/harakapay/resend-push', async (req: Request, res: Response) => {
     }
     if (!plan) plan = VIFURUSHI_PLANS[0];
 
-    const description = `Your Max TV (Tuma Tena): ${plan.name} kwa namba ${cleanPhone}`;
+    const description = `NeliTv (Tuma Tena): ${plan.name} kwa namba ${cleanPhone}`;
     const host = req.get('host') || 'localhost:3000';
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     const webhookUrl = `${protocol}://${host}/api/harakapay/webhook`;
@@ -1164,7 +1202,7 @@ async function setupApp() {
   }
 
   app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`[Your Max TV] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`[NeliTv] Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

@@ -10,7 +10,9 @@ import { Navbar } from './components/Navbar.tsx';
 import { LoginModal } from './components/LoginModal.tsx';
 import { DownloadAppModal } from './components/DownloadAppModal.tsx';
 import { CinematicSplash } from './components/CinematicSplash.tsx';
-import { Download, QrCode, Smartphone, X } from 'lucide-react';
+import { MobileApkLandingView } from './components/MobileApkLandingView.tsx';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
+import { Download, QrCode, Smartphone, X, ShieldCheck } from 'lucide-react';
 import { HomePage } from './pages/HomePage.tsx';
 import { WatchPage } from './pages/WatchPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
@@ -38,7 +40,28 @@ function MainApp() {
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
 
-  // Cinematic Intro Splash state - always shows every time user reloads or enters the app
+  // Mobile Response Detection: renders full single-page APK landing on mobile viewports
+  const [isMobileLanding, setIsMobileLanding] = useState<boolean>(() => {
+    try {
+      const search = window.location.search;
+      if (search.includes('view=apk') || window.location.pathname === '/download') {
+        return true;
+      }
+      const forcedWeb = sessionStorage.getItem('nelitv_force_web_mode');
+      if (forcedWeb === 'true') {
+        return false;
+      }
+      const isMobileUA = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isSmallScreen = window.innerWidth <= 768;
+      return isMobileUA || isSmallScreen;
+    } catch {
+      return false;
+    }
+  });
+
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState<boolean>(false);
+
+  // Cinematic Intro Splash state - shows once on first entrance
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const [downloadModalTab, setDownloadModalTab] = useState<'direct' | 'qr'>('direct');
@@ -130,7 +153,7 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-neutral-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
+    <div className="min-h-screen bg-black text-neutral-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
       {/* 1. CINEMATIC VIDEO SPLASH INTRO */}
       {showSplash && (
         <CinematicSplash
@@ -139,167 +162,197 @@ function MainApp() {
         />
       )}
 
-      {/* 2. TOP NAVIGATION */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenIntro={() => setShowSplash(true)}
-        onOpenDownloadModal={() => {
-          setDownloadModalTab('direct');
-          setIsDownloadModalOpen(true);
-        }}
-      />
-
-      {/* 3. PAGES SWITCHER */}
-      <main className="flex-1">
-        {activeTab === 'home' && (
-          <HomePage
-            channels={channels}
-            onSelectChannel={handleSelectChannel}
-            onNavigateToPremium={() => handleNavigateToPremiumWithPlan('plan_7days')}
+      {/* 2. MOBILE RESPONSE: DEDICATED FULL SINGLE PAGE FOR APK DOWNLOAD */}
+      {isMobileLanding && !showSplash ? (
+        <div className="flex-1 flex flex-col">
+          <MobileApkLandingView
+            onContinueInBrowser={() => {
+              try { sessionStorage.setItem('nelitv_force_web_mode', 'true'); } catch {}
+              setIsMobileLanding(false);
+            }}
+            onOpenPrivacyPolicy={() => setIsPrivacyModalOpen(true)}
           />
-        )}
-
-        {activeTab === 'watch' && (
-          <WatchPage
-            currentChannel={selectedChannel}
-            channels={channels}
-            onBack={() => {
-              setActiveTab('home');
+        </div>
+      ) : (
+        <>
+          {/* 3. TV / DESKTOP / PC TOP NAVIGATION */}
+          <Navbar
+            activeTab={activeTab}
+            setActiveTab={(tab) => {
+              setActiveTab(tab);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            onSelectChannel={handleSelectChannel}
-            onNavigateToPremium={handleNavigateToPremiumWithPlan}
-            onOpenLoginModal={() => setLoginModalOpen(true)}
-            onPaymentInitiated={handlePaymentInitiated}
-          />
-        )}
-
-        {activeTab === 'search' && (
-          <SearchPage
-            channels={channels}
-            onSelectChannel={handleSelectChannel}
-          />
-        )}
-
-        {activeTab === 'premium' && (
-          <PremiumPage
-            initialPlanId={initialPlanForPremium}
-            onPaymentInitiated={handlePaymentInitiated}
-            onOpenLoginModal={() => setLoginModalOpen(true)}
-            onSuccessRedirect={() => {
-              setActiveTab('watch');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+            onOpenDownloadModal={() => {
+              setDownloadModalTab('direct');
+              setIsDownloadModalOpen(true);
             }}
           />
-        )}
 
-        {activeTab === 'verify' && (
-          <VerificationPage
-            orderId={activePayment?.orderId}
-            amount={activePayment?.amount}
-            phone={activePayment?.phone}
-            planName={activePayment?.planName}
-            onSuccessRedirect={() => {
-              setActiveTab('watch');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onRetryPayment={() => setActiveTab('premium')}
-          />
-        )}
+          {/* 4. PAGES SWITCHER (TV, PC, Tablets & Desktops) */}
+          <main className="flex-1">
+            {activeTab === 'home' && (
+              <HomePage
+                channels={channels}
+                onSelectChannel={handleSelectChannel}
+                onNavigateToPremium={() => handleNavigateToPremiumWithPlan('plan_7days')}
+              />
+            )}
 
-        {activeTab === 'account' && (
-          <AccountPage
-            onNavigateToPremium={() => handleNavigateToPremiumWithPlan('plan_7days')}
-            onOpenLoginModal={() => setLoginModalOpen(true)}
-          />
-        )}
-      </main>
+            {activeTab === 'watch' && (
+              <WatchPage
+                currentChannel={selectedChannel}
+                channels={channels}
+                onBack={() => {
+                  setActiveTab('home');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onSelectChannel={handleSelectChannel}
+                onNavigateToPremium={handleNavigateToPremiumWithPlan}
+                onOpenLoginModal={() => setLoginModalOpen(true)}
+                onPaymentInitiated={handlePaymentInitiated}
+              />
+            )}
 
-      {/* 4. LOGIN MODAL */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setLoginModalOpen(false)}
-        onSuccess={handleLoginSuccess}
-        title="Ingia au Jisajili NeliTv"
-        subtitle="Ingia na Google, Barua Pepe au Namba ya Simu kutazama moja kwa moja."
-      />
+            {activeTab === 'search' && (
+              <SearchPage
+                channels={channels}
+                onSelectChannel={handleSelectChannel}
+              />
+            )}
 
-      {/* 5. DOWNLOAD APP MODAL (Scan QR & Direct Download) */}
-      <DownloadAppModal
-        isOpen={isDownloadModalOpen}
-        onClose={() => setIsDownloadModalOpen(false)}
-        initialTab={downloadModalTab}
-      />
+            {activeTab === 'premium' && (
+              <PremiumPage
+                initialPlanId={initialPlanForPremium}
+                onPaymentInitiated={handlePaymentInitiated}
+                onOpenLoginModal={() => setLoginModalOpen(true)}
+                onSuccessRedirect={() => {
+                  setActiveTab('watch');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            )}
 
-      {/* Floating Download Our App Prompt / SMS Banner */}
-      {showDownloadBanner && !showSplash && activeTab !== 'watch' && (
-        <div className="fixed bottom-4 right-4 z-40 max-w-sm w-[calc(100%-2rem)] rounded-2xl bg-neutral-900/95 border border-red-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center text-white shrink-0 shadow-md shadow-red-600/30">
-                <Smartphone className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h4 className="text-xs font-bold text-white tracking-tight">Pakua NeliTv App</h4>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-600/20 text-red-400 font-mono font-bold">APK</span>
+            {activeTab === 'verify' && (
+              <VerificationPage
+                orderId={activePayment?.orderId}
+                amount={activePayment?.amount}
+                phone={activePayment?.phone}
+                planName={activePayment?.planName}
+                onSuccessRedirect={() => {
+                  setActiveTab('watch');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onRetryPayment={() => setActiveTab('premium')}
+              />
+            )}
+
+            {activeTab === 'account' && (
+              <AccountPage
+                onNavigateToPremium={() => handleNavigateToPremiumWithPlan('plan_7days')}
+                onOpenLoginModal={() => setLoginModalOpen(true)}
+              />
+            )}
+          </main>
+
+          {/* Floating Download Our App Prompt for Desktop */}
+          {showDownloadBanner && !showSplash && activeTab !== 'watch' && (
+            <div className="fixed bottom-4 right-4 z-40 max-w-sm w-[calc(100%-2rem)] rounded-2xl bg-neutral-900/95 border border-cyan-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[1.5px] shrink-0 shadow-md shadow-pink-500/20">
+                    <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center p-1">
+                      <Smartphone className="w-4 h-4 text-cyan-400" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs font-bold text-white tracking-tight">NeliTv App</h4>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/40 font-mono font-bold">APK</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 truncate">
+                      Tazama mechi na TV bila kukwama
+                    </p>
+                  </div>
                 </div>
-                <p className="text-[11px] text-neutral-400 truncate">
-                  Tazama mechi na TV bila kukwama
-                </p>
+                <button
+                  onClick={() => {
+                    setShowDownloadBanner(false);
+                    try { localStorage.setItem('nelitv_hide_app_banner', 'true'); } catch {}
+                  }}
+                  className="p-1 text-neutral-400 hover:text-white rounded-lg transition"
+                  title="Funga"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-neutral-800/80">
+                <button
+                  onClick={() => {
+                    setDownloadModalTab('direct');
+                    setIsDownloadModalOpen(true);
+                  }}
+                  className="py-1.5 px-2.5 rounded-lg bg-gradient-to-r from-pink-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-pink-600/20"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Pakua APK</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setDownloadModalTab('qr');
+                    setIsDownloadModalOpen(true);
+                  }}
+                  className="py-1.5 px-2.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 border border-neutral-700"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Scan QR</span>
+                </button>
               </div>
             </div>
-            <button
-              onClick={() => {
-                setShowDownloadBanner(false);
-                try { localStorage.setItem('nelitv_hide_app_banner', 'true'); } catch {}
-              }}
-              className="p-1 text-neutral-400 hover:text-white rounded-lg transition"
-              title="Funga"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-neutral-800/80">
-            <button
-              onClick={() => {
-                setDownloadModalTab('direct');
-                setIsDownloadModalOpen(true);
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-red-600/20"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Pakua APK</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setDownloadModalTab('qr');
-                setIsDownloadModalOpen(true);
-              }}
-              className="py-1.5 px-2.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 border border-neutral-700"
-            >
-              <QrCode className="w-3.5 h-3.5 text-amber-400" />
-              <span>Scan QR</span>
-            </button>
-          </div>
-        </div>
+          {/* 6. TV & PC CLEAN FOOTER */}
+          <footer className="border-t border-neutral-900 bg-[#070A0F] py-8 px-4 text-center text-xs text-neutral-500 space-y-3">
+            <p className="font-bold text-neutral-300 tracking-wide">
+              NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming
+            </p>
+            <p className="text-neutral-500 max-w-sm mx-auto text-[11px]">
+              Tazama mechi za ligi kuu ya NBC, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa 4K na HD kwenye TV, PC na Simu.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-neutral-400 pt-1">
+              <button
+                onClick={() => setIsPrivacyModalOpen(true)}
+                className="hover:text-cyan-400 transition underline cursor-pointer"
+              >
+                Sera ya Faragha (Privacy Policy)
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => setIsMobileLanding(true)}
+                className="hover:text-cyan-400 transition underline cursor-pointer"
+              >
+                Pakua NeliTv APK
+              </button>
+              <span>•</span>
+              <a
+                href="https://nelitv.xyz"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-cyan-400 transition"
+              >
+                nelitv.xyz
+              </a>
+            </div>
+          </footer>
+        </>
       )}
 
-      {/* 6. TV & PC CLEAN FOOTER */}
-      <footer className="border-t border-neutral-900 bg-black py-8 px-4 text-center text-xs text-neutral-500 space-y-2">
-        <p className="font-bold text-neutral-300 tracking-wide">
-          NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming
-        </p>
-        <p className="text-neutral-500 max-w-sm mx-auto text-[11px]">
-          Tazama mechi za ligi kuu, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa juu kwenye TV, PC na Simu.
-        </p>
-      </footer>
+      {/* 7. PRIVACY POLICY MODAL */}
+      <PrivacyPolicyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
+      />
     </div>
   );
 }

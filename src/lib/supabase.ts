@@ -221,3 +221,68 @@ export async function fetchCustomerSubscriptionFromSupabase(
     return null;
   }
 }
+
+/**
+ * Direct client-side Supabase dual-sync to guarantee user subscription & payment
+ * data are instantly synced into the user's Supabase dashboard
+ */
+export async function syncSubscriptionToSupabaseClientSide(
+  phone: string,
+  amount: number,
+  planId?: string,
+  orderId?: string,
+  email?: string
+): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const clean0 = normalizePhoneNumber(phone);
+    const now = new Date();
+    const expiry = calculateSubscriptionExpiration(amount, now);
+    const calculatedPlanId = planId || (amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days'));
+
+    // 1. Write to public.nelitv_subscriptions
+    const { error: subErr } = await supabase
+      .from('nelitv_subscriptions')
+      .upsert({
+        phone_number: clean0,
+        user_email: email || null,
+        plan_id: calculatedPlanId,
+        premium_status: 'active',
+        amount_paid: amount,
+        activated_at: now.toISOString(),
+        expires_at: expiry.toISOString(),
+        updated_at: now.toISOString()
+      }, { onConflict: 'phone_number' });
+
+    if (subErr) {
+      console.warn('[Supabase client-side nelitv_subscriptions err]', subErr.message);
+    } else {
+      console.log(`[Supabase client-side] Synchronized subscription for ${clean0}`);
+    }
+
+    // 2. Write to public.nelitv_payments (Exact match to user's schema)
+    const orderToUse = orderId || `HP-${Date.now()}`;
+    const { error: payErr } = await supabase
+      .from('nelitv_payments')
+      .upsert({
+        order_id: orderToUse,
+        phone_number: clean0,
+        amount: amount,
+        plan_id: calculatedPlanId,
+        status: 'completed',
+        payment_method: 'harakapay',
+        completed_at: now.toISOString()
+      }, { onConflict: 'order_id' });
+
+    if (payErr) {
+      console.warn('[Supabase client-side nelitv_payments err]', payErr.message);
+    } else {
+      console.log(`[Supabase client-side] Synchronized payment order ${orderToUse}`);
+    }
+
+    return true;
+  } catch (e: any) {
+    console.warn('[Supabase client-side dual-sync exception]', e.message);
+    return false;
+  }
+}
