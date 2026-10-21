@@ -160,8 +160,16 @@ export const MobileApkLandingView: React.FC<MobileApkLandingViewProps> = ({
         <div className="w-full space-y-3 mb-6">
           <a
             href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             download="Nelitv.apk"
-            className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-pink-600 to-cyan-500 hover:from-amber-400 hover:via-pink-500 hover:to-cyan-400 text-white font-extrabold text-sm shadow-[0_10px_30px_rgba(255,0,122,0.4)] flex items-center justify-center gap-3 transition transform active:scale-95 group"
+            onClick={(e) => {
+              // Direct browser fallback for mobile in-app browsers and WebViews
+              try {
+                window.location.href = downloadUrl;
+              } catch {}
+            }}
+            className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-pink-600 to-cyan-500 hover:from-amber-400 hover:via-pink-500 hover:to-cyan-400 text-white font-extrabold text-sm shadow-[0_10px_30px_rgba(255,0,122,0.4)] flex items-center justify-center gap-3 transition transform active:scale-95 group cursor-pointer"
           >
             <Download className="w-5 h-5 group-hover:-translate-y-1 transition text-white animate-bounce" />
             <span>PAKUA NELITV APK ({versionTag})</span>

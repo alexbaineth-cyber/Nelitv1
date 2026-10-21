@@ -608,8 +608,8 @@ app.get('/api/vifurushi', (_req: Request, res: Response) => {
   });
 });
 
-// 2.5 Secure Subscription Check for Client (Uses service_role key to bypass RLS)
-app.get('/api/subscription/check', async (req: Request, res: Response) => {
+// 2.5 Secure Subscription Check for Client (Supports both /check and /status)
+app.get(['/api/subscription/check', '/api/subscription/status'], async (req: Request, res: Response) => {
   const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
   const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
   const identifier = phone || email;

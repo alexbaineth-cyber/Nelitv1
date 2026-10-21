@@ -327,6 +327,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       }, 7000);
 
+      // 0. EMBEDDED STREAM (Baynith Sports 1 & 2, etc.)
+      if (channel.streamFormat === 'embed' || channel.embedUrl) {
+        setIsBuffering(false);
+        setIsPlaying(true);
+        return;
+      }
+
       // 1. DASH STREAM (Shaka Player)
       if (channel.streamFormat === 'dash') {
         try {
@@ -361,41 +368,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 30,          // 30s buffer reservoir as requested to eliminate buffering
-              rebufferingGoal: 3,         // Quick resume in 3s
+              bufferingGoal: 45,          // 45s buffer reservoir to eliminate buffering
+              rebufferingGoal: 2.5,       // Quick resume in 2.5s
               bufferBehind: 30,           // Keeps 30s behind in memory for stability
-              safeSeekOffset: 30,         // 30s safe delay from live encoder edge
+              safeSeekOffset: 45,         // 45s safe delay from live encoder edge
               gapDetectionThreshold: 0.8, // Silently skips timestamp micro-gaps
               stallEnabled: true,         // Detects browser decoder stalls
-              stallThreshold: 2.0,
-              stallSkip: 0.5,
-              segmentPrefetchLimit: 3,    // Pre-fetches next 3 segments ahead of time
+              stallThreshold: 1.5,
+              stallSkip: 0.3,
+              segmentPrefetchLimit: 4,    // Pre-fetches next 4 segments ahead of time
               ignoreTextStreamFailures: true,
               retryParameters: {
-                maxAttempts: 5,
-                baseDelay: 300,
-                backoffFactor: 1.3
+                maxAttempts: 6,
+                baseDelay: 250,
+                backoffFactor: 1.2
               }
             },
             manifest: {
-              defaultPresentationDelay: 30, // 30 seconds delay behind live TV broadcast for continuous stream
+              defaultPresentationDelay: 45, // 45 seconds delay behind live TV broadcast for continuous stream
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
-                ignoreSuggestedPresentationDelay: true // Overrides broadcaster 2s delay with our 30s reservoir
+                ignoreSuggestedPresentationDelay: true // Overrides broadcaster 2s delay with 45s reservoir
               },
               retryParameters: {
-                maxAttempts: 5,
-                baseDelay: 300,
-                backoffFactor: 1.3
+                maxAttempts: 6,
+                baseDelay: 250,
+                backoffFactor: 1.2
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 850000,   // Start on lightweight 480p/360p for near-instant 1-second startup
-              switchInterval: 4,                  // Smooth transitions without thrashing
-              bandwidthDowngradeTarget: 0.95,     // Instant downshift on network dip before it buffers
-              bandwidthUpgradeTarget: 0.70        // Conservative upshift so user only climbs to 720p/1080p when buffer is solid
+              defaultBandwidthEstimate: 400000,   // Start on lightweight 360p/480p for instant startup
+              switchInterval: 15,                 // 15s stable observation window before any quality increase
+              bandwidthDowngradeTarget: 0.99,     // Instant downshift on network dip before it buffers
+              bandwidthUpgradeTarget: 0.40        // Conservative upshift: requires 2.5x sustained bandwidth margin
             }
           });
 
@@ -475,25 +482,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Smooth buffering handling: maintain 30s buffer reservoir behind TV broadcast
+          // Adaptive buffering handling: downshift quality immediately on stall, do not chase live edge
           player.addEventListener('buffering', (event: any) => {
             if (!isMounted) return;
             setIsBuffering(event.buffering);
 
-            // If deeply stalled, smoothly sync to 30 seconds behind live TV edge
             if (event.buffering) {
-              const timer = setTimeout(() => {
-                if (videoRef.current && isMounted && !videoRef.current.paused) {
-                  try {
-                    const seekRange = player.seekRange();
-                    if (seekRange && Number.isFinite(seekRange.end)) {
-                      const safeLiveTime = Math.max(seekRange.start, seekRange.end - 30);
-                      videoRef.current.currentTime = safeLiveTime;
-                    }
-                  } catch {}
+              // Immediately step down to lighter track to resume playback smoothly without loading
+              try {
+                const tracks = player.getVariantTracks();
+                if (tracks && tracks.length > 0) {
+                  const sorted = [...tracks].sort((a: any, b: any) => (a.bandwidth || 0) - (b.bandwidth || 0));
+                  const lowest = sorted[0];
+                  if (lowest && lowest.id !== undefined) {
+                    player.selectVariantTrack(lowest, /* clearBuffer= */ false);
+                    if (lowest.height) setCurrentResolution(`${lowest.height}p`);
+                  }
                 }
-              }, 6000);
-              return () => clearTimeout(timer);
+              } catch {}
             }
           });
 
@@ -660,15 +666,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
-            maxBufferLength: 12,
-            maxMaxBufferLength: 24,
-            liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 6,
+            maxBufferLength: 45,
+            maxMaxBufferLength: 90,
+            liveSyncDurationCount: 8,
+            liveMaxLatencyDurationCount: 16,
             lowLatencyMode: false,
-            backBufferLength: 15,
-            startLevel: -1,
+            backBufferLength: 30,
+            startLevel: 0, // Starts on lowest/fastest bandwidth level for instant startup without loading
             autoStartLoad: true,
             capLevelToPlayerSize: true,
+            abrBandWidthFactor: 0.7,
+            abrBandWidthUpFactor: 0.5, // Conservative upgrade factor
           });
           hlsPlayerRef.current = hls;
 
@@ -684,6 +692,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {
               setIsPlaying(false);
             }
+          });
+
+          hls.on(Hls.Events.BUFFER_STALLED, () => {
+            if (!isMounted) return;
+            // Instantly downshift to lowest bitrate stream (level 0) to unfreeze playback immediately
+            try {
+              if (hls.levels && hls.levels.length > 1) {
+                hls.nextLevel = 0;
+              }
+            } catch {}
           });
 
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
@@ -944,12 +962,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onClick={handlePlayerTap}
       className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden group select-none shadow-2xl border border-neutral-900 cursor-pointer"
     >
-      {/* HTML5 Video Element (Tap toggles controls, does not mute) */}
-      <video
-        ref={videoRef}
-        playsInline
-        className="w-full h-full object-contain bg-black"
-      />
+      {/* HTML5 Video Element or Embedded Iframe (Baynith Sports 1 & 2) */}
+      {channel.streamFormat === 'embed' || channel.embedUrl ? (
+        <iframe
+          src={channel.embedUrl || channel.streamUrl}
+          className="w-full h-full border-0 object-contain bg-black"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          loading="lazy"
+          title={channel.name}
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          playsInline
+          className="w-full h-full object-contain bg-black"
+        />
+      )}
 
       {/* Buffering Indicator */}
       {isBuffering && !errorMessage && !isPaywallTriggered && (

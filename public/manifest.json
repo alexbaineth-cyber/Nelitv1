@@ -1,40 +1,56 @@
 {
-  "id": "/",
-  "name": "NeliTv - Live TV & Sports",
+  "id": "/?app=nelitv",
+  "name": "NeliTv - Tanzania Live TV & Sports",
   "short_name": "NeliTv",
-  "description": "Tazama Live TV, Michezo ya Ligi Kuu, na Burudani ya Sinema bila kikomo kwenye NeliTv.",
-  "start_url": "/",
+  "description": "Tazama Live TV, Ligi Kuu, Sinema na Michezo ya Moja kwa Moja kwenye kompyuta, TV na simu.",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#e50914",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#070A0F",
+  "theme_color": "#070A0F",
   "orientation": "any",
   "categories": ["entertainment", "sports", "tv"],
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon.svg",
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ],
   "shortcuts": [
     {
-      "name": "Live TV",
-      "short_name": "Live",
+      "name": "Live TV & Michezo",
+      "short_name": "Live TV",
       "description": "Tazama vituo vya moja kwa moja",
-      "url": "/?tab=watch"
+      "url": "/?tab=home"
     },
     {
-      "name": "Vifurushi",
+      "name": "Vifurushi vya NeliTv",
       "short_name": "Vifurushi",
-      "description": "Lipia au tazama vifurushi",
+      "description": "Lipia na angalia vifurushi vya kutazama",
       "url": "/?tab=premium"
     }
   ]

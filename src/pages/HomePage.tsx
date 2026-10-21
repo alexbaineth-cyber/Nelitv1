@@ -18,29 +18,37 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   // Categorize channels
   const sportsChannels = channels.filter(c => c.category.includes('sport'));
-  const moviesChannels = channels.filter(c => c.category.includes('movies') || c.name.toLowerCase().includes('sinema') || c.name.toLowerCase().includes('kix'));
-  const entertainmentChannels = channels.filter(c => c.isAzam || c.category.includes('entertainment') || c.category.includes('tanzania') || c.category.includes('music'));
-  const newsChannels = channels.filter(c => c.category.includes('news'));
-  const kidsChannels = channels.filter(c => c.category.includes('kids'));
+  const moviesChannels = channels.filter(c => c.category.includes('movies') || c.name.toLowerCase().includes('sinema') || c.name.toLowerCase().includes('kix') || c.name.toLowerCase().includes('movie') || c.name.toLowerCase().includes('cinema') || c.name.toLowerCase().includes('mbc'));
+  const entertainmentChannels = channels.filter(c => c.isAzam || c.category.includes('entertainment') || c.category.includes('tanzania') || c.category.includes('music') || c.name.toLowerCase().includes('comedy') || c.name.toLowerCase().includes('trace'));
+  const kidsChannels = channels.filter(c => c.category.includes('kids') || c.name.toLowerCase().includes('tom') || c.name.toLowerCase().includes('pop') || c.name.toLowerCase().includes('tiny'));
+  const newsChannels = channels.filter(c => c.category.includes('news') || c.name.toLowerCase().includes('global'));
+  const religiousChannels = channels.filter(c => c.category.includes('religious') || c.name.toLowerCase().includes('catholic'));
   const africaChannels = channels.filter(c => c.category.includes('africa') || c.category.includes('other') || c.category.includes('documentary'));
 
   const categories = [
-    { id: 'all', label: 'Vituo Vyote' },
+    { id: 'all', label: '📺 Vituo Vyote' },
     { id: 'sport', label: '⚽ Michezo' },
     { id: 'movies', label: '🎬 Sinema & Filamu' },
     { id: 'entertainment', label: '📺 Burudani' },
-    { id: 'news', label: '📰 Habari' },
     { id: 'kids', label: '🧸 Watoto' },
+    { id: 'news', label: '📰 Habari & Dini' },
   ];
 
   const filteredChannels = selectedCategory === 'all'
     ? channels
-    : channels.filter(c => c.category.includes(selectedCategory) || (selectedCategory === 'movies' && c.name.toLowerCase().includes('sinema')));
+    : channels.filter(c => 
+        c.category.includes(selectedCategory) || 
+        (selectedCategory === 'movies' && (c.name.toLowerCase().includes('sinema') || c.name.toLowerCase().includes('movie') || c.name.toLowerCase().includes('cinema'))) ||
+        (selectedCategory === 'kids' && (c.name.toLowerCase().includes('tom') || c.name.toLowerCase().includes('pop') || c.name.toLowerCase().includes('tiny'))) ||
+        (selectedCategory === 'news' && (c.name.toLowerCase().includes('global') || c.category.includes('religious')))
+      );
 
-  // Smart TV Remote & Keyboard D-pad navigation listener
+  // Smart TV Remote & Keyboard D-pad navigation listener (Up, Down, Left, Right, Enter)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      const cols = window.innerWidth >= 1280 ? 6 : window.innerWidth >= 1024 ? 5 : window.innerWidth >= 768 ? 4 : 2;
 
       if (e.key === 'ArrowRight') {
         e.preventDefault();
@@ -48,6 +56,12 @@ export const HomePage: React.FC<HomePageProps> = ({
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setFocusedChannelIndex(prev => Math.max(0, prev - 1));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedChannelIndex(prev => Math.min(filteredChannels.length - 1, prev + cols));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedChannelIndex(prev => Math.max(0, prev - cols));
       } else if (e.key === 'Enter' && focusedChannelIndex >= 0 && focusedChannelIndex < filteredChannels.length) {
         e.preventDefault();
         onSelectChannel(filteredChannels[focusedChannelIndex]);
@@ -83,43 +97,52 @@ export const HomePage: React.FC<HomePageProps> = ({
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6 space-y-12">
         {selectedCategory === 'all' ? (
           <>
+            {/* Section 0: ALL CHANNELS AT ONCE IN VERTICAL GRID FIRST! */}
+            <ChannelGridSection
+              title="📺 Chaneli Zote za NeliTv (All Channels)"
+              subtitle="Vituo vyote vikiwemo Baynith Sports, Azam Sports HD, sinema, burudani, watoto na habari"
+              channels={channels}
+              focusedIndex={focusedChannelIndex}
+              onSelectChannel={onSelectChannel}
+            />
+
             {/* Section 1: Live Sports & Azam Sports (Vertical Grid) */}
             <ChannelGridSection
-              title="⚽ Mechi za Moja kwa Moja & Ligi Kuu"
-              subtitle="Azam Sports HD, NBC Premier League, na Ligi za Kimataifa"
+              title="⚽ Mechi za Moja kwa Moja, Ligi Kuu & UEFA"
+              subtitle="Baynith Sports 1 & 2, Azam Sports 1, 2, 3, 4 HD na michuano mikubwa"
               channels={sportsChannels}
               onSelectChannel={onSelectChannel}
             />
 
             {/* Section 2: Movies & Sinema Zetu (Vertical Grid) */}
             <ChannelGridSection
-              title="🎬 Sinema Zetu & Filamu Kali"
-              subtitle="Filamu za Kibongo, tamthilia pendwa na action movies masaa 24"
+              title="🎬 Sinema Zetu, Hollywood & Filamu Kali"
+              subtitle="MBC 2, Sinema Zetu, Movie Box, Sony Movie Action, Movie Sphere, Ze Cinema"
               channels={moviesChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Section 3: Entertainment & Tanzania Local (Vertical Grid) */}
+            {/* Section 3: Kids & Cartoons (Vertical Grid) */}
             <ChannelGridSection
-              title="📺 Burudani za Kitanzania & Tamthilia"
-              subtitle="Vipindi maarufu vya familia, muziki wa Bongo Flava na utamaduni"
+              title="🧸 Watoto, Katuni & Familia"
+              subtitle="Tom and Jerry, POP Animation Network, TinyPop na katuni safi za watoto masaa 24"
+              channels={kidsChannels}
+              onSelectChannel={onSelectChannel}
+            />
+
+            {/* Section 4: Entertainment & Music (Vertical Grid) */}
+            <ChannelGridSection
+              title="📺 Burudani za Kitanzania, Muziki & Comedy"
+              subtitle="Wasafi TV, Trace Latina, Comedy Channel, Azam One, Azam Two"
               channels={entertainmentChannels}
               onSelectChannel={onSelectChannel}
             />
 
-            {/* Section 4: News & Information (Vertical Grid) */}
+            {/* Section 5: News & Religious (Vertical Grid) */}
             <ChannelGridSection
-              title="📰 Habari & Taarifa za Uhakika"
-              subtitle="Matukio ya papo hapo Tanzania na ulimwenguni kote"
-              channels={newsChannels}
-              onSelectChannel={onSelectChannel}
-            />
-
-            {/* Section 5: Kids & Cartoons (Vertical Grid) */}
-            <ChannelGridSection
-              title="🧸 Watoto & Katuni za Familia"
-              subtitle="Elimu, burudani na vicheko kwa ajili ya watoto nyumbani"
-              channels={kidsChannels}
+              title="📰 Habari za Ulimwengu & Vipindi vya Dini"
+              subtitle="Now Global, Catholic Tv, matangazo ya kimataifa na ibada"
+              channels={[...newsChannels, ...religiousChannels]}
               onSelectChannel={onSelectChannel}
             />
 
@@ -166,6 +189,7 @@ interface ChannelGridSectionProps {
   title: string;
   subtitle?: string;
   channels: Channel[];
+  focusedIndex?: number;
   onSelectChannel: (channel: Channel) => void;
 }
 
@@ -173,6 +197,7 @@ const ChannelGridSection: React.FC<ChannelGridSectionProps> = ({
   title,
   subtitle,
   channels,
+  focusedIndex,
   onSelectChannel
 }) => {
   if (channels.length === 0) return null;
@@ -196,10 +221,11 @@ const ChannelGridSection: React.FC<ChannelGridSectionProps> = ({
 
       {/* Pure Vertical Grid (No horizontal overflow slider) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4.5">
-        {channels.map((channel) => (
+        {channels.map((channel, idx) => (
           <ChannelCard
             key={channel.id}
             channel={channel}
+            isFocused={focusedIndex === idx}
             onSelectChannel={onSelectChannel}
           />
         ))}
@@ -221,10 +247,18 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
 }) => {
   return (
     <div
+      tabIndex={0}
+      role="button"
       onClick={() => onSelectChannel(channel)}
-      className={`group relative rounded-2xl bg-neutral-900/90 border overflow-hidden cursor-pointer transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-xl hover:shadow-pink-500/15 ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelectChannel(channel);
+        }
+      }}
+      className={`group relative rounded-2xl bg-neutral-900/90 border overflow-hidden cursor-pointer transition-all duration-300 transform outline-none focus:outline-none hover:-translate-y-1.5 hover:shadow-xl hover:shadow-pink-500/15 focus:scale-105 focus:ring-4 focus:ring-cyan-400 focus:shadow-2xl focus:shadow-cyan-500/50 ${
         isFocused
-          ? 'ring-4 ring-pink-500 scale-105 border-transparent shadow-2xl shadow-pink-500/40'
+          ? 'ring-4 ring-pink-500 scale-105 sm:scale-110 border-transparent shadow-2xl shadow-pink-500/50 z-10'
           : 'border-neutral-800 hover:border-pink-500/50'
       }`}
     >

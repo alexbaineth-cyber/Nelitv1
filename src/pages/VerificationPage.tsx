@@ -23,7 +23,7 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
   onSuccessRedirect,
   onRetryPayment
 }) => {
-  const { user, refreshProfile } = useAuth();
+  const { user, refreshProfile, updateUserSubscriptionLocally } = useAuth();
   const currentPhone = phone || (user ? user.phone : '');
 
   const [currentOrderId, setCurrentOrderId] = useState<string>(initialOrderId || '');
@@ -33,6 +33,8 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
   const [resendingPush, setResendingPush] = useState<boolean>(false);
   const [pushSentCount, setPushSentCount] = useState<number>(1);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const durationDays = amount >= 10000 ? 30 : (amount >= 3000 ? 7 : 2);
 
   // Verification checking function
   const checkPayment = async (isManualClick = false) => {
@@ -58,6 +60,8 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
 
       if (data.verified || data.status === 'completed') {
         setStatus('completed');
+        // Activate local subscription and start countdown immediately
+        updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
         // Synchronize directly into user's Supabase dashboard (nelitv_subscriptions & nelitv_payments)
         await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
         await refreshProfile();
@@ -97,6 +101,8 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
       const data = await res.json();
       if (data.success) {
         setStatus('completed');
+        // Activate local subscription and start countdown immediately
+        updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
         // Synchronize directly into user's Supabase dashboard
         await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
         await refreshProfile();
@@ -104,6 +110,7 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
     } catch {
       // Local fallback
       setStatus('completed');
+      updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
       await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
       await refreshProfile();
     } finally {

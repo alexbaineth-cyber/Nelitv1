@@ -12,8 +12,8 @@ import { DownloadAppModal } from './components/DownloadAppModal.tsx';
 import { CinematicSplash } from './components/CinematicSplash.tsx';
 import { MobileApkLandingView } from './components/MobileApkLandingView.tsx';
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
-import { Download, QrCode, Smartphone, X, ShieldCheck } from 'lucide-react';
 import { HomePage } from './pages/HomePage.tsx';
+import { Download, QrCode, Smartphone, X, ShieldCheck, Tv, Search, Crown, User } from 'lucide-react';
 import { WatchPage } from './pages/WatchPage.tsx';
 import { SearchPage } from './pages/SearchPage.tsx';
 import { PremiumPage } from './pages/PremiumPage.tsx';
@@ -345,13 +345,91 @@ function MainApp() {
               </a>
             </div>
           </footer>
+
+          {/* 7. MOBILE BOTTOM NAVIGATION (Quick access on mobile web browsers) */}
+          {activeTab !== 'watch' && (
+            <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-lg border-t border-neutral-800/90 px-2 py-2 flex items-center justify-around safe-area-bottom">
+              <button
+                onClick={() => { setActiveTab('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
+                  activeTab === 'home'
+                    ? 'text-pink-400 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Tv className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5">Nyumbani</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('search'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
+                  activeTab === 'search'
+                    ? 'text-pink-400 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Search className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5">Tafuta</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('premium'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
+                  activeTab === 'premium'
+                    ? 'text-amber-400 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Crown className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5">Vifurushi</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('account'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
+                  activeTab === 'account'
+                    ? 'text-cyan-400 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <User className="w-5 h-5" />
+                <span className="text-[10px] mt-0.5">Akaunti</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setDownloadModalTab('direct');
+                  setIsDownloadModalOpen(true);
+                }}
+                className="flex flex-col items-center py-1 px-2.5 rounded-xl text-cyan-400 hover:text-cyan-300 transition"
+              >
+                <Download className="w-5 h-5 animate-bounce" />
+                <span className="text-[10px] mt-0.5 font-bold">Pakua App</span>
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {/* 7. PRIVACY POLICY MODAL */}
+      {/* 8. PRIVACY POLICY MODAL */}
       <PrivacyPolicyModal
         isOpen={isPrivacyModalOpen}
         onClose={() => setIsPrivacyModalOpen(false)}
+      />
+
+      {/* 9. DOWNLOAD APP MODAL */}
+      <DownloadAppModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        initialTab={downloadModalTab}
+      />
+
+      {/* 10. AUTH LOGIN & REGISTER MODAL */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setLoginModalOpen(false)}
+        onSuccess={handleLoginSuccess}
       />
     </div>
   );
