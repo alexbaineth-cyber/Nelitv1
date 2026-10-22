@@ -21,6 +21,7 @@ export const MobileApkLandingView: React.FC<MobileApkLandingViewProps> = ({
   const [downloadUrl, setDownloadUrl] = useState<string>(DEFAULT_APK_DOWNLOAD_URL);
   const [versionTag, setVersionTag] = useState<string>('v2.3.0');
   const [apkSize, setApkSize] = useState<string>('18.4 MB');
+  const [appLogoSrc, setAppLogoSrc] = useState<string>('/app-logo.png');
 
   useEffect(() => {
     let isMounted = true;
@@ -67,13 +68,18 @@ export const MobileApkLandingView: React.FC<MobileApkLandingViewProps> = ({
 
       {/* Main Single-Page Content */}
       <div className="relative z-10 max-w-sm mx-auto w-full flex-1 flex flex-col items-center text-center justify-center pt-2">
-        {/* 1. Official 3D Neon Gradient Logo */}
+        {/* 1. Official App Logo for APK (Distinct app logo placeholder) */}
         <div className="relative mb-4 group">
           <div className="w-28 h-28 rounded-[28px] bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[2.5px] shadow-[0_12px_40px_rgba(255,0,122,0.35)] ring-4 ring-neutral-900/60 animate-pulse">
             <div className="w-full h-full rounded-[25px] bg-[#0c1017] flex items-center justify-center p-3 relative overflow-hidden">
               <img
-                src="/logo.png"
-                alt="NeliTv Official Logo"
+                src={appLogoSrc}
+                onError={() => {
+                  if (appLogoSrc !== '/logo.png') {
+                    setAppLogoSrc('/logo.png');
+                  }
+                }}
+                alt="NeliTv App Logo"
                 className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(255,0,122,0.5)]"
               />
             </div>
@@ -202,14 +208,19 @@ export const MobileApkLandingView: React.FC<MobileApkLandingViewProps> = ({
           </div>
         </div>
 
-        {/* 6. Switch to Web Browser Option */}
-        <button
-          onClick={onContinueInBrowser}
-          className="w-full py-3 px-4 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95"
-        >
-          <span>Au Endelea na Toleo la Web Browser</span>
-          <ArrowRight className="w-3.5 h-3.5 text-cyan-400" />
-        </button>
+        {/* 6. Option to open on Web View at the bottom */}
+        <div className="w-full pt-2">
+          <button
+            onClick={onContinueInBrowser}
+            className="w-full py-3.5 px-4 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-white hover:text-cyan-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition active:scale-95 shadow-md cursor-pointer group"
+          >
+            <span>Fungua kwenye Web View (Endelea na Browser)</span>
+            <ArrowRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+          </button>
+          <p className="text-[10px] text-neutral-400 mt-2">
+            Bofya hapa kama unataka kutazama moja kwa moja kwenye kivinjari cha simu
+          </p>
+        </div>
       </div>
 
       {/* Footer Links (Privacy Policy & GitHub) */}

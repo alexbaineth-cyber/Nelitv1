@@ -160,6 +160,14 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
           </div>
         )}
 
+        {/* Subscription stacking notice */}
+        <div className="p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 flex items-center gap-3 text-xs text-neutral-300 shadow-sm">
+          <Zap className="w-4 h-4 text-cyan-400 shrink-0 fill-cyan-400" />
+          <p className="leading-relaxed">
+            <strong className="text-white">Ongeza Kifurushi Muda Wowote:</strong> Ukilipia tena, muda mpya unajumlishwa moja kwa moja na masaa au siku zilizobaki (mfano: ukilipia siku 30 mara mbili unakuwa na siku 60, au ukiwa na siku 1 na ukalipia 1,000 unakuwa na siku 3 kamili).
+          </p>
+        </div>
+
         {/* SIMPLE 3-CARD PRICING GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
           {PLANS.map((plan) => {

@@ -237,7 +237,20 @@ export async function syncSubscriptionToSupabaseClientSide(
   try {
     const clean0 = normalizePhoneNumber(phone);
     const now = new Date();
-    const expiry = calculateSubscriptionExpiration(amount, now);
+
+    // Check if user already has an active subscription to stack time
+    let baseDate = now;
+    try {
+      const existingSub = await fetchCustomerSubscriptionFromSupabase(clean0);
+      if (existingSub?.expires_at) {
+        const expTime = new Date(existingSub.expires_at).getTime();
+        if (expTime > now.getTime()) {
+          baseDate = new Date(expTime);
+        }
+      }
+    } catch {}
+
+    const expiry = calculateSubscriptionExpiration(amount, baseDate);
     const calculatedPlanId = planId || (amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days'));
 
     // 1. Write to public.nelitv_subscriptions

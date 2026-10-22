@@ -290,8 +290,35 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
   const clean0 = normalizePhone(phone);
   const now = new Date();
 
+  // Check if user has an existing active subscription in the future to extend it!
+  // E.g. If user has 30 days and buys another 30 days = 60 days total.
+  // E.g. If user has 1 day or a few hours remaining and buys 2 days = remaining + 48 hours.
+  let baseDate = now;
+  let existingExpiryTime = 0;
+
+  const existingLocal = usersStore[clean0];
+  if (existingLocal?.subscriptionExpiresAt) {
+    const t = new Date(existingLocal.subscriptionExpiresAt).getTime();
+    if (t > existingExpiryTime) existingExpiryTime = t;
+  }
+
+  if (supabase) {
+    try {
+      const existingSub = await querySupabaseSubscription(clean0);
+      if (existingSub?.expires_at) {
+        const t = new Date(existingSub.expires_at).getTime();
+        if (t > existingExpiryTime) existingExpiryTime = t;
+      }
+    } catch {}
+  }
+
+  if (existingExpiryTime > now.getTime()) {
+    baseDate = new Date(existingExpiryTime);
+    console.log(`[Subscription Stacking] User ${clean0} has active subscription until ${baseDate.toISOString()}. Adding new plan on top of existing remaining time!`);
+  }
+
   // Exactly 48 hours for 2 days, 7 days for 1 week, or calendar month for 1 month
-  const finalExpiry = calculateSubscriptionExpiration(amount, now);
+  const finalExpiry = calculateSubscriptionExpiration(amount, baseDate);
   const expiryIso = finalExpiry.toISOString();
   const planId = amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days');
 

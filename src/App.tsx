@@ -47,12 +47,21 @@ function MainApp() {
     detectBrowserAndDevice();
   }, []);
 
-  // Mobile / APK Landing: ONLY displayed when explicitly navigating to /download or ?view=apk
-  // Mobile web browsers and Android WebViews enjoy the fast, responsive, full web app directly
+  // Mobile APK Landing: Urges mobile visitors to download the native app first,
+  // with a prominent option at the bottom to continue in Web View
   const [isMobileLanding, setIsMobileLanding] = useState<boolean>(() => {
     try {
       const search = window.location.search;
-      return search.includes('view=apk') || window.location.pathname === '/download';
+      if (search.includes('view=apk') || window.location.pathname === '/download') {
+        return true;
+      }
+      const forcedWeb = sessionStorage.getItem('nelitv_force_web_mode');
+      if (forcedWeb === 'true') {
+        return false;
+      }
+      const isMobileUA = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isSmallScreen = window.innerWidth <= 768;
+      return isMobileUA || isSmallScreen;
     } catch {
       return false;
     }
