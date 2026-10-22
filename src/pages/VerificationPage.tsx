@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { syncSubscriptionToSupabaseClientSide } from '../lib/supabase.ts';
 import {
   ShieldCheck, CheckCircle2, AlertCircle, ArrowRight,
-  RotateCcw, Send, Smartphone, Zap
+  Smartphone
 } from 'lucide-react';
 
 interface VerificationPageProps {
@@ -29,7 +29,6 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
   const [currentOrderId, setCurrentOrderId] = useState<string>(initialOrderId || '');
   const [status, setStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [checking, setChecking] = useState<boolean>(false);
-  const [manualConfirming, setManualConfirming] = useState<boolean>(false);
   const [resendingPush, setResendingPush] = useState<boolean>(false);
   const [pushSentCount, setPushSentCount] = useState<number>(1);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -81,43 +80,6 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
     }
   };
 
-  // Immediate confirmation fallback: user completed mobile money PIN prompt
-  const handleDirectConfirm = async () => {
-    if (manualConfirming) return;
-    setManualConfirming(true);
-    setNoticeMessage(null);
-
-    try {
-      const res = await fetch('/api/harakapay/verify-manual', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: currentOrderId || '',
-          phone: currentPhone,
-          amount: amount
-        })
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setStatus('completed');
-        // Activate local subscription and start countdown immediately
-        updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
-        // Synchronize directly into user's Supabase dashboard
-        await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
-        await refreshProfile();
-      }
-    } catch {
-      // Local fallback
-      setStatus('completed');
-      updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
-      await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
-      await refreshProfile();
-    } finally {
-      setManualConfirming(false);
-    }
-  };
-
   // MULTIPLE USSD PUSH RESEND (Allows user to trigger push as many times as needed)
   const handleResendUssdPush = async () => {
     if (resendingPush) return;
@@ -135,12 +97,24 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
       });
 
       const data = await res.json();
-      if (data.success && data.orderId) {
-        setCurrentOrderId(data.orderId);
-        setPushSentCount(prev => prev + 1);
-        setNoticeMessage(`Ombi la USSD (${pushSentCount + 1}) limetumwa kwenye ${currentPhone}! Weka PIN yako.`);
+      if (data.success) {
+        if (data.orderId && !data.isOngoingSession) {
+          setCurrentOrderId(data.orderId);
+          setPushSentCount(prev => prev + 1);
+        }
+        setNoticeMessage(
+          data.message ||
+          (data.isOngoingSession
+            ? 'Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Tafadhali angalia simu yako uweke PIN.'
+            : `Ombi la USSD (${pushSentCount + 1}) limetumwa kwenye ${currentPhone}! Weka PIN yako.`)
+        );
       } else {
-        setNoticeMessage(data.error || 'Imeshindikana kutuma tena USSD. Hakikisha simu iko hewani.');
+        const rawErr = data.error || '';
+        if (/on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going|rejecting/i.test(rawErr)) {
+          setNoticeMessage('Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Tafadhali angalia skrini ya simu yako kuweka PIN, au subiri sekunde 30 kabla ya kutuma tena.');
+        } else {
+          setNoticeMessage(rawErr || 'Imeshindikana kutuma tena USSD. Hakikisha simu iko hewani.');
+        }
       }
     } catch {
       setNoticeMessage('Hitilafu ya mtandao wakati wa kutuma tena USSD.');
@@ -270,26 +244,6 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
                   <>
                     <Smartphone className="w-3.5 h-3.5 text-amber-400" />
                     <span>Tuma USSD Tena ({pushSentCount})</span>
-                  </>
-                )}
-              </button>
-
-              {/* Direct Instant Confirmation Button (Instant sync to Supabase) */}
-              <button
-                onClick={handleDirectConfirm}
-                disabled={manualConfirming}
-                title="Ikiwa umeweka PIN kwenye simu yako na salio limekatwa, bonyeza hapa kuthibitisha na kuandika kwenye Supabase mara moja"
-                className="w-full py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/40 active:scale-95 text-cyan-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50"
-              >
-                {manualConfirming ? (
-                  <>
-                    <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Inahifadhi kwenye Supabase...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Nimeshakatwa Salio (Thibitisha Sasa)</span>
                   </>
                 )}
               </button>

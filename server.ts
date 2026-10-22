@@ -289,46 +289,9 @@ async function querySupabaseSubscription(identifier: string) {
 async function saveOrExtendSupabaseSubscription(phone: string, amount: number, email?: string, orderId?: string) {
   const clean0 = normalizePhone(phone);
   const now = new Date();
-  let baseDate = now;
-  let existingRecord: any = null;
 
-  // 1. Check Supabase
-  if (supabase) {
-    try {
-      const existing = await querySupabaseSubscription(clean0);
-      if (existing) {
-        existingRecord = existing;
-        if (existingRecord.expires_at) {
-          const expTime = new Date(existingRecord.expires_at).getTime();
-          if (expTime > now.getTime()) {
-            baseDate = new Date(expTime);
-          }
-        }
-      }
-    } catch (e: any) {
-      console.warn('[Supabase Check Existing]', e.message);
-    }
-  }
-
-  // 2. Fallback to local usersStore if no Supabase record
-  const localUser = usersStore[clean0];
-  if (!existingRecord && localUser?.subscriptionExpiresAt) {
-    const localExp = new Date(localUser.subscriptionExpiresAt).getTime();
-    if (localExp > now.getTime()) {
-      baseDate = new Date(localExp);
-    }
-  }
-
-  const calculatedExpiry = calculateSubscriptionExpiration(amount, baseDate);
-  // Ensure we never overwrite a longer, still-valid expiration with a shorter one
-  let finalExpiry = calculatedExpiry;
-  if (existingRecord?.expires_at) {
-    const existingExp = new Date(existingRecord.expires_at);
-    if (existingExp.getTime() > finalExpiry.getTime()) {
-      finalExpiry = existingExp;
-    }
-  }
-
+  // Exactly 48 hours for 2 days, 7 days for 1 week, or calendar month for 1 month
+  const finalExpiry = calculateSubscriptionExpiration(amount, now);
   const expiryIso = finalExpiry.toISOString();
   const planId = amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days');
 
@@ -340,7 +303,7 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
         .from('nelitv_subscriptions')
         .upsert({
           phone_number: clean0,
-          user_email: email || existingRecord?.user_email || null,
+          user_email: email || null,
           plan_id: planId,
           premium_status: 'active',
           amount_paid: amount,
@@ -878,9 +841,45 @@ app.post('/api/harakapay/collect', async (req: Request, res: Response) => {
         plan: plan
       });
     } else {
+      const rawErr = String(data.message || data.error || '');
+      const isOngoingUssd = /on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going/i.test(rawErr);
+
+      if (isOngoingUssd) {
+        // User's phone already received a USSD prompt and the session is waiting for PIN
+        const existingPending = Object.values(paymentsStore)
+          .filter(p => p.phone === cleanPhone && (p.status === 'pending' || (Date.now() - new Date(p.createdAt).getTime()) < 10 * 60 * 1000))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+        const orderIdToUse = existingPending ? existingPending.orderId : `HP-ACTIVE-${Date.now()}`;
+        if (!existingPending) {
+          paymentsStore[orderIdToUse] = {
+            orderId: orderIdToUse,
+            phone: cleanPhone,
+            amount: plan.priceTsh,
+            planId: plan.id,
+            planName: plan.name,
+            durationDays: plan.durationDays,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+          };
+          persistData();
+        }
+
+        console.log(`[HarakaPay] Ongoing USSD session for ${cleanPhone}. Routing to order ${orderIdToUse}`);
+        return res.json({
+          success: true,
+          orderId: orderIdToUse,
+          amount: (existingPending && existingPending.amount) || plan.priceTsh,
+          message: 'Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Tafadhali fungua simu yako uweke PIN ya malipo.',
+          phone: cleanPhone,
+          plan: plan,
+          isOngoingSession: true
+        });
+      }
+
       return res.status(400).json({
         success: false,
-        error: data.message || data.error || 'Imeshindikana kutuma ombi la malipo. Hakikisha namba yako ina salio au imesajiliwa na huduma za kifedha (M-Pesa, Tigo Pesa, Airtel Money, Halopesa).'
+        error: rawErr || 'Imeshindikana kutuma ombi la malipo. Hakikisha namba yako ina salio au imesajiliwa na huduma za kifedha (M-Pesa, Tigo Pesa, Airtel Money, Halopesa).'
       });
     }
   } catch (error: any) {
@@ -956,9 +955,24 @@ app.post('/api/harakapay/resend-push', async (req: Request, res: Response) => {
         plan: plan
       });
     } else {
+      const rawErr = String(data.message || data.error || '');
+      const isOngoingUssd = /on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going/i.test(rawErr);
+
+      if (isOngoingUssd) {
+        return res.json({
+          success: true,
+          orderId: `HP-RESEND-${Date.now()}`,
+          amount: plan.priceTsh,
+          message: 'Ombi la USSD bado lipo wazi kwenye simu yako! Tafadhali angalia skrini ya simu yako na uweke PIN ya malipo, au subiri sekunde 30 kabla ya kutuma tena.',
+          phone: cleanPhone,
+          plan: plan,
+          isOngoingSession: true
+        });
+      }
+
       return res.status(400).json({
         success: false,
-        error: data.message || 'Haikuweza kutuma ombi jipya la USSD. Hakikisha simu iko hewani na ina salio.'
+        error: rawErr || 'Haikuweza kutuma ombi jipya la USSD. Hakikisha simu iko hewani na ina salio.'
       });
     }
   } catch (error: any) {
@@ -1120,28 +1134,6 @@ app.post('/api/harakapay/verify-payment', async (req: Request, res: Response) =>
     verified: false,
     status: 'pending',
     message: 'Tafadhali kamilisha kuweka PIN kwenye simu yako, kisha bonyeza Nimelipa tena.'
-  });
-});
-
-// 9. Manual / Demo Verification Fallback
-app.post('/api/harakapay/verify-manual', async (req: Request, res: Response) => {
-  const { orderId, phone, amount } = req.body;
-  const cleanPhone = normalizePhone(phone || '0700000000');
-  const numAmount = Number(amount) || 1000;
-
-  const subInfo = await saveOrExtendSupabaseSubscription(cleanPhone, numAmount);
-
-  if (orderId && paymentsStore[orderId]) {
-    paymentsStore[orderId].status = 'completed';
-    paymentsStore[orderId].completedAt = new Date().toISOString();
-    persistData();
-  }
-
-  return res.json({
-    success: true,
-    message: 'Malipo yamethibitishwa na kuhifadhiwa kwenye Supabase!',
-    subscription: subInfo,
-    user: usersStore[cleanPhone]
   });
 });
 

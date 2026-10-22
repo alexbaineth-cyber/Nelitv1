@@ -123,11 +123,16 @@ function MainApp() {
       .catch(err => console.warn('Could not load channels from /api/channels', err));
   }, []);
 
+  // Global TV Remote & Keyboard numeric channel dialing (0-9 + OK/Enter)
+  const [globalDialedNumber, setGlobalDialedNumber] = useState<string>('');
+  const [globalDialedTarget, setGlobalDialedTarget] = useState<Channel | null>(null);
+  const globalDialTimerRef = React.useRef<any>(null);
+
   // When a channel is selected
   const handleSelectChannel = (channel: Channel) => {
     setSelectedChannel(channel);
     setActiveTab('watch');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
   };
 
   const handleLoginSuccess = () => {
@@ -141,7 +146,7 @@ function MainApp() {
   const handlePaymentInitiated = (orderId: string, amount: number, phone: string, planName: string) => {
     setActivePayment({ orderId, amount, phone, planName });
     setActiveTab('verify');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
   };
 
   const handleNavigateToPremiumWithPlan = (planId?: string) => {
@@ -149,8 +154,64 @@ function MainApp() {
       setInitialPlanForPremium(planId);
     }
     setActiveTab('premium');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
   };
+
+  // Global numeric keypress listener for Smart TV Remote & Keyboard
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        const next = (globalDialedNumber + e.key).slice(0, 3);
+        setGlobalDialedNumber(next);
+        const chNum = parseInt(next, 10);
+        const match = channels[chNum - 1] || null;
+        setGlobalDialedTarget(match);
+
+        if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
+        globalDialTimerRef.current = setTimeout(() => {
+          if (match) {
+            handleSelectChannel(match);
+          }
+          setGlobalDialedNumber('');
+          setGlobalDialedTarget(null);
+        }, 2200);
+        return;
+      }
+
+      if (e.key === 'Enter' && globalDialedNumber && globalDialedTarget) {
+        e.preventDefault();
+        if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
+        handleSelectChannel(globalDialedTarget);
+        setGlobalDialedNumber('');
+        setGlobalDialedTarget(null);
+        return;
+      }
+
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (globalDialedNumber) {
+          e.preventDefault();
+          if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
+          const sliced = globalDialedNumber.slice(0, -1);
+          setGlobalDialedNumber(sliced);
+          if (sliced) {
+            const chNum = parseInt(sliced, 10);
+            setGlobalDialedTarget(channels[chNum - 1] || null);
+          } else {
+            setGlobalDialedTarget(null);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
+    };
+  }, [globalDialedNumber, globalDialedTarget, channels]);
 
   return (
     <div className="min-h-screen bg-black text-neutral-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
@@ -180,13 +241,53 @@ function MainApp() {
             activeTab={activeTab}
             setActiveTab={(tab) => {
               setActiveTab(tab);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              window.scrollTo(0, 0);
             }}
             onOpenDownloadModal={() => {
               setDownloadModalTab('direct');
               setIsDownloadModalOpen(true);
             }}
           />
+
+          {/* Global Smart TV Dial HUD when typing numbers in Watch page or elsewhere */}
+          {globalDialedNumber && activeTab !== 'home' && (
+            <div className="fixed top-20 right-4 sm:right-8 z-50 animate-bounce-short pointer-events-none">
+              <div className="p-4 rounded-2xl bg-neutral-950/95 border-2 border-cyan-400 shadow-2xl shadow-cyan-500/50 backdrop-blur-md flex items-center gap-3.5 text-white pointer-events-auto">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-600 to-cyan-500 p-[1.5px] shadow-md">
+                  <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center font-black font-mono text-2xl text-cyan-300">
+                    {globalDialedNumber}
+                  </div>
+                </div>
+
+                <div className="min-w-[150px]">
+                  <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Tv className="w-3 h-3" />
+                    <span>Nambari ya Chaneli</span>
+                  </div>
+                  <div className="text-sm font-black text-white truncate max-w-[180px]">
+                    {globalDialedTarget ? globalDialedTarget.name : `Chaneli #${globalDialedNumber}`}
+                  </div>
+                  <div className="text-[10px] text-amber-400 font-semibold mt-0.5">
+                    Bonyeza OK au subiri...
+                  </div>
+                </div>
+
+                {globalDialedTarget && (
+                  <button
+                    onClick={() => {
+                      if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
+                      handleSelectChannel(globalDialedTarget);
+                      setGlobalDialedNumber('');
+                      setGlobalDialedTarget(null);
+                    }}
+                    className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer"
+                  >
+                    <span>OK</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 4. PAGES SWITCHER (TV, PC, Tablets & Desktops) */}
           <main className="flex-1">
@@ -204,7 +305,7 @@ function MainApp() {
                 channels={channels}
                 onBack={() => {
                   setActiveTab('home');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo(0, 0);
                 }}
                 onSelectChannel={handleSelectChannel}
                 onNavigateToPremium={handleNavigateToPremiumWithPlan}
@@ -227,7 +328,7 @@ function MainApp() {
                 onOpenLoginModal={() => setLoginModalOpen(true)}
                 onSuccessRedirect={() => {
                   setActiveTab('watch');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo(0, 0);
                 }}
               />
             )}
@@ -240,7 +341,7 @@ function MainApp() {
                 planName={activePayment?.planName}
                 onSuccessRedirect={() => {
                   setActiveTab('watch');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo(0, 0);
                 }}
                 onRetryPayment={() => setActiveTab('premium')}
               />

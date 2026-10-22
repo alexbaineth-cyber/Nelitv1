@@ -102,7 +102,12 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
       if (data.success && data.orderId) {
         onPaymentInitiated(data.orderId, data.amount || activeCheckoutPlan.price, clean, activeCheckoutPlan.name);
       } else {
-        setErrorMessage(data.error || 'Imeshindikana kuanzisha malipo. Hakikisha namba ina salio au jaribu tena.');
+        const rawErr = data.error || '';
+        if (/on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going|rejecting/i.test(rawErr)) {
+          setErrorMessage('Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Tafadhali angalia skrini ya simu yako kuweka PIN, au subiri sekunde 30 kabla ya kujaribu tena.');
+        } else {
+          setErrorMessage(rawErr || 'Imeshindikana kuanzisha malipo. Hakikisha namba ina salio au jaribu tena.');
+        }
       }
     } catch (err: any) {
       setErrorMessage('Hitilafu ya mtandao: ' + (err.message || 'Jaribu tena.'));

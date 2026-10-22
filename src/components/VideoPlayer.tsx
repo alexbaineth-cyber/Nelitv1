@@ -159,7 +159,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           onSelectPlanClick?.('plan_2days');
         }
       } else {
-        setDirectPayError(data.error || 'Imeshindikana kutuma ombi la malipo. Hakikisha namba ina salio.');
+        const rawErr = data.error || '';
+        if (/on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going|rejecting/i.test(rawErr)) {
+          setDirectPayError('Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Angalia skrini ya simu yako na uweke PIN, au subiri sekunde 30 kabla ya kujaribu tena.');
+        } else {
+          setDirectPayError(rawErr || 'Imeshindikana kutuma ombi la malipo. Hakikisha namba ina salio.');
+        }
       }
     } catch (err: any) {
       setDirectPayError('Hitilafu ya mtandao: ' + (err.message || 'Jaribu tena.'));
@@ -243,10 +248,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [hasActiveSubscription, trialCompleted]);
 
-  // Timer to record trial usage while playing
+  const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
+
+  // Timer to record trial usage while playing or watching embedded channel
   useEffect(() => {
     let interval: any = null;
-    if (isPlaying && !hasActiveSubscription && !trialCompleted && !isPaywallTriggered) {
+    const shouldTick = !hasActiveSubscription && !trialCompleted && !isPaywallTriggered && (isEmbedded || isPlaying);
+    if (shouldTick) {
       interval = setInterval(() => {
         recordTrialSecondWatched();
       }, 1000);
@@ -254,7 +262,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isPlaying, hasActiveSubscription, trialCompleted, isPaywallTriggered, recordTrialSecondWatched]);
+  }, [isPlaying, isEmbedded, hasActiveSubscription, trialCompleted, isPaywallTriggered, recordTrialSecondWatched]);
 
   // Main Stream Loader - fast startup, auto ABR, live sync
   useEffect(() => {
@@ -959,19 +967,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ref={containerRef}
       onMouseMove={resetControlsTimeout}
       onTouchStart={resetControlsTimeout}
-      onClick={handlePlayerTap}
-      className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden group select-none shadow-2xl border border-neutral-900 cursor-pointer"
+      onClick={isEmbedded ? undefined : handlePlayerTap}
+      className={`relative w-full aspect-video bg-black rounded-2xl overflow-hidden group select-none shadow-2xl border border-neutral-900 ${
+        isEmbedded ? '' : 'cursor-pointer'
+      }`}
     >
       {/* HTML5 Video Element or Embedded Iframe (Baynith Sports 1 & 2) */}
-      {channel.streamFormat === 'embed' || channel.embedUrl ? (
-        <iframe
-          src={channel.embedUrl || channel.streamUrl}
-          className="w-full h-full border-0 object-contain bg-black"
-          allow="autoplay; fullscreen; picture-in-picture"
-          allowFullScreen
-          loading="lazy"
-          title={channel.name}
-        />
+      {isEmbedded ? (
+        (!isPaywallTriggered && (hasActiveSubscription || !trialCompleted)) ? (
+          <iframe
+            src={channel.embedUrl || channel.streamUrl}
+            className="w-full h-full border-0 object-contain bg-black pointer-events-auto"
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allowFullScreen
+            title={channel.name}
+          />
+        ) : null
       ) : (
         <video
           ref={videoRef}
@@ -980,16 +991,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         />
       )}
 
-      {/* Buffering Indicator */}
-      {isBuffering && !errorMessage && !isPaywallTriggered && (
+      {/* Buffering Indicator - only for native video, NOT for embedded iframes */}
+      {!isEmbedded && isBuffering && !errorMessage && !isPaywallTriggered && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[1px] pointer-events-none transition">
           <div className="w-12 h-12 rounded-full border-3 border-red-600 border-t-transparent animate-spin mb-3" />
           <span className="text-xs text-neutral-300 font-medium">Inaunganisha TV...</span>
         </div>
       )}
 
-      {/* Big Center Play Button when paused */}
-      {!isPlaying && !isBuffering && !isPaywallTriggered && !errorMessage && (
+      {/* Big Center Play Button when paused - only for native video */}
+      {!isEmbedded && !isPlaying && !isBuffering && !isPaywallTriggered && !errorMessage && (
         <div
           onClick={(e) => {
             e.stopPropagation();
@@ -1008,10 +1019,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Top Bar inside Player: Back Button, Channel Name & Trial Countdown */}
       {!isPaywallTriggered && (
         <div
-          className={`absolute inset-x-0 top-0 z-30 p-3 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent transition-all duration-300 ${
-            showControls ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none -translate-y-2'
+          className={`absolute inset-x-0 top-0 z-30 p-3 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent transition-all duration-300 pointer-events-none ${
+            isEmbedded || showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
           }`}
-          onClick={(e) => e.stopPropagation()}
         >
           {/* Back Button inside player */}
           <button
@@ -1023,7 +1033,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 window.history.back();
               }
             }}
-            className="py-1.5 px-3 rounded-xl bg-black/60 hover:bg-red-600 backdrop-blur-md border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-lg group cursor-pointer"
+            className="pointer-events-auto py-1.5 px-3 rounded-xl bg-black/70 hover:bg-red-600 backdrop-blur-md border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-lg group cursor-pointer"
             title="Rudi kwenye chaneli zote"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition" />
@@ -1031,16 +1041,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </button>
 
           {/* Right items: Unmute & Trial counter */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pointer-events-auto">
             {!hasActiveSubscription && (
-              <div className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-medium text-neutral-200 flex items-center gap-1.5 shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-neutral-400 hidden xs:inline">Majaribio:</span>
-                <span className="font-mono font-bold text-amber-300">{formatSeconds(trialRemainingSeconds)}</span>
+              <div className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-amber-500/50 text-xs font-semibold text-neutral-100 flex items-center gap-2 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-amber-300/90 hidden xs:inline">Majaribio:</span>
+                <span className="font-mono font-black text-amber-300">{formatSeconds(trialRemainingSeconds)}</span>
               </div>
             )}
 
-            {isMuted && isPlaying && (
+            {!isEmbedded && isMuted && isPlaying && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1256,9 +1266,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* YouTube-Style Overlay Controls (Toggles on tap, auto-hides after 5s) */}
-      <div
-        className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 ${
+      {/* YouTube-Style Overlay Controls (Native non-embedded streams only) */}
+      {!isEmbedded && (
+        <div
+          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 ${
           showControls && !isPaywallTriggered
             ? 'opacity-100 pointer-events-auto translate-y-0'
             : 'opacity-0 pointer-events-none translate-y-2'
@@ -1396,6 +1407,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Quality Meter Modal */}
       <QualityMeterModal
