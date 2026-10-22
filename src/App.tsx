@@ -20,6 +20,8 @@ import { PremiumPage } from './pages/PremiumPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
 
+import { detectBrowserAndDevice } from './utils/browserDetection.ts';
+
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
 interface ActivePayment {
@@ -40,20 +42,17 @@ function MainApp() {
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
 
-  // Mobile Response Detection: renders full single-page APK landing on mobile viewports
+  // Automatic Browser & Environment Detection on Mount
+  useEffect(() => {
+    detectBrowserAndDevice();
+  }, []);
+
+  // Mobile / APK Landing: ONLY displayed when explicitly navigating to /download or ?view=apk
+  // Mobile web browsers and Android WebViews enjoy the fast, responsive, full web app directly
   const [isMobileLanding, setIsMobileLanding] = useState<boolean>(() => {
     try {
       const search = window.location.search;
-      if (search.includes('view=apk') || window.location.pathname === '/download') {
-        return true;
-      }
-      const forcedWeb = sessionStorage.getItem('nelitv_force_web_mode');
-      if (forcedWeb === 'true') {
-        return false;
-      }
-      const isMobileUA = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isSmallScreen = window.innerWidth <= 768;
-      return isMobileUA || isSmallScreen;
+      return search.includes('view=apk') || window.location.pathname === '/download';
     } catch {
       return false;
     }
@@ -451,7 +450,7 @@ function MainApp() {
           {activeTab !== 'watch' && (
             <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-lg border-t border-neutral-800/90 px-2 py-2 flex items-center justify-around safe-area-bottom">
               <button
-                onClick={() => { setActiveTab('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setActiveTab('home'); window.scrollTo(0, 0); }}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'home'
                     ? 'text-pink-400 font-bold'
@@ -463,7 +462,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('search'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setActiveTab('search'); window.scrollTo(0, 0); }}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'search'
                     ? 'text-pink-400 font-bold'
@@ -475,7 +474,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('premium'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setActiveTab('premium'); window.scrollTo(0, 0); }}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'premium'
                     ? 'text-amber-400 font-bold'
@@ -487,7 +486,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('account'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setActiveTab('account'); window.scrollTo(0, 0); }}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'account'
                     ? 'text-cyan-400 font-bold'

@@ -39,6 +39,7 @@ export type QualityOption = 'auto' | '1080' | '720' | '480' | '360';
 
 interface VideoPlayerProps {
   channel: Channel;
+  isFullPage?: boolean;
   onBack?: () => void;
   onSelectPlanClick?: (planId?: string) => void;
   onOpenLoginModal?: () => void;
@@ -47,6 +48,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   channel,
+  isFullPage = false,
   onBack,
   onSelectPlanClick,
   onOpenLoginModal,
@@ -968,7 +970,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onMouseMove={resetControlsTimeout}
       onTouchStart={resetControlsTimeout}
       onClick={isEmbedded ? undefined : handlePlayerTap}
-      className={`relative w-full aspect-video bg-black rounded-2xl overflow-hidden group select-none shadow-2xl border border-neutral-900 ${
+      className={`relative w-full ${
+        isFullPage ? 'h-full flex-1 rounded-none border-0' : 'aspect-video rounded-2xl border border-neutral-900'
+      } bg-black overflow-hidden group select-none shadow-2xl ${
         isEmbedded ? '' : 'cursor-pointer'
       }`}
     >

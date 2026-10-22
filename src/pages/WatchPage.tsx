@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  Tv, Eye, Share2, Heart, Check, Radio
+  Tv, Eye, Share2, Heart, Check, ArrowLeft
 } from 'lucide-react';
 
 interface WatchPageProps {
@@ -25,7 +25,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   onOpenLoginModal,
   onPaymentInitiated
 }) => {
-  const { phone } = useAuth();
+  const { hasActiveSubscription, trialRemainingSeconds } = useAuth();
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -39,6 +39,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const isFavorite = favorites.includes(currentChannel.id);
+  const isEmbedded = currentChannel.streamFormat === 'embed' || Boolean(currentChannel.embedUrl);
 
   const toggleFavorite = () => {
     let updated: string[];
@@ -74,9 +75,98 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     }
   };
 
-  // Other channels list (Azam & Sports first)
+  const formatSeconds = (sec: number) => {
+    const s = Math.max(0, sec);
+    const mins = Math.floor(s / 60);
+    const remainingSecs = s % 60;
+    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
+  };
+
+  // Other channels list (for non-embedded standard sidepanel view)
   const sideChannels = channels.filter(c => c.id !== currentChannel.id);
 
+  // 1. EMBEDDED CONTENT: FULL SCREEN / FULL PAGE VIEW (No sidepanel, full viewport immersion)
+  if (isEmbedded) {
+    return (
+      <div className="fixed inset-0 z-40 bg-black text-white flex flex-col w-screen h-screen overflow-hidden select-none">
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="fixed top-16 right-4 z-50 py-2.5 px-4 rounded-xl bg-neutral-900 border border-neutral-700 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-fade-in">
+            <Check className="w-4 h-4 text-emerald-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
+        {/* Floating Top Control Overlay for Embedded Full Screen */}
+        <div className="absolute top-0 inset-x-0 z-30 p-2.5 sm:p-4 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
+          <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+            <button
+              onClick={onBack}
+              className="py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl bg-black/80 hover:bg-red-600 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition shadow-2xl border border-white/20 cursor-pointer backdrop-blur-md"
+              title="Rudi kwenye vituo vyote"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Rudi Nyuma</span>
+            </button>
+
+            <div className="flex items-center gap-2 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <span className="text-xs sm:text-sm font-black tracking-tight text-white truncate max-w-[140px] sm:max-w-xs">
+                {currentChannel.name}
+              </span>
+              <span className="text-[10px] bg-red-600/90 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
+                FULL SCREEN
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {!hasActiveSubscription && (
+              <div className="px-2.5 py-1 rounded-full bg-black/85 backdrop-blur-md border border-amber-500/50 text-[11px] font-semibold text-neutral-100 flex items-center gap-1.5 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-amber-300 font-mono font-black">{formatSeconds(trialRemainingSeconds)}</span>
+              </div>
+            )}
+
+            <button
+              onClick={toggleFavorite}
+              className={`p-2 rounded-xl backdrop-blur-md border transition text-xs font-semibold ${
+                isFavorite
+                  ? 'bg-red-600/40 border-red-500 text-red-400'
+                  : 'bg-black/70 border-white/15 text-neutral-300 hover:text-white'
+              }`}
+              title={isFavorite ? 'Ondoa kwenye vipendwa' : 'Penda chaneli hii'}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+            </button>
+
+            <button
+              onClick={handleShare}
+              className="p-2 rounded-xl bg-black/70 backdrop-blur-md border border-white/15 text-neutral-300 hover:text-white transition text-xs font-semibold"
+              title="Sambaza link"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Full Viewport Embedded Player */}
+        <div className="w-full h-full flex-1 relative bg-black">
+          <VideoPlayer
+            key={currentChannel.id}
+            channel={currentChannel}
+            isFullPage={true}
+            onBack={onBack}
+            onSelectPlanClick={onNavigateToPremium}
+            onOpenLoginModal={onOpenLoginModal}
+            onPaymentInitiated={onPaymentInitiated}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // 2. STANDARD CONTENT: NORMAL LAYOUT WITH SIDE PANEL OF CHANNELS
   return (
     <div className="min-h-screen pb-16 bg-[#0a0a0a] text-neutral-100 select-none">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 pt-4">
@@ -96,13 +186,14 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             <VideoPlayer
               key={currentChannel.id}
               channel={currentChannel}
+              isFullPage={false}
               onBack={onBack}
               onSelectPlanClick={onNavigateToPremium}
               onOpenLoginModal={onOpenLoginModal}
               onPaymentInitiated={onPaymentInitiated}
             />
 
-            {/* Clean Channel Info Bar (NO ClearKey text, NO HLS text, NO EPG schedule) */}
+            {/* Clean Channel Info Bar */}
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 min-w-0">

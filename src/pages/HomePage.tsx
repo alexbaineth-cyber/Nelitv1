@@ -258,94 +258,63 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 2. MAIN CHANNELS CONTENT ORGANIZED WITH GENEROUS SPACING & REMOTE SCROLL */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6 space-y-12">
+      {/* 2. MAIN CHANNELS CONTENT - SINGLE UNIFIED GRID FOR VITUO VYOTE & CATEGORY GRIDS */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         {selectedCategory === 'all' ? (
-          <>
-            {/* Section 1: Live Sports & UEFA (Baynith Sports 1 & 2 first!) */}
-            <ChannelGridSection
-              title="⚽ Mechi za Moja kwa Moja, Ligi Kuu & UEFA"
-              subtitle="Baynith Sports 1 (#1) & Baynith Sports 2 (#2), Azam Sports HD na michuano mikubwa"
-              channels={sportsChannels}
-              allChannels={channels}
-              focusedIndex={focusedChannelIndex}
-              startIndex={0}
-              onSelectChannel={onSelectChannel}
-            />
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-neutral-800">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-red-500 animate-pulse" />
+                  <span>Vituo Vyote vya NeliTv ({channels.length})</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Vituo vyote vimepangwa pamoja kwenye gridi moja. Tumia nambari kwenye remote au keyboard kubonyeza kituo cha haraka (#1 Baynith Sports, #2 Baynith Sports 2, nk.)
+                </p>
+              </div>
 
-            {/* Section 2: Movies & Sinema Zetu */}
-            <ChannelGridSection
-              title="🎬 Sinema Zetu, Hollywood & Filamu Kali"
-              subtitle="MBC 2, Sinema Zetu, Movie Box, Sony Movie Action, Ze Cinema"
-              channels={moviesChannels}
-              allChannels={channels}
-              focusedIndex={focusedChannelIndex}
-              startIndex={sportsChannels.length}
-              onSelectChannel={onSelectChannel}
-            />
+              <div className="flex items-center gap-2 text-xs text-neutral-300 bg-neutral-900/90 px-3.5 py-1.5 rounded-xl border border-neutral-800 self-start sm:self-auto shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="font-semibold">{channels.length} Vituo Mubashara 24/7</span>
+              </div>
+            </div>
 
-            {/* Section 3: Kids & Cartoons */}
-            <ChannelGridSection
-              title="🧸 Watoto, Katuni & Familia"
-              subtitle="Tom and Jerry, POP Animation Network, TinyPop na katuni masaa 24"
-              channels={kidsChannels}
-              allChannels={channels}
-              focusedIndex={focusedChannelIndex}
-              startIndex={sportsChannels.length + moviesChannels.length}
-              onSelectChannel={onSelectChannel}
-            />
-
-            {/* Section 4: Entertainment & Music */}
-            <ChannelGridSection
-              title="📺 Burudani za Kitanzania, Muziki & Comedy"
-              subtitle="Wasafi TV, Trace Latina, Comedy Channel, Azam One, Azam Two"
-              channels={entertainmentChannels}
-              allChannels={channels}
-              focusedIndex={focusedChannelIndex}
-              startIndex={sportsChannels.length + moviesChannels.length + kidsChannels.length}
-              onSelectChannel={onSelectChannel}
-            />
-
-            {/* Section 5: News & Religious */}
-            <ChannelGridSection
-              title="📰 Habari za Ulimwengu & Vipindi vya Dini"
-              subtitle="Now Global, Catholic Tv, matangazo ya kimataifa na ibada"
-              channels={newsChannels}
-              allChannels={channels}
-              focusedIndex={focusedChannelIndex}
-              startIndex={sportsChannels.length + moviesChannels.length + kidsChannels.length + entertainmentChannels.length}
-              onSelectChannel={onSelectChannel}
-            />
-
-            {/* Section 6: Africa Channels */}
-            {africaChannels.length > 0 && (
-              <ChannelGridSection
-                title="🌍 Chaneli za Afrika Mashariki na Kusini"
-                subtitle="Matangazo mbalimbali kutoka pande zote za bara la Afrika"
-                channels={africaChannels}
-                allChannels={channels}
-                focusedIndex={focusedChannelIndex}
-                startIndex={channels.length - africaChannels.length}
-                onSelectChannel={onSelectChannel}
-              />
-            )}
-          </>
+            {/* All channels unified in a single high-performance grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
+              {channels.map((channel, idx) => {
+                const channelNumber = idx + 1;
+                return (
+                  <ChannelCard
+                    key={channel.id}
+                    domId={`channel-card-${idx}`}
+                    channel={channel}
+                    channelNumber={channelNumber}
+                    isFocused={focusedChannelIndex === idx}
+                    onSelectChannel={onSelectChannel}
+                  />
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div>
-            <div className="flex items-baseline justify-between mb-6">
+            <div className="flex items-baseline justify-between mb-6 pb-3 border-b border-neutral-800">
               <div>
                 <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
                   <Flame className="w-5 h-5 text-pink-500" />
                   <span>Chaneli Zilizochaguliwa ({currentDisplayChannels.length})</span>
                 </h2>
                 <p className="text-xs text-neutral-400 mt-1">
-                  Chagua kituo unachotaka au andika nambari ya chaneli kwenye remote / keyboard
+                  Chagua kituo unachotaka au andika nambari ya chaneli kwenye remote au keyboard
                 </p>
               </div>
+              <span className="text-xs font-mono text-cyan-400 font-semibold">
+                {currentDisplayChannels.length} vituo
+              </span>
             </div>
 
-            {/* Generous spacing grid for optimal keyboard, mouse & remote scrolling */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-7">
+            {/* Category filtered grid with generous spacing */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
               {currentDisplayChannels.map((channel, idx) => {
                 const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
                 return (
@@ -364,65 +333,6 @@ export const HomePage: React.FC<HomePageProps> = ({
         )}
       </div>
     </div>
-  );
-};
-
-interface ChannelGridSectionProps {
-  title: string;
-  subtitle?: string;
-  channels: Channel[];
-  allChannels: Channel[];
-  focusedIndex?: number;
-  startIndex?: number;
-  onSelectChannel: (channel: Channel) => void;
-}
-
-const ChannelGridSection: React.FC<ChannelGridSectionProps> = ({
-  title,
-  subtitle,
-  channels,
-  allChannels,
-  focusedIndex = -1,
-  startIndex = 0,
-  onSelectChannel
-}) => {
-  if (channels.length === 0) return null;
-
-  return (
-    <section className="space-y-4">
-      {/* Section Header */}
-      <div className="flex items-baseline justify-between border-b border-neutral-900 pb-3">
-        <div>
-          <h2 className="text-base sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
-            <span>{title}</span>
-          </h2>
-          {subtitle && (
-            <p className="text-xs text-neutral-400 mt-0.5">{subtitle}</p>
-          )}
-        </div>
-        <span className="text-[11px] font-mono text-cyan-400 font-semibold">
-          {channels.length} {channels.length === 1 ? 'kituo' : 'vituo'}
-        </span>
-      </div>
-
-      {/* Responsive Grid with Generous Spacing for Keyboard, Mouse & Remote Navigation */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 lg:gap-7">
-        {channels.map((channel, idx) => {
-          const globalIdx = startIndex + idx;
-          const channelNumber = allChannels.findIndex(c => c.id === channel.id) + 1;
-          return (
-            <ChannelCard
-              key={channel.id}
-              domId={`channel-card-${globalIdx}`}
-              channel={channel}
-              channelNumber={channelNumber}
-              isFocused={focusedIndex === globalIdx}
-              onSelectChannel={onSelectChannel}
-            />
-          );
-        })}
-      </div>
-    </section>
   );
 };
 
