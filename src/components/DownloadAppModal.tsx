@@ -84,8 +84,15 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
         {/* Header Header */}
         <div className="p-5 pb-3 border-b border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-950 flex items-center justify-center text-white shadow-lg shadow-red-600/30">
-              <Smartphone className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-black border border-cyan-500/40 p-1 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20 overflow-hidden shrink-0">
+              <img
+                src="/app-logo.png"
+                alt="NeliTv APK Logo"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">

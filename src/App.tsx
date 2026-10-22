@@ -368,10 +368,15 @@ function MainApp() {
             <div className="fixed bottom-4 right-4 z-40 max-w-sm w-[calc(100%-2rem)] rounded-2xl bg-neutral-900/95 border border-cyan-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[1.5px] shrink-0 shadow-md shadow-pink-500/20">
-                    <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center p-1">
-                      <Smartphone className="w-4 h-4 text-cyan-400" />
-                    </div>
+                  <div className="w-9 h-9 rounded-xl bg-black border border-cyan-500/40 p-1 shrink-0 shadow-md shadow-cyan-500/20 overflow-hidden">
+                    <img
+                      src="/app-logo.png"
+                      alt="NeliTv App"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">

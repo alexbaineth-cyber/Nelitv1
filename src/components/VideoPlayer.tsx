@@ -11,6 +11,12 @@ import {
   Sliders, Check, Gauge
 } from 'lucide-react';
 import { QualityMeterModal } from './QualityMeterModal.tsx';
+import {
+  requestFullscreenWithLandscape,
+  exitFullscreenAndUnlock,
+  lockLandscapeOrientation,
+  unlockScreenOrientation
+} from '../utils/orientation.ts';
 
 // Install shaka polyfill once at module initialization
 try {
@@ -880,14 +886,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setIsMuted(video.muted);
   };
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    const isFs = Boolean(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      isFullscreen
+    );
+    if (!isFs) {
+      await requestFullscreenWithLandscape(containerRef.current);
+      setIsFullscreen(true);
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+      await exitFullscreenAndUnlock();
+      setIsFullscreen(false);
     }
   };
+
+  // Fullscreen change listener to sync orientation lock / unlock
+  useEffect(() => {
+    const handleFsChange = () => {
+      const isFs = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement
+      );
+      setIsFullscreen(isFs);
+      if (isFs) {
+        lockLandscapeOrientation();
+      } else {
+        unlockScreenOrientation();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+    };
+  }, []);
 
   const handleRetry = async () => {
     setErrorMessage(null);

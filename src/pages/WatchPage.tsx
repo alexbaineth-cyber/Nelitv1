@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
   Tv, Eye, Share2, Heart, Check, ArrowLeft
 } from 'lucide-react';
+import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -40,6 +41,16 @@ export const WatchPage: React.FC<WatchPageProps> = ({
 
   const isFavorite = favorites.includes(currentChannel.id);
   const isEmbedded = currentChannel.streamFormat === 'embed' || Boolean(currentChannel.embedUrl);
+
+  // Force landscape viewing for full-screen embedded channels on mobile / webview
+  useEffect(() => {
+    if (isEmbedded) {
+      lockLandscapeOrientation();
+      return () => {
+        unlockScreenOrientation();
+      };
+    }
+  }, [isEmbedded]);
 
   const toggleFavorite = () => {
     let updated: string[];
