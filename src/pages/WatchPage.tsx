@@ -72,17 +72,29 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     setTimeout(() => setToastMessage(null), 2500);
   };
 
+  // Keep URL in sync with currently watched channel (?channel=channelId)
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('channel') !== currentChannel.id) {
+        url.searchParams.set('channel', currentChannel.id);
+        window.history.replaceState({ channelId: currentChannel.id }, '', url.toString());
+      }
+    } catch {}
+  }, [currentChannel.id]);
+
   const handleShare = () => {
-    const shareUrl = window.location.origin;
+    const origin = window.location.origin;
+    const shareUrl = `${origin}/?channel=${currentChannel.id}`;
     if (navigator.share) {
       navigator.share({
         title: `${currentChannel.name} - NeliTv`,
-        text: `Tazama ${currentChannel.name} mubashara kwenye NeliTv!`,
+        text: `Tazama ${currentChannel.name} mubashara kwenye NeliTv! Bonyeza hapa kutazama:`,
         url: shareUrl
       }).catch(() => {});
     } else {
-      navigator.clipboard.writeText(`${shareUrl}`);
-      showToast('Link ya chaneli imenakiliwa!');
+      navigator.clipboard.writeText(shareUrl);
+      showToast(`Link ya ${currentChannel.name} imenakiliwa!`);
     }
   };
 

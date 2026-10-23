@@ -114,8 +114,8 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               Ikiwa una maswali yoyote kuhusu sera hii au msaada wa akaunti yako ya NeliTv, tafadhali wasiliana na kitengo chetu cha msaada:
             </p>
             <div className="p-3 rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-300 font-mono text-xs">
-              <div>Barua Pepe: support@nelitv.xyz</div>
-              <div className="mt-1">Tovuti Rasmi: https://nelitv.xyz</div>
+              <div>Barua Pepe: support@nelitv.online</div>
+              <div className="mt-1">Tovuti Rasmi: https://nelitv.online</div>
             </div>
           </div>
         </div>

@@ -34,9 +34,26 @@ interface ActivePayment {
 function MainApp() {
   const { isLoggedIn, hasActiveSubscription, isLoginModalOpen, setLoginModalOpen } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  // 0. Detect shareable channel link on entry (e.g. ?channel=baynith-sports-1 or /channel/:id)
+  const initialChannelParam = (() => {
+    try {
+      const search = new URLSearchParams(window.location.search);
+      const q = search.get('channel') || search.get('ch');
+      if (q) return q;
+      const path = window.location.pathname;
+      if (path.startsWith('/channel/')) return path.replace('/channel/', '');
+      if (path.startsWith('/watch/')) return path.replace('/watch/', '');
+    } catch {}
+    return null;
+  })();
+
+  const initialSharedChannel = initialChannelParam
+    ? CHANNELS_DATA.find(c => c.id === initialChannelParam || c.id.toLowerCase() === initialChannelParam.toLowerCase())
+    : null;
+
+  const [activeTab, setActiveTab] = useState<TabType>(initialSharedChannel ? 'watch' : 'home');
   const [channels, setChannels] = useState<Channel[]>(CHANNELS_DATA);
-  const [selectedChannel, setSelectedChannel] = useState<Channel>(CHANNELS_DATA[0]);
+  const [selectedChannel, setSelectedChannel] = useState<Channel>(initialSharedChannel || CHANNELS_DATA[0]);
   const [pendingChannelToPlay, setPendingChannelToPlay] = useState<Channel | null>(null);
   const [initialPlanForPremium, setInitialPlanForPremium] = useState<string>('plan_7days');
 
@@ -48,8 +65,12 @@ function MainApp() {
   }, []);
 
   // Mobile APK Landing: Urges mobile visitors to download the native app first,
-  // with a prominent option at the bottom to continue in Web View
+  // with a prominent option at the bottom to continue in Web View.
+  // (Direct channel links bypass landing so users can watch immediately)
   const [isMobileLanding, setIsMobileLanding] = useState<boolean>(() => {
+    if (initialSharedChannel) {
+      return false; // Direct channel link: go straight to watch player
+    }
     try {
       const search = window.location.search;
       if (search.includes('view=apk') || window.location.pathname === '/download') {
@@ -69,8 +90,8 @@ function MainApp() {
 
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState<boolean>(false);
 
-  // Cinematic Intro Splash state - shows once on first entrance
-  const [showSplash, setShowSplash] = useState<boolean>(true);
+  // Cinematic Intro Splash state - bypassed if directly opening a shared channel link
+  const [showSplash, setShowSplash] = useState<boolean>(!initialSharedChannel);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const [downloadModalTab, setDownloadModalTab] = useState<'direct' | 'qr'>('direct');
   const [showDownloadBanner, setShowDownloadBanner] = useState<boolean>(() => {
@@ -136,12 +157,54 @@ function MainApp() {
   const [globalDialedTarget, setGlobalDialedTarget] = useState<Channel | null>(null);
   const globalDialTimerRef = React.useRef<any>(null);
 
-  // When a channel is selected
+  // When a channel is selected, set state and push shareable URL (?channel=channelId)
   const handleSelectChannel = (channel: Channel) => {
     setSelectedChannel(channel);
     setActiveTab('watch');
     window.scrollTo(0, 0);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('channel', channel.id);
+      window.history.pushState({ channelId: channel.id }, '', url.toString());
+    } catch {}
   };
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    window.scrollTo(0, 0);
+    if (tab !== 'watch') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('channel') || url.searchParams.has('ch')) {
+          url.searchParams.delete('channel');
+          url.searchParams.delete('ch');
+          window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
+        }
+      } catch {}
+    }
+  };
+
+  // Synchronize browser history and back/forward navigation with channel URLs
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const search = new URLSearchParams(window.location.search);
+        const chId = search.get('channel') || search.get('ch');
+        if (chId) {
+          const match = channels.find(c => c.id === chId || c.id.toLowerCase() === chId.toLowerCase());
+          if (match) {
+            setSelectedChannel(match);
+            setActiveTab('watch');
+            return;
+          }
+        }
+        setActiveTab('home');
+      } catch {}
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [channels]);
 
   const handleLoginSuccess = () => {
     if (pendingChannelToPlay) {
@@ -247,10 +310,7 @@ function MainApp() {
           {/* 3. TV / DESKTOP / PC TOP NAVIGATION */}
           <Navbar
             activeTab={activeTab}
-            setActiveTab={(tab) => {
-              setActiveTab(tab);
-              window.scrollTo(0, 0);
-            }}
+            setActiveTab={handleTabChange}
             onOpenDownloadModal={() => {
               setDownloadModalTab('direct');
               setIsDownloadModalOpen(true);
@@ -311,10 +371,7 @@ function MainApp() {
               <WatchPage
                 currentChannel={selectedChannel}
                 channels={channels}
-                onBack={() => {
-                  setActiveTab('home');
-                  window.scrollTo(0, 0);
-                }}
+                onBack={() => handleTabChange('home')}
                 onSelectChannel={handleSelectChannel}
                 onNavigateToPremium={handleNavigateToPremiumWithPlan}
                 onOpenLoginModal={() => setLoginModalOpen(true)}
@@ -450,12 +507,12 @@ function MainApp() {
               </button>
               <span>•</span>
               <a
-                href="https://nelitv.xyz"
+                href="https://nelitv.online"
                 target="_blank"
                 rel="noreferrer"
                 className="hover:text-cyan-400 transition"
               >
-                nelitv.xyz
+                nelitv.online
               </a>
             </div>
           </footer>
@@ -464,7 +521,7 @@ function MainApp() {
           {activeTab !== 'watch' && (
             <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-lg border-t border-neutral-800/90 px-2 py-2 flex items-center justify-around safe-area-bottom">
               <button
-                onClick={() => { setActiveTab('home'); window.scrollTo(0, 0); }}
+                onClick={() => handleTabChange('home')}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'home'
                     ? 'text-pink-400 font-bold'
@@ -476,7 +533,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('search'); window.scrollTo(0, 0); }}
+                onClick={() => handleTabChange('search')}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'search'
                     ? 'text-pink-400 font-bold'
@@ -488,7 +545,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('premium'); window.scrollTo(0, 0); }}
+                onClick={() => handleTabChange('premium')}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'premium'
                     ? 'text-amber-400 font-bold'
@@ -500,7 +557,7 @@ function MainApp() {
               </button>
 
               <button
-                onClick={() => { setActiveTab('account'); window.scrollTo(0, 0); }}
+                onClick={() => handleTabChange('account')}
                 className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
                   activeTab === 'account'
                     ? 'text-cyan-400 font-bold'
