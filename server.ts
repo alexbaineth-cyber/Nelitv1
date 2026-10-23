@@ -485,13 +485,31 @@ setInterval(() => {
   getOrFetchCdnToken(true).catch(() => {});
 }, 3 * 60 * 1000);
 
-// Block direct / public exposure of /api/channels
-app.get(['/api/channels', '/api/cdn-token'], (_req: Request, res: Response) => {
-  return res.status(404).json({ success: false, error: 'Endpoint not found' });
+// Block all direct / public exposure of /api/channels and /api/cdn-token
+app.all([
+  '/api/channels', '/api/channels/*',
+  '/api/cdn-token', '/api/cdn-token/*',
+  '/cdn-token', '/channels'
+], (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const isDirectBrowserVisit =
+    req.get('sec-fetch-mode') === 'navigate' ||
+    req.get('sec-fetch-dest') === 'document' ||
+    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
+
+  if (isDirectBrowserVisit) {
+    return res.redirect(302, '/');
+  }
+  return res.status(404).send('Not Found');
 });
 
 // 1. Protected channels endpoint moved to /baynithalex/api/channels
 app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
   // Anti-scraping & anti-browser URL typing inspection protection:
   // If someone pastes the URL directly into their browser, the browser sends document navigation headers.
   const isDirectBrowserVisit =
@@ -499,10 +517,13 @@ app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
     req.get('sec-fetch-dest') === 'document' ||
     Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
 
-  const clientHeader = req.get('X-Neli-Client');
+  if (isDirectBrowserVisit) {
+    return res.redirect(302, '/');
+  }
 
-  if (isDirectBrowserVisit || (!clientHeader && req.query.secret !== 'baynithalex')) {
-    return res.status(404).json({ success: false, error: 'Endpoint not found' });
+  const clientHeader = req.get('X-Neli-Client');
+  if (!clientHeader && req.query.secret !== 'baynithalex') {
+    return res.status(404).send('Not Found');
   }
 
   const tokenData = await getOrFetchCdnToken();
@@ -777,15 +798,20 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
 
 // 5. CDN Token provider (Protected internal endpoint)
 app.get('/baynithalex/api/cdn-token', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
   const isDirectBrowserVisit =
     req.get('sec-fetch-mode') === 'navigate' ||
     req.get('sec-fetch-dest') === 'document' ||
     Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
 
-  const clientHeader = req.get('X-Neli-Client');
+  if (isDirectBrowserVisit) {
+    return res.redirect(302, '/');
+  }
 
-  if (isDirectBrowserVisit || (!clientHeader && req.query.secret !== 'baynithalex')) {
-    return res.status(404).json({ success: false, error: 'Endpoint not found' });
+  const clientHeader = req.get('X-Neli-Client');
+  if (!clientHeader && req.query.secret !== 'baynithalex') {
+    return res.status(404).send('Not Found');
   }
 
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
