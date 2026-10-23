@@ -6,6 +6,7 @@ import {
   Tv, Eye, Share2, Heart, Check, ArrowLeft
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
+import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -72,20 +73,19 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     setTimeout(() => setToastMessage(null), 2500);
   };
 
-  // Keep URL in sync with currently watched channel (?channel=channelId)
+  // Keep URL in sync with currently watched channel (e.g. appurl/azam-one or channel-id)
   useEffect(() => {
     try {
-      const url = new URL(window.location.href);
-      if (url.searchParams.get('channel') !== currentChannel.id) {
-        url.searchParams.set('channel', currentChannel.id);
-        window.history.replaceState({ channelId: currentChannel.id }, '', url.toString());
+      const slug = getChannelRouteSlug(currentChannel);
+      const targetPath = `/${slug}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.replaceState({ channelId: currentChannel.id, slug }, '', targetPath);
       }
     } catch {}
-  }, [currentChannel.id]);
+  }, [currentChannel]);
 
   const handleShare = () => {
-    const origin = window.location.origin;
-    const shareUrl = `${origin}/?channel=${currentChannel.id}`;
+    const shareUrl = getChannelShareUrl(currentChannel);
     if (navigator.share) {
       navigator.share({
         title: `${currentChannel.name} - NeliTv`,

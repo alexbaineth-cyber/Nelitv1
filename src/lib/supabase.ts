@@ -1,22 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
-
-// Configuration from environment variables
-export const SUPABASE_URL =
-  (typeof process !== 'undefined' && process.env?.SUPABASE_URL) ||
-  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
-  (import.meta as any)?.env?.VITE_SUPABASE_URL ||
-  'https://qqwlekumeltrdfvutmmt.supabase.co';
-
-export const SUPABASE_ANON_KEY =
-  (typeof process !== 'undefined' && (process.env?.SUPABASE_ANON_KEY || process.env?.SUPABASE_KEY || process.env?.SUPABASE_PUBLISHABLE_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
-  (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY ||
-  (import.meta as any)?.env?.VITE_SUPABASE_KEY ||
-  (import.meta as any)?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  'sb_publishable_RU9QIfJMuQzk_w4eJRGiKA_akpI_o7S';
-
-export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+/**
+ * NeliTv Subscription & Account Sync Service
+ * 
+ * Secure Client Proxy:
+ * Database requests are routed strictly through server-side proxy endpoints (/api/subscription/*)
+ * to prevent exposing database URLs, anon keys, or REST API endpoints (/rest/v1)
+ * in the public browser network tab or client bundle.
+ */
 
 export interface SubscriptionRecord {
   id?: string | number;
@@ -119,17 +108,12 @@ export function isSubscriptionActive(sub?: SubscriptionRecord | null): boolean {
   const expTime = new Date(sub.expires_at).getTime();
   if (isNaN(expTime)) return false;
 
-  const isFuture = expTime > Date.now();
-  if (isFuture) return true;
-
-  // If status is affirmative and expTime is today or future
-  return isFuture;
+  return expTime > Date.now();
 }
 
 /**
- * Query customer subscription:
- * 1. Tries backend proxy /api/subscription/check (bypasses RLS safely with secret key)
- * 2. Fallbacks to direct Supabase query on 'nelitv_subscriptions', 'Subscription', 'subscriptions'
+ * Query customer subscription securely via backend proxy endpoint.
+ * Zero client-side Supabase credentials or /rest/v1 exposure.
  */
 export async function fetchCustomerSubscriptionFromSupabase(
   identifier: string
@@ -138,7 +122,6 @@ export async function fetchCustomerSubscriptionFromSupabase(
   if (!clean) return null;
   const isEmail = clean.includes('@');
 
-  // 1. Primary: Backend endpoint with service_role privileges
   try {
     const param = isEmail ? `email=${encodeURIComponent(clean)}` : `phone=${encodeURIComponent(clean)}`;
     const res = await fetch(`/api/subscription/check?${param}`);
@@ -156,75 +139,17 @@ export async function fetchCustomerSubscriptionFromSupabase(
         };
       }
     }
-  } catch {
-    // If backend endpoint fails (e.g. offline or client-only), proceed to direct check
-  }
-
-  // 2. Secondary direct Supabase query
-  if (!supabase) return null;
-
-  try {
-    const tableNames = ['nelitv_subscriptions', 'Subscription', 'subscriptions'];
-
-    for (const tbl of tableNames) {
-      try {
-        if (isEmail) {
-          const colName = tbl === 'nelitv_subscriptions' ? 'user_email' : 'email';
-          const { data, error } = await supabase
-            .from(tbl)
-            .select('*')
-            .ilike(colName, clean)
-            .order('expires_at', { ascending: false });
-
-          if (!error && data && data.length > 0) {
-            const activeSub = data.find((sub: any) => isSubscriptionActive(sub));
-            const sub = activeSub || data[0];
-            return {
-              id: sub.id,
-              phone_number: sub.phone_number || clean,
-              email: sub.user_email || sub.email,
-              premium_status: sub.premium_status,
-              expires_at: sub.expires_at,
-              plan_name: sub.plan_id || sub.plan_name,
-              amount: sub.amount_paid || sub.amount
-            };
-          }
-        } else {
-          const variants = getPhoneVariants(clean);
-          const { data, error } = await supabase
-            .from(tbl)
-            .select('*')
-            .in('phone_number', variants)
-            .order('expires_at', { ascending: false });
-
-          if (!error && data && data.length > 0) {
-            const activeSub = data.find((sub: any) => isSubscriptionActive(sub));
-            const sub = activeSub || data[0];
-            return {
-              id: sub.id,
-              phone_number: sub.phone_number || clean,
-              email: sub.user_email || sub.email,
-              premium_status: sub.premium_status,
-              expires_at: sub.expires_at,
-              plan_name: sub.plan_id || sub.plan_name,
-              amount: sub.amount_paid || sub.amount
-            };
-          }
-        }
-      } catch {
-        // Fallback to next table
-      }
-    }
     return null;
   } catch (err) {
-    console.warn('[Supabase] fetch error:', err);
+    console.warn('[Subscription Check Notice]', err);
     return null;
   }
 }
 
 /**
- * Direct client-side Supabase dual-sync to guarantee user subscription & payment
- * data are instantly synced into the user's Supabase dashboard
+ * Synchronize subscription and payment via secure backend endpoint.
+ * Executes on Node.js server with privileged database credentials;
+ * zero database keys or /rest/v1 network calls in the browser.
  */
 export async function syncSubscriptionToSupabaseClientSide(
   phone: string,
@@ -233,69 +158,27 @@ export async function syncSubscriptionToSupabaseClientSide(
   orderId?: string,
   email?: string
 ): Promise<boolean> {
-  if (!supabase) return false;
   try {
     const clean0 = normalizePhoneNumber(phone);
-    const now = new Date();
+    const res = await fetch('/api/subscription/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: clean0,
+        amount,
+        planId,
+        orderId,
+        email
+      })
+    });
 
-    // Check if user already has an active subscription to stack time
-    let baseDate = now;
-    try {
-      const existingSub = await fetchCustomerSubscriptionFromSupabase(clean0);
-      if (existingSub?.expires_at) {
-        const expTime = new Date(existingSub.expires_at).getTime();
-        if (expTime > now.getTime()) {
-          baseDate = new Date(expTime);
-        }
-      }
-    } catch {}
-
-    const expiry = calculateSubscriptionExpiration(amount, baseDate);
-    const calculatedPlanId = planId || (amount >= 10000 ? 'plan_30days' : (amount >= 3000 ? 'plan_7days' : 'plan_2days'));
-
-    // 1. Write to public.nelitv_subscriptions
-    const { error: subErr } = await supabase
-      .from('nelitv_subscriptions')
-      .upsert({
-        phone_number: clean0,
-        user_email: email || null,
-        plan_id: calculatedPlanId,
-        premium_status: 'active',
-        amount_paid: amount,
-        activated_at: now.toISOString(),
-        expires_at: expiry.toISOString(),
-        updated_at: now.toISOString()
-      }, { onConflict: 'phone_number' });
-
-    if (subErr) {
-      console.warn('[Supabase client-side nelitv_subscriptions err]', subErr.message);
-    } else {
-      console.log(`[Supabase client-side] Synchronized subscription for ${clean0}`);
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data && data.success);
     }
-
-    // 2. Write to public.nelitv_payments (Exact match to user's schema)
-    const orderToUse = orderId || `HP-${Date.now()}`;
-    const { error: payErr } = await supabase
-      .from('nelitv_payments')
-      .upsert({
-        order_id: orderToUse,
-        phone_number: clean0,
-        amount: amount,
-        plan_id: calculatedPlanId,
-        status: 'completed',
-        payment_method: 'harakapay',
-        completed_at: now.toISOString()
-      }, { onConflict: 'order_id' });
-
-    if (payErr) {
-      console.warn('[Supabase client-side nelitv_payments err]', payErr.message);
-    } else {
-      console.log(`[Supabase client-side] Synchronized payment order ${orderToUse}`);
-    }
-
-    return true;
-  } catch (e: any) {
-    console.warn('[Supabase client-side dual-sync exception]', e.message);
+    return false;
+  } catch (err: any) {
+    console.warn('[Subscription Sync Notice]', err?.message || err);
     return false;
   }
 }

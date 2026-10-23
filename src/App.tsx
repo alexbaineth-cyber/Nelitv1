@@ -21,6 +21,7 @@ import { VerificationPage } from './pages/VerificationPage.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
 
 import { detectBrowserAndDevice } from './utils/browserDetection.ts';
+import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -34,22 +35,23 @@ interface ActivePayment {
 function MainApp() {
   const { isLoggedIn, hasActiveSubscription, isLoginModalOpen, setLoginModalOpen } = useAuth();
 
-  // 0. Detect shareable channel link on entry (e.g. ?channel=baynith-sports-1 or /channel/:id)
-  const initialChannelParam = (() => {
+  // 0. Detect shareable channel link on entry (e.g. /azam-one, /azam-sports-1-hd, /5, ?channel=...)
+  const initialSharedChannel = (() => {
     try {
       const search = new URLSearchParams(window.location.search);
       const q = search.get('channel') || search.get('ch');
-      if (q) return q;
+      if (q) {
+        const found = findChannelFromRoute(q, CHANNELS_DATA);
+        if (found) return found;
+      }
       const path = window.location.pathname;
-      if (path.startsWith('/channel/')) return path.replace('/channel/', '');
-      if (path.startsWith('/watch/')) return path.replace('/watch/', '');
+      if (path && path !== '/' && path !== '/download') {
+        const found = findChannelFromRoute(path, CHANNELS_DATA);
+        if (found) return found;
+      }
     } catch {}
     return null;
   })();
-
-  const initialSharedChannel = initialChannelParam
-    ? CHANNELS_DATA.find(c => c.id === initialChannelParam || c.id.toLowerCase() === initialChannelParam.toLowerCase())
-    : null;
 
   const [activeTab, setActiveTab] = useState<TabType>(initialSharedChannel ? 'watch' : 'home');
   const [channels, setChannels] = useState<Channel[]>(CHANNELS_DATA);
@@ -157,15 +159,14 @@ function MainApp() {
   const [globalDialedTarget, setGlobalDialedTarget] = useState<Channel | null>(null);
   const globalDialTimerRef = React.useRef<any>(null);
 
-  // When a channel is selected, set state and push shareable URL (?channel=channelId)
+  // When a channel is selected, set state and push clean shareable URL (/channel-slug or channel ID)
   const handleSelectChannel = (channel: Channel) => {
     setSelectedChannel(channel);
     setActiveTab('watch');
     window.scrollTo(0, 0);
     try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('channel', channel.id);
-      window.history.pushState({ channelId: channel.id }, '', url.toString());
+      const slug = getChannelRouteSlug(channel);
+      window.history.pushState({ channelId: channel.id, slug }, '', `/${slug}`);
     } catch {}
   };
 
@@ -174,11 +175,9 @@ function MainApp() {
     window.scrollTo(0, 0);
     if (tab !== 'watch') {
       try {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('channel') || url.searchParams.has('ch')) {
-          url.searchParams.delete('channel');
-          url.searchParams.delete('ch');
-          window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
+        const path = window.location.pathname;
+        if (path !== '/' && path !== '/download') {
+          window.history.pushState({}, '', '/');
         }
       } catch {}
     }
@@ -190,8 +189,10 @@ function MainApp() {
       try {
         const search = new URLSearchParams(window.location.search);
         const chId = search.get('channel') || search.get('ch');
-        if (chId) {
-          const match = channels.find(c => c.id === chId || c.id.toLowerCase() === chId.toLowerCase());
+        const path = window.location.pathname;
+        const target = chId || (path !== '/' && path !== '/download' ? path : '');
+        if (target) {
+          const match = findChannelFromRoute(target, channels);
           if (match) {
             setSelectedChannel(match);
             setActiveTab('watch');

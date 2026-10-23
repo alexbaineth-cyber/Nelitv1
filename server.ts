@@ -643,6 +643,28 @@ app.get(['/api/subscription/check', '/api/subscription/status'], async (req: Req
   }
 });
 
+// 2.6 Secure Subscription Save / Sync for Client (Executes on server; zero client exposure of DB credentials)
+app.post('/api/subscription/save', async (req: Request, res: Response) => {
+  const { phone, amount, email, orderId } = req.body;
+  if (!phone) {
+    return res.status(400).json({ success: false, error: 'Namba ya simu inahitajika' });
+  }
+
+  try {
+    const cleanPhone = normalizePhone(phone);
+    const numAmount = Number(amount) || 1000;
+    const subInfo = await saveOrExtendSupabaseSubscription(cleanPhone, numAmount, email, orderId);
+    return res.json({
+      success: true,
+      subscription: subInfo,
+      user: usersStore[cleanPhone]
+    });
+  } catch (err: any) {
+    console.warn('[Subscription Save API Error]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 3. User Authentication / Profile with Supabase Cross-Device Sync
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const { phone, deviceInfo } = req.body;
