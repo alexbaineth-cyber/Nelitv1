@@ -29,13 +29,16 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
     return inMemoryToken;
   }
 
-  // 1. Try local server API endpoint (/api/cdn-token)
+  // 1. Try local server API endpoint (/baynithalex/api/cdn-token)
   try {
-    const url = forceRefresh ? '/api/cdn-token?refresh=true' : '/api/cdn-token';
+    const url = forceRefresh ? '/baynithalex/api/cdn-token?refresh=true' : '/baynithalex/api/cdn-token';
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'X-Neli-Client': 'nelitv-web' }
+    });
     clearTimeout(timeoutId);
 
     if (res.ok) {

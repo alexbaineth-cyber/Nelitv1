@@ -485,8 +485,26 @@ setInterval(() => {
   getOrFetchCdnToken(true).catch(() => {});
 }, 3 * 60 * 1000);
 
-// 1. Channels list with dynamic active tokens
-app.get('/api/channels', async (_req: Request, res: Response) => {
+// Block direct / public exposure of /api/channels
+app.get(['/api/channels', '/api/cdn-token'], (_req: Request, res: Response) => {
+  return res.status(404).json({ success: false, error: 'Endpoint not found' });
+});
+
+// 1. Protected channels endpoint moved to /baynithalex/api/channels
+app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
+  // Anti-scraping & anti-browser URL typing inspection protection:
+  // If someone pastes the URL directly into their browser, the browser sends document navigation headers.
+  const isDirectBrowserVisit =
+    req.get('sec-fetch-mode') === 'navigate' ||
+    req.get('sec-fetch-dest') === 'document' ||
+    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
+
+  const clientHeader = req.get('X-Neli-Client');
+
+  if (isDirectBrowserVisit || (!clientHeader && req.query.secret !== 'baynithalex')) {
+    return res.status(404).json({ success: false, error: 'Endpoint not found' });
+  }
+
   const tokenData = await getOrFetchCdnToken();
   const host = tokenData.cdnHost.replace(/\/+$/, '');
 
@@ -513,11 +531,7 @@ app.get('/api/channels', async (_req: Request, res: Response) => {
   res.json({
     success: true,
     total: liveChannels.length,
-    data: liveChannels,
-    cdnTokenInfo: {
-      host: tokenData.cdnHost,
-      source: tokenData.source
-    }
+    data: liveChannels
   });
 });
 
@@ -761,8 +775,19 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
   });
 });
 
-// 5. CDN Token provider
-app.get('/api/cdn-token', async (req: Request, res: Response) => {
+// 5. CDN Token provider (Protected internal endpoint)
+app.get('/baynithalex/api/cdn-token', async (req: Request, res: Response) => {
+  const isDirectBrowserVisit =
+    req.get('sec-fetch-mode') === 'navigate' ||
+    req.get('sec-fetch-dest') === 'document' ||
+    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
+
+  const clientHeader = req.get('X-Neli-Client');
+
+  if (isDirectBrowserVisit || (!clientHeader && req.query.secret !== 'baynithalex')) {
+    return res.status(404).json({ success: false, error: 'Endpoint not found' });
+  }
+
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   res.json(tokenData);

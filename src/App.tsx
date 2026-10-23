@@ -138,12 +138,17 @@ function MainApp() {
     };
   }, []);
 
-  // Fetch live channels from server on mount
+  // Fetch live channels securely from server on mount
   useEffect(() => {
-    fetch('/api/channels')
+    fetch('/baynithalex/api/channels', {
+      headers: {
+        'Accept': 'application/json',
+        'X-Neli-Client': 'nelitv-web'
+      }
+    })
       .then(res => res.json())
       .then(data => {
-        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
           setChannels(data.data);
           setSelectedChannel(prev => {
             const found = data.data.find((c: Channel) => c.id === prev.id);
@@ -151,7 +156,7 @@ function MainApp() {
           });
         }
       })
-      .catch(err => console.warn('Could not load channels from /api/channels', err));
+      .catch(err => console.warn('Could not load channels:', err));
   }, []);
 
   // Global TV Remote & Keyboard numeric channel dialing (0-9 + OK/Enter)

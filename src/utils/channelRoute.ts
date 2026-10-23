@@ -59,7 +59,7 @@ export function findChannelFromRoute(rawPathOrQuery: string, channels: Channel[]
   if (clean.startsWith('watch/')) clean = clean.slice('watch/'.length);
 
   // Exclude static reserved app routes
-  const reserved = ['download', 'apk', 'privacy', 'terms', 'api', 'login', 'account', 'premium', 'search', 'verify'];
+  const reserved = ['download', 'apk', 'privacy', 'terms', 'api', 'login', 'account', 'premium', 'search', 'verify', 'baynithalex'];
   if (reserved.includes(clean)) {
     return undefined;
   }
