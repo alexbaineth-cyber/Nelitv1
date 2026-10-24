@@ -22,6 +22,7 @@ import { AccountPage } from './pages/AccountPage.tsx';
 
 import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
+import { getAppAuthHeaders } from './utils/apiAuth.ts';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -141,10 +142,7 @@ function MainApp() {
   // Fetch live channels securely from server on mount
   useEffect(() => {
     fetch('/baynithalex/api/channels', {
-      headers: {
-        'Accept': 'application/json',
-        'X-Neli-Client': 'nelitv-web'
-      }
+      headers: getAppAuthHeaders()
     })
       .then(res => res.json())
       .then(data => {

@@ -78,12 +78,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setLoading(true);
     setErrorMessage(null);
 
+    const cleanInput = email.trim();
+    const targetEmail = /^user([1-9]|10)$/i.test(cleanInput)
+      ? `${cleanInput.toLowerCase()}@login.com`
+      : cleanInput;
+
     try {
       let res;
       if (authMode === 'login') {
-        res = await loginWithEmailAndPassword(email, password);
+        res = await loginWithEmailAndPassword(targetEmail, password);
       } else {
-        res = await registerWithEmailAndPassword(email, password, displayName);
+        res = await registerWithEmailAndPassword(targetEmail, password, displayName);
       }
 
       if (res.success) {
@@ -241,12 +246,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <div className="relative">
                 <Mail className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Barua pepe (example@gmail.com)"
+                  placeholder="Barua pepe (mfano: user1@login.com au user1)"
                   required
-                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition font-sans"
                 />
               </div>
 
@@ -258,14 +263,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Nenosiri (herufi 6+)"
                   required
-                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition"
+                  className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition font-sans"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={loading || googleLoading}
-                className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition disabled:opacity-50"
+                className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition disabled:opacity-50 cursor-pointer"
               >
                 {loading ? (
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -276,6 +281,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   </>
                 )}
               </button>
+
+              {/* Free VIP Accounts Hint */}
+              <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-pink-500/10 to-cyan-500/10 border border-amber-500/20 text-left space-y-1">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Akaunti za Bure (Free VIP Accounts):</span>
+                </div>
+                <p className="text-[10px] text-neutral-300 leading-relaxed">
+                  Email: <span className="font-mono text-cyan-300 font-bold">user1@login.com</span> mpaka <span className="font-mono text-cyan-300 font-bold">user10@login.com</span> (au <span className="font-mono text-cyan-300 font-bold">user1</span> .. <span className="font-mono text-cyan-300 font-bold">user10</span>)
+                  <br />
+                  Nenosiri: <span className="font-mono text-amber-300 font-bold">Free123</span>
+                </p>
+              </div>
 
               <div className="text-center pt-1">
                 <button

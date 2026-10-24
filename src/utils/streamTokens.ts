@@ -1,4 +1,5 @@
 import { Channel, updateGlobalAzamToken } from '../data/channels.ts';
+import { getAppAuthHeaders } from './apiAuth.ts';
 
 export interface CdnTokenData {
   token: string;
@@ -37,7 +38,7 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
 
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'X-Neli-Client': 'nelitv-web' }
+      headers: getAppAuthHeaders()
     });
     clearTimeout(timeoutId);
 

@@ -13,6 +13,12 @@ import {
   normalizePhoneNumber,
   isSubscriptionActive
 } from '../lib/supabase.ts';
+import {
+  isFreeAccountEmail,
+  verifyFreeAccount,
+  FREE_PLAN_NAME,
+  FREE_EXPIRATION_LIFETIME
+} from '../data/freeAccounts.ts';
 
 export interface UserPayment {
   orderId: string;
@@ -189,6 +195,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Check Supabase subscription status for an identifier (phone or email)
   const syncWithSupabase = async (identifier: string, currentUserData: UserData): Promise<UserData> => {
+    // 0. Free VIP Accounts get permanent lifetime VIP access
+    if (isFreeAccountEmail(identifier) || isFreeAccountEmail(currentUserData.email)) {
+      return {
+        ...currentUserData,
+        isSubscribed: true,
+        hasActiveSubscription: true,
+        subscriptionExpiresAt: FREE_EXPIRATION_LIFETIME,
+        subscriptionPlan: FREE_PLAN_NAME,
+        trialCompleted: false,
+        trialSecondsUsed: 0
+      };
+    }
+
     try {
       const sub = await fetchCustomerSubscriptionFromSupabase(identifier);
       if (sub && isSubscriptionActive(sub)) {
@@ -342,6 +361,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Login with Email & Password
   const loginWithEmailAndPassword = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    // 0. Instant Verification for 10 Free VIP Accounts (user1 to user10 with password Free123)
+    const freeAccount = verifyFreeAccount(email, pass);
+    if (freeAccount) {
+      const freeUserData: UserData = {
+        uid: `free-vip-${freeAccount.username}`,
+        phone: phone || '',
+        email: freeAccount.email,
+        displayName: freeAccount.displayName,
+        authProvider: 'email',
+        createdDate: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        trialSecondsUsed: 0,
+        trialCompleted: false,
+        isSubscribed: true,
+        hasActiveSubscription: true,
+        subscriptionPlan: freeAccount.planName,
+        subscriptionExpiresAt: freeAccount.expiresAt,
+        payments: []
+      };
+      syncUserData(freeUserData);
+      // Background attempt to connect Firebase session if available (silent)
+      signInWithEmail(freeAccount.email, pass).catch(() => {
+        signUpWithEmail(freeAccount.email, pass, freeAccount.displayName).catch(() => {});
+      });
+      return { success: true };
+    }
+
     try {
       const fbUser = await signInWithEmail(email.trim(), pass);
       const userEmail = fbUser.email || email;

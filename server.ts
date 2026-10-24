@@ -6,6 +6,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
+import { requireChannelAuth } from './src/server/authMiddleware.ts';
+import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
 
 dotenv.config();
 
@@ -506,26 +508,8 @@ app.all([
   return res.status(404).send('Not Found');
 });
 
-// 1. Protected channels endpoint moved to /baynithalex/api/channels
-app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
-  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
-
-  // Anti-scraping & anti-browser URL typing inspection protection:
-  // If someone pastes the URL directly into their browser, the browser sends document navigation headers.
-  const isDirectBrowserVisit =
-    req.get('sec-fetch-mode') === 'navigate' ||
-    req.get('sec-fetch-dest') === 'document' ||
-    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
-
-  if (isDirectBrowserVisit) {
-    return res.redirect(302, '/');
-  }
-
-  const clientHeader = req.get('X-Neli-Client');
-  if (!clientHeader && req.query.secret !== 'baynithalex') {
-    return res.status(404).send('Not Found');
-  }
-
+// 1. Protected channels endpoint with Token-based / API Key authentication
+app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, res: Response) => {
   const tokenData = await getOrFetchCdnToken();
   const host = tokenData.cdnHost.replace(/\/+$/, '');
 
@@ -641,6 +625,22 @@ app.get(['/api/subscription/check', '/api/subscription/status'], async (req: Req
 
   if (!identifier) {
     return res.json({ success: true, active: false, subscription: null });
+  }
+
+  // Support 10 Free VIP Accounts (user1@login.com to user10@login.com)
+  if (isFreeAccountEmail(identifier)) {
+    return res.json({
+      success: true,
+      active: true,
+      subscription: {
+        email: identifier,
+        phone_number: identifier,
+        plan_id: 'free_vip_lifetime',
+        plan_name: FREE_PLAN_NAME,
+        premium_status: 'active',
+        expires_at: FREE_EXPIRATION_LIFETIME
+      }
+    });
   }
 
   try {
@@ -796,24 +796,8 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
   });
 });
 
-// 5. CDN Token provider (Protected internal endpoint)
-app.get('/baynithalex/api/cdn-token', async (req: Request, res: Response) => {
-  res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
-
-  const isDirectBrowserVisit =
-    req.get('sec-fetch-mode') === 'navigate' ||
-    req.get('sec-fetch-dest') === 'document' ||
-    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
-
-  if (isDirectBrowserVisit) {
-    return res.redirect(302, '/');
-  }
-
-  const clientHeader = req.get('X-Neli-Client');
-  if (!clientHeader && req.query.secret !== 'baynithalex') {
-    return res.status(404).send('Not Found');
-  }
-
+// 5. CDN Token provider with Token-based / API Key authentication
+app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   res.json(tokenData);
