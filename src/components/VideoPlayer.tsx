@@ -17,6 +17,8 @@ import {
   lockLandscapeOrientation,
   unlockScreenOrientation
 } from '../utils/orientation.ts';
+import { useServiceWorkerOnline } from '../hooks/useServiceWorkerOnline.ts';
+import { OfflineWatchPlaceholder } from './OfflineWatchPlaceholder.tsx';
 
 // Install shaka polyfill once at module initialization
 try {
@@ -93,6 +95,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Quality & Internet Stability state
   const [selectedQuality, setSelectedQuality] = useState<QualityOption>('auto');
   const [currentResolution, setCurrentResolution] = useState<string>('Auto');
+
+  // Offline & Service Worker connectivity check for watching
+  const { isOffline, swStatus, checkConnectionNow, isReconnecting } = useServiceWorkerOnline();
+
+  const handleOfflineRetry = useCallback(async () => {
+    const isBack = await checkConnectionNow();
+    if (isBack) {
+      setRetryCount((prev) => prev + 1);
+      setErrorMessage(null);
+    }
+  }, [checkConnectionNow]);
   const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
   const [showQualityMeterModal, setShowQualityMeterModal] = useState<boolean>(false);
   const [bufferSeconds, setBufferSeconds] = useState<number>(30);
@@ -999,6 +1012,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const remainingSecs = s % 60;
     return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
   };
+
+  // Custom Offline Component with cached placeholder UI when user loses connection while watching
+  if (isOffline) {
+    return (
+      <OfflineWatchPlaceholder
+        channel={channel}
+        isFullPage={isFullPage}
+        onRetry={handleOfflineRetry}
+        onBack={onBack}
+        swStatus={swStatus}
+        isReconnecting={isReconnecting}
+      />
+    );
+  }
 
   return (
     <div

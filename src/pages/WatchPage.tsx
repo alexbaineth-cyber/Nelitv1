@@ -3,10 +3,11 @@ import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  Tv, Eye, Share2, Heart, Check, ArrowLeft
+  Tv, Eye, Share2, Heart, Check, ArrowLeft, WifiOff
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
+import { useServiceWorkerOnline } from '../hooks/useServiceWorkerOnline.ts';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -28,6 +29,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   onPaymentInitiated
 }) => {
   const { hasActiveSubscription, trialRemainingSeconds } = useAuth();
+  const { isOffline } = useServiceWorkerOnline();
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -133,13 +135,20 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             </button>
 
             <div className="flex items-center gap-2 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-400 animate-pulse' : 'bg-red-500 animate-ping'}`} />
               <span className="text-xs sm:text-sm font-black tracking-tight text-white truncate max-w-[140px] sm:max-w-xs">
                 {currentChannel.name}
               </span>
-              <span className="text-[10px] bg-red-600/90 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
-                FULL SCREEN
-              </span>
+              {isOffline ? (
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
+                  <WifiOff className="w-3 h-3 text-amber-400" />
+                  <span>OFFLINE</span>
+                </span>
+              ) : (
+                <span className="text-[10px] bg-red-600/90 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
+                  LIVE
+                </span>
+              )}
             </div>
           </div>
 

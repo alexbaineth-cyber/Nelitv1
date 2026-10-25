@@ -23,6 +23,7 @@ import { AccountPage } from './pages/AccountPage.tsx';
 import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 import { getAppAuthHeaders } from './utils/apiAuth.ts';
+import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -600,7 +601,10 @@ function MainApp() {
         initialTab={downloadModalTab}
       />
 
-      {/* 10. AUTH LOGIN & REGISTER MODAL */}
+      {/* 10. GLOBAL OFFLINE INDICATOR */}
+      <OfflineIndicator />
+
+      {/* 11. AUTH LOGIN & REGISTER MODAL */}
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setLoginModalOpen(false)}
