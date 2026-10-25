@@ -204,7 +204,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
     controlsTimeoutRef.current = setTimeout(() => {
       setShowControls(false);
-    }, 5000);
+    }, 3500);
   };
 
   const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
@@ -213,6 +213,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
     if ((e.target as HTMLElement).closest('button, input, select, a, form')) {
       return;
+    }
+    // Attempt smooth un-mute on user tap if video was muted by browser autoplay policy
+    if (videoRef.current && isMuted) {
+      try {
+        videoRef.current.muted = false;
+        setIsMuted(false);
+      } catch {}
     }
     if (showControls) {
       setShowControls(false);
@@ -273,6 +280,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [hasActiveSubscription, trialCompleted]);
 
   const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
+  const isPaidChannel = Boolean(channel.requiredPackages?.includes('PAID') || channel.isAzam || channel.requiredPackages?.length);
+  const showTrialBadge = !hasActiveSubscription && !isPaidChannel;
 
   // Auto-activate full screen on mount for embedded players (like pressing the 'F' button)
   useEffect(() => {
@@ -754,8 +763,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             try {
               await video.play();
               setIsPlaying(true);
-            } catch {
-              setIsPlaying(false);
+            } catch (playErr) {
+              console.warn('HLS unmuted autoplay blocked, retrying muted:', playErr);
+              try {
+                video.muted = true;
+                setIsMuted(true);
+                await video.play();
+                setIsPlaying(true);
+              } catch {
+                setIsPlaying(false);
+              }
             }
           });
 
@@ -782,7 +799,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               try {
                 await video.play();
                 setIsPlaying(true);
-              } catch {}
+              } catch {
+                try {
+                  video.muted = true;
+                  setIsMuted(true);
+                  await video.play();
+                  setIsPlaying(true);
+                } catch {
+                  setIsPlaying(false);
+                }
+              }
             }
           });
         }
@@ -796,7 +822,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             try {
               await video.play();
               setIsPlaying(true);
-            } catch {}
+            } catch {
+              try {
+                video.muted = true;
+                setIsMuted(true);
+                await video.play();
+                setIsPlaying(true);
+              } catch {
+                setIsPlaying(false);
+              }
+            }
           }
         };
       }
@@ -1116,8 +1151,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     <div
       ref={containerRef}
       onMouseMove={resetControlsTimeout}
+      onMouseEnter={resetControlsTimeout}
       onTouchStart={resetControlsTimeout}
-      onClick={isEmbedded ? undefined : handlePlayerTap}
+      onClick={handlePlayerTap}
       className={`w-full bg-black overflow-hidden group select-none shadow-2xl transition-all duration-300 ${
         isEmbedded ? '' : 'cursor-pointer'
       } ${
@@ -1148,7 +1184,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <iframe
             src={channel.embedUrl || channel.streamUrl}
             className="w-full h-full border-0 object-contain bg-black pointer-events-auto"
-            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
             allowFullScreen
             title={channel.name}
           />
@@ -1157,6 +1193,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           playsInline
+          autoPlay
           className="w-full h-full object-contain bg-black"
         />
       )}
@@ -1186,11 +1223,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Top Bar inside Player: Back Button, Channel Name & Trial Countdown */}
+      {/* Invisible Top Edge Hover/Touch Detector to reveal controls on interaction */}
+      {!showControls && !isPaywallTriggered && (
+        <div
+          onMouseMove={resetControlsTimeout}
+          onMouseEnter={resetControlsTimeout}
+          onTouchStart={resetControlsTimeout}
+          onClick={resetControlsTimeout}
+          className="absolute top-0 inset-x-0 h-16 sm:h-20 z-[99999] cursor-pointer pointer-events-auto bg-transparent"
+        />
+      )}
+
+      {/* Top Bar inside Player: Back Button, Channel Name & Controls (Auto-Hides Smoothly) */}
       {!isPaywallTriggered && (
         <div
-          className={`absolute inset-x-0 top-0 z-[100000] p-2.5 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/90 via-black/45 to-transparent transition-all duration-300 pointer-events-none ${
-            isEmbedded || showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
+          onMouseEnter={resetControlsTimeout}
+          onTouchStart={resetControlsTimeout}
+          className={`absolute inset-x-0 top-0 z-[100000] p-2.5 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/90 via-black/45 to-transparent transition-all duration-500 ease-in-out ${
+            showControls
+              ? 'opacity-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 -translate-y-full pointer-events-none'
           }`}
         >
           {/* Back / Exit Fullscreen Button */}
@@ -1254,7 +1306,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               )}
             </button>
 
-            {!hasActiveSubscription && (
+            {/* Trial timer only shown if not subscribed AND not a paid channel */}
+            {showTrialBadge && (
               <div className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-amber-500/50 text-xs font-semibold text-neutral-100 flex items-center gap-2 shadow-lg">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                 <span className="text-amber-300/90 hidden xs:inline">Majaribio:</span>
@@ -1481,10 +1534,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* YouTube-Style Overlay Controls (Native non-embedded streams only) */}
       {!isEmbedded && (
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 ${
+          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-500 ease-in-out ${
           showControls && !isPaywallTriggered
             ? 'opacity-100 pointer-events-auto translate-y-0'
-            : 'opacity-0 pointer-events-none translate-y-2'
+            : 'opacity-0 pointer-events-none translate-y-full'
         }`}
         onClick={(e) => e.stopPropagation()}
       >

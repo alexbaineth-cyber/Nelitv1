@@ -46,6 +46,8 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   const isFavorite = favorites.includes(currentChannel.id);
   const isEmbedded = currentChannel.streamFormat === 'embed' || Boolean(currentChannel.embedUrl);
   const isFullViewport = isEmbedded || isWatchPageFullPage;
+  const isPaidChannel = Boolean(currentChannel.requiredPackages?.includes('PAID') || currentChannel.isAzam || currentChannel.requiredPackages?.length);
+  const showTrialBadge = !hasActiveSubscription && !isPaidChannel;
 
   // Force landscape viewing for full-screen / full-page channels on mobile / webview
   useEffect(() => {
@@ -173,7 +175,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             </div>
 
             <div className="flex items-center gap-2 pointer-events-auto">
-              {!hasActiveSubscription && (
+              {showTrialBadge && (
                 <div className="px-2.5 py-1 rounded-full bg-black/85 backdrop-blur-md border border-amber-500/50 text-[11px] font-semibold text-neutral-100 flex items-center gap-1.5 shadow-lg">
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                   <span className="text-amber-300 font-mono font-black">{formatSeconds(trialRemainingSeconds)}</span>
