@@ -3,7 +3,7 @@ import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  Tv, Eye, Share2, Heart, Check, ArrowLeft, WifiOff
+  Tv, Eye, Share2, Heart, Check, ArrowLeft, WifiOff, Maximize2, Minimize2
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
@@ -41,19 +41,21 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   });
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isWatchPageFullPage, setIsWatchPageFullPage] = useState<boolean>(false);
 
   const isFavorite = favorites.includes(currentChannel.id);
   const isEmbedded = currentChannel.streamFormat === 'embed' || Boolean(currentChannel.embedUrl);
+  const isFullViewport = isEmbedded || isWatchPageFullPage;
 
-  // Force landscape viewing for full-screen embedded channels on mobile / webview
+  // Force landscape viewing for full-screen / full-page channels on mobile / webview
   useEffect(() => {
-    if (isEmbedded) {
+    if (isFullViewport) {
       lockLandscapeOrientation();
       return () => {
         unlockScreenOrientation();
       };
     }
-  }, [isEmbedded]);
+  }, [isFullViewport]);
 
   const toggleFavorite = () => {
     let updated: string[];
@@ -110,10 +112,10 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   // Other channels list (for non-embedded standard sidepanel view)
   const sideChannels = channels.filter(c => c.id !== currentChannel.id);
 
-  // 1. EMBEDDED CONTENT: FULL SCREEN / FULL PAGE VIEW (No sidepanel, full viewport immersion)
-  if (isEmbedded) {
+  // 1. FULL VIEWPORT IMMERSION (Either embedded channel or user clicked Full Page)
+  if (isFullViewport) {
     return (
-      <div className="fixed inset-0 z-40 bg-black text-white flex flex-col w-screen h-screen overflow-hidden select-none">
+      <div className="fixed inset-0 z-40 bg-black text-white flex flex-col w-screen h-[100dvh] overflow-hidden select-none">
         {/* Toast Notification */}
         {toastMessage && (
           <div className="fixed top-16 right-4 z-50 py-2.5 px-4 rounded-xl bg-neutral-900 border border-neutral-700 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-fade-in">
@@ -122,73 +124,99 @@ export const WatchPage: React.FC<WatchPageProps> = ({
           </div>
         )}
 
-        {/* Floating Top Control Overlay for Embedded Full Screen */}
-        <div className="absolute top-0 inset-x-0 z-30 p-2.5 sm:p-4 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
-          <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
-            <button
-              onClick={onBack}
-              className="py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl bg-black/80 hover:bg-red-600 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition shadow-2xl border border-white/20 cursor-pointer backdrop-blur-md"
-              title="Rudi kwenye vituo vyote"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Rudi Nyuma</span>
-            </button>
+        {/* Floating Top Control Overlay for Full Screen (Non-embedded channels) */}
+        {!isEmbedded && (
+          <div className="absolute top-0 inset-x-0 z-30 p-2.5 sm:p-4 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
+            <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+              <button
+                onClick={() => {
+                  if (isWatchPageFullPage && !isEmbedded) {
+                    setIsWatchPageFullPage(false);
+                  } else if (onBack) {
+                    onBack();
+                  } else if (window.history.length > 1) {
+                    window.history.back();
+                  }
+                }}
+                className="py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl bg-black/80 hover:bg-red-600 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition shadow-2xl border border-white/20 cursor-pointer backdrop-blur-md"
+                title={isWatchPageFullPage && !isEmbedded ? "Punguza Skrini" : "Rudi kwenye vituo vyote"}
+              >
+                {isWatchPageFullPage && !isEmbedded ? (
+                  <>
+                    <Minimize2 className="w-4 h-4 text-red-400" />
+                    <span>Punguza Skrini</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Rudi Nyuma</span>
+                  </>
+                )}
+              </button>
 
-            <div className="flex items-center gap-2 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg">
-              <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-400 animate-pulse' : 'bg-red-500 animate-ping'}`} />
-              <span className="text-xs sm:text-sm font-black tracking-tight text-white truncate max-w-[140px] sm:max-w-xs">
-                {currentChannel.name}
-              </span>
-              {isOffline ? (
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
-                  <WifiOff className="w-3 h-3 text-amber-400" />
-                  <span>OFFLINE</span>
+              <div className="flex items-center gap-2 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg">
+                <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-400 animate-pulse' : 'bg-red-500 animate-ping'}`} />
+                <span className="text-xs sm:text-sm font-black tracking-tight text-white truncate max-w-[140px] sm:max-w-xs">
+                  {currentChannel.name}
                 </span>
-              ) : (
-                <span className="text-[10px] bg-red-600/90 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
-                  LIVE
-                </span>
+                {isOffline ? (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
+                    <WifiOff className="w-3 h-3 text-amber-400" />
+                    <span>OFFLINE</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-red-600/90 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
+                    FULL PAGE
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pointer-events-auto">
+              {!hasActiveSubscription && (
+                <div className="px-2.5 py-1 rounded-full bg-black/85 backdrop-blur-md border border-amber-500/50 text-[11px] font-semibold text-neutral-100 flex items-center gap-1.5 shadow-lg">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-amber-300 font-mono font-black">{formatSeconds(trialRemainingSeconds)}</span>
+                </div>
               )}
+
+              <button
+                onClick={toggleFavorite}
+                className={`p-2 rounded-xl backdrop-blur-md border transition text-xs font-semibold ${
+                  isFavorite
+                    ? 'bg-red-600/40 border-red-500 text-red-400'
+                    : 'bg-black/70 border-white/15 text-neutral-300 hover:text-white'
+                }`}
+                title={isFavorite ? 'Ondoa kwenye vipendwa' : 'Penda chaneli hii'}
+              >
+                <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+              </button>
+
+              <button
+                onClick={handleShare}
+                className="p-2 rounded-xl bg-black/70 backdrop-blur-md border border-white/15 text-neutral-300 hover:text-white transition text-xs font-semibold"
+                title="Sambaza link"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
+        )}
 
-          <div className="flex items-center gap-2 pointer-events-auto">
-            {!hasActiveSubscription && (
-              <div className="px-2.5 py-1 rounded-full bg-black/85 backdrop-blur-md border border-amber-500/50 text-[11px] font-semibold text-neutral-100 flex items-center gap-1.5 shadow-lg">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-300 font-mono font-black">{formatSeconds(trialRemainingSeconds)}</span>
-              </div>
-            )}
-
-            <button
-              onClick={toggleFavorite}
-              className={`p-2 rounded-xl backdrop-blur-md border transition text-xs font-semibold ${
-                isFavorite
-                  ? 'bg-red-600/40 border-red-500 text-red-400'
-                  : 'bg-black/70 border-white/15 text-neutral-300 hover:text-white'
-              }`}
-              title={isFavorite ? 'Ondoa kwenye vipendwa' : 'Penda chaneli hii'}
-            >
-              <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
-            </button>
-
-            <button
-              onClick={handleShare}
-              className="p-2 rounded-xl bg-black/70 backdrop-blur-md border border-white/15 text-neutral-300 hover:text-white transition text-xs font-semibold"
-              title="Sambaza link"
-            >
-              <Share2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Full Viewport Embedded Player */}
+        {/* Full Viewport Player */}
         <div className="w-full h-full flex-1 relative bg-black">
           <VideoPlayer
             key={currentChannel.id}
             channel={currentChannel}
             isFullPage={true}
-            onBack={onBack}
+            onBack={() => {
+              if (isWatchPageFullPage && !isEmbedded) {
+                setIsWatchPageFullPage(false);
+              } else if (onBack) {
+                onBack();
+              }
+            }}
+            onToggleFullscreen={(fs) => setIsWatchPageFullPage(fs)}
             onSelectPlanClick={onNavigateToPremium}
             onOpenLoginModal={onOpenLoginModal}
             onPaymentInitiated={onPaymentInitiated}
@@ -218,8 +246,9 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             <VideoPlayer
               key={currentChannel.id}
               channel={currentChannel}
-              isFullPage={false}
+              isFullPage={isWatchPageFullPage}
               onBack={onBack}
+              onToggleFullscreen={(fs) => setIsWatchPageFullPage(fs)}
               onSelectPlanClick={onNavigateToPremium}
               onOpenLoginModal={onOpenLoginModal}
               onPaymentInitiated={onPaymentInitiated}
@@ -261,8 +290,17 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                   </div>
                 </div>
 
-                {/* Working Like & Share Buttons */}
+                {/* Working Like, Share & Fullscreen Buttons */}
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setIsWatchPageFullPage(true)}
+                    className="p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-cyan-500/50 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 shadow-sm"
+                    title="Fungua Skrini Nzima (Full Page)"
+                  >
+                    <Maximize2 className="w-4 h-4 text-cyan-400" />
+                    <span className="hidden sm:inline">Skrini Nzima</span>
+                  </button>
+
                   <button
                     onClick={toggleFavorite}
                     className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 text-xs font-semibold ${

@@ -15,7 +15,8 @@ import {
   requestFullscreenWithLandscape,
   exitFullscreenAndUnlock,
   lockLandscapeOrientation,
-  unlockScreenOrientation
+  unlockScreenOrientation,
+  isIPhoneOrIOS
 } from '../utils/orientation.ts';
 import { useServiceWorkerOnline } from '../hooks/useServiceWorkerOnline.ts';
 import { OfflineWatchPlaceholder } from './OfflineWatchPlaceholder.tsx';
@@ -52,6 +53,7 @@ interface VideoPlayerProps {
   onSelectPlanClick?: (planId?: string) => void;
   onOpenLoginModal?: () => void;
   onPaymentInitiated?: (orderId: string, amount: number, phone: string, planName: string) => void;
+  onToggleFullscreen?: (isFullscreen: boolean) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -60,7 +62,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onBack,
   onSelectPlanClick,
   onOpenLoginModal,
-  onPaymentInitiated
+  onPaymentInitiated,
+  onToggleFullscreen
 }) => {
   const {
     phone,
@@ -270,6 +273,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [hasActiveSubscription, trialCompleted]);
 
   const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
+
+  // Auto-activate full screen on mount for embedded players (like pressing the 'F' button)
+  useEffect(() => {
+    if (isEmbedded) {
+      setIsFullscreen(true);
+      if (onToggleFullscreen) onToggleFullscreen(true);
+
+      try {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+      } catch {}
+
+      // Attempt native HTML5 full screen & landscape orientation (equivalent to pressing F)
+      const enterNativeFs = async () => {
+        try {
+          if (containerRef.current) {
+            await requestFullscreenWithLandscape(containerRef.current, videoRef.current);
+          }
+        } catch (err) {
+          console.warn('Auto native fullscreen awaiting interaction note:', err);
+        }
+      };
+
+      const timer = setTimeout(enterNativeFs, 100);
+      return () => {
+        clearTimeout(timer);
+        try {
+          document.body.style.overflow = '';
+          document.documentElement.style.overflow = '';
+        } catch {}
+      };
+    }
+  }, [isEmbedded, onToggleFullscreen]);
 
   // Timer to record trial usage while playing or watching embedded channel
   useEffect(() => {
@@ -907,36 +943,85 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isFullscreen
     );
     if (!isFs) {
-      await requestFullscreenWithLandscape(containerRef.current);
+      // 1. Activate Full-Page mode immediately (vital for iPhone Safari & mobile WebViews)
       setIsFullscreen(true);
+      if (onToggleFullscreen) onToggleFullscreen(true);
+
+      // Lock body scroll on iOS/Android to prevent background page scrolling
+      try {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.position = 'relative';
+      } catch {}
+
+      // 2. Request native HTML5 / iOS video fullscreen with landscape orientation
+      await requestFullscreenWithLandscape(containerRef.current, videoRef.current);
     } else {
-      await exitFullscreenAndUnlock();
+      // Exit fullscreen
       setIsFullscreen(false);
+      if (onToggleFullscreen) onToggleFullscreen(false);
+
+      // Restore body scrolling
+      try {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        document.body.style.position = '';
+      } catch {}
+
+      await exitFullscreenAndUnlock(videoRef.current);
     }
   };
 
-  // Fullscreen change listener to sync orientation lock / unlock
+  // Fullscreen change listener to sync orientation and webkit native video events
   useEffect(() => {
     const handleFsChange = () => {
       const isFs = Boolean(
         document.fullscreenElement ||
         (document as any).webkitFullscreenElement
       );
-      setIsFullscreen(isFs);
       if (isFs) {
+        setIsFullscreen(true);
+        if (onToggleFullscreen) onToggleFullscreen(true);
         lockLandscapeOrientation();
-      } else {
+      } else if (!isFullscreen) {
+        setIsFullscreen(false);
+        if (onToggleFullscreen) onToggleFullscreen(false);
         unlockScreenOrientation();
       }
     };
 
+    const video = videoRef.current;
+    const handleWebkitBegin = () => {
+      setIsFullscreen(true);
+      if (onToggleFullscreen) onToggleFullscreen(true);
+    };
+    const handleWebkitEnd = () => {
+      setIsFullscreen(false);
+      if (onToggleFullscreen) onToggleFullscreen(false);
+      try {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        document.body.style.position = '';
+      } catch {}
+      unlockScreenOrientation();
+    };
+
     document.addEventListener('fullscreenchange', handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
+    if (video) {
+      video.addEventListener('webkitbeginfullscreen', handleWebkitBegin);
+      video.addEventListener('webkitendfullscreen', handleWebkitEnd);
+    }
+
     return () => {
       document.removeEventListener('fullscreenchange', handleFsChange);
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      if (video) {
+        video.removeEventListener('webkitbeginfullscreen', handleWebkitBegin);
+        video.removeEventListener('webkitendfullscreen', handleWebkitEnd);
+      }
     };
-  }, []);
+  }, [channel.id, isFullscreen, onToggleFullscreen]);
 
   const handleRetry = async () => {
     setErrorMessage(null);
@@ -1033,11 +1118,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onMouseMove={resetControlsTimeout}
       onTouchStart={resetControlsTimeout}
       onClick={isEmbedded ? undefined : handlePlayerTap}
-      className={`relative w-full ${
-        isFullPage ? 'h-full flex-1 rounded-none border-0' : 'aspect-video rounded-2xl border border-neutral-900'
-      } bg-black overflow-hidden group select-none shadow-2xl ${
+      className={`w-full bg-black overflow-hidden group select-none shadow-2xl transition-all duration-300 ${
         isEmbedded ? '' : 'cursor-pointer'
+      } ${
+        isFullscreen
+          ? 'fixed inset-0 z-[99999] w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 m-0 p-0'
+          : isFullPage
+          ? 'relative h-full flex-1 rounded-none border-0'
+          : 'relative aspect-video rounded-2xl border border-neutral-900'
       }`}
+      style={
+        isFullscreen
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100dvh',
+              zIndex: 99999
+            }
+          : undefined
+      }
     >
       {/* HTML5 Video Element or Embedded Iframe (Baynith Sports 1 & 2) */}
       {isEmbedded ? (
@@ -1086,29 +1189,71 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Top Bar inside Player: Back Button, Channel Name & Trial Countdown */}
       {!isPaywallTriggered && (
         <div
-          className={`absolute inset-x-0 top-0 z-30 p-3 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent transition-all duration-300 pointer-events-none ${
+          className={`absolute inset-x-0 top-0 z-[100000] p-2.5 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/90 via-black/45 to-transparent transition-all duration-300 pointer-events-none ${
             isEmbedded || showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'
           }`}
         >
-          {/* Back Button inside player */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onBack) {
-                onBack();
-              } else if (window.history.length > 1) {
-                window.history.back();
-              }
-            }}
-            className="pointer-events-auto py-1.5 px-3 rounded-xl bg-black/70 hover:bg-red-600 backdrop-blur-md border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-lg group cursor-pointer"
-            title="Rudi kwenye chaneli zote"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition" />
-            <span>Rudi</span>
-          </button>
+          {/* Back / Exit Fullscreen Button */}
+          <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  await exitFullscreenAndUnlock(videoRef.current);
+                } catch {}
+                setIsFullscreen(false);
+                if (onToggleFullscreen) onToggleFullscreen(false);
+                if (onBack) {
+                  onBack();
+                } else if (window.history.length > 1) {
+                  window.history.back();
+                }
+              }}
+              className="py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl bg-black/85 hover:bg-red-600 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 shadow-2xl border border-white/25 cursor-pointer backdrop-blur-md transition group"
+              title="Rudi Nyuma"
+            >
+              <ArrowLeft className="w-4 h-4 text-white group-hover:-translate-x-0.5 transition" />
+              <span>Rudi Nyuma</span>
+            </button>
 
-          {/* Right items: Unmute & Trial counter */}
+            {/* Embedded channel live badge */}
+            {isEmbedded && (
+              <div className="flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span className="text-xs sm:text-sm font-black text-white truncate max-w-[130px] sm:max-w-xs">
+                  {channel.name}
+                </span>
+                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
+                  LIVE
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right items: Fullscreen (F) toggle, Unmute & Trial counter */}
           <div className="flex items-center gap-2 pointer-events-auto">
+            {/* Quick Fullscreen (F) toggle button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+              }}
+              className="py-1.5 sm:py-2 px-2.5 sm:px-3.5 rounded-xl bg-black/85 hover:bg-neutral-800 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-xl border border-white/20 cursor-pointer backdrop-blur-md transition"
+              title={isFullscreen ? 'Punguza Skrini (Exit Full Screen)' : 'Skrini Kamili (F / Full Screen)'}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="w-4 h-4 text-red-400" />
+                  <span className="hidden sm:inline">Punguza</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-4 h-4 text-amber-400" />
+                  <span className="hidden sm:inline">Full (F)</span>
+                </>
+              )}
+            </button>
+
             {!hasActiveSubscription && (
               <div className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-amber-500/50 text-xs font-semibold text-neutral-100 flex items-center gap-2 shadow-lg">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -1466,10 +1611,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 toggleFullscreen();
                 resetControlsTimeout();
               }}
-              className="p-2 text-neutral-300 hover:text-white rounded-lg hover:bg-white/10 active:scale-95 transition"
-              title="Skrini Nzima (F)"
+              className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
+                isFullscreen
+                  ? 'text-red-400 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40'
+                  : 'text-neutral-300 hover:text-white hover:bg-white/10'
+              }`}
+              title={isFullscreen ? 'Punguza Skrini (Exit Full Screen)' : 'Skrini Nzima (Full Page / Fullscreen)'}
             >
-              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              {isFullscreen ? <Minimize2 className="w-5 h-5 text-red-400" /> : <Maximize2 className="w-5 h-5" />}
             </button>
           </div>
         </div>

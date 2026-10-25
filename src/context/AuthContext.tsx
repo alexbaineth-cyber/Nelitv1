@@ -19,6 +19,10 @@ import {
   FREE_PLAN_NAME,
   FREE_EXPIRATION_LIFETIME
 } from '../data/freeAccounts.ts';
+import {
+  saveAccountSubscriptionCache,
+  getAccountSubscriptionCache
+} from '../lib/accountStorage.ts';
 
 export interface UserPayment {
   orderId: string;
@@ -91,7 +95,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserData | null>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-      return stored ? JSON.parse(stored) : null;
+      if (!stored) return null;
+      const parsed: UserData = JSON.parse(stored);
+      const identifier = parsed.phone || parsed.email;
+      if (identifier) {
+        const cached = getAccountSubscriptionCache(identifier);
+        if (cached) {
+          parsed.isSubscribed = true;
+          parsed.hasActiveSubscription = true;
+          parsed.subscriptionPlan = cached.subscriptionPlan;
+          parsed.subscriptionExpiresAt = cached.subscriptionExpiresAt;
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -193,7 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
   };
 
-  // Check Supabase subscription status for an identifier (phone or email)
+  // Check Supabase subscription status and isolated browser cache for an identifier (phone or email)
   const syncWithSupabase = async (identifier: string, currentUserData: UserData): Promise<UserData> => {
     // 0. Free VIP Accounts get permanent lifetime VIP access
     if (isFreeAccountEmail(identifier) || isFreeAccountEmail(currentUserData.email)) {
@@ -208,9 +224,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    // 1. Account-Isolated Browser Cache Check:
+    // If this specific account has a valid, non-expired cached payment, immediately honor it
+    const cachedSub = getAccountSubscriptionCache(identifier) ||
+      (currentUserData.phone ? getAccountSubscriptionCache(currentUserData.phone) : null) ||
+      (currentUserData.email ? getAccountSubscriptionCache(currentUserData.email) : null);
+
+    if (cachedSub) {
+      currentUserData = {
+        ...currentUserData,
+        isSubscribed: true,
+        hasActiveSubscription: true,
+        subscriptionExpiresAt: cachedSub.subscriptionExpiresAt,
+        subscriptionPlan: cachedSub.subscriptionPlan,
+        trialCompleted: false,
+        trialSecondsUsed: 0
+      };
+    }
+
+    // 2. Fetch fresh subscription from Supabase remote database
     try {
       const sub = await fetchCustomerSubscriptionFromSupabase(identifier);
       if (sub && isSubscriptionActive(sub)) {
+        // Save to browser cache strictly for this account
+        saveAccountSubscriptionCache(identifier, {
+          planName: sub.plan_name || 'Kifurushi Hai',
+          expiresAt: sub.expires_at
+        });
+
         return {
           ...currentUserData,
           isSubscribed: true,
@@ -461,6 +502,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setFirebaseUser(null);
     localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     localStorage.removeItem(LOCAL_STORAGE_PHONE_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_TRIAL_DONE);
+    localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, '60');
     setTrialRemainingSeconds(60);
     setTrialCompleted(false);
   };
@@ -592,9 +635,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasActiveSubscription: true,
       subscriptionPlan: planName,
       subscriptionExpiresAt: newExpiry.toISOString(),
-      trialCompleted: true,
+      trialCompleted: false,
+      trialSecondsUsed: 0,
       payments: [newPayment, ...(existing.payments || [])]
     };
+
+    // Account-isolated browser cache persistence
+    if (currentPhone) {
+      saveAccountSubscriptionCache(currentPhone, {
+        planName,
+        expiresAt: newExpiry.toISOString(),
+        orderId: newPayment.orderId,
+        amount
+      });
+    }
+    if (updatedUser.email) {
+      saveAccountSubscriptionCache(updatedUser.email, {
+        planName,
+        expiresAt: newExpiry.toISOString(),
+        orderId: newPayment.orderId,
+        amount
+      });
+    }
 
     syncUserData(updatedUser);
   };
