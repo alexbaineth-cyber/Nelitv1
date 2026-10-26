@@ -27,13 +27,42 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     trialRemainingSeconds,
     trialCompleted,
     logout,
-    refreshProfile
+    refreshProfile,
+    linkPhoneToAccount
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'payments'>('profile');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
+
+  // Link Phone state (for users who logged in with Gmail/Email but paid with a phone)
+  const [paymentPhoneInput, setPaymentPhoneInput] = useState<string>('');
+  const [isLinkingPhone, setIsLinkingPhone] = useState<boolean>(false);
+  const [linkPhoneSuccessMsg, setLinkPhoneSuccessMsg] = useState<string | null>(null);
+  const [linkPhoneErrorMsg, setLinkPhoneErrorMsg] = useState<string | null>(null);
+
+  const handleLinkPaymentPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentPhoneInput.trim()) return;
+    setIsLinkingPhone(true);
+    setLinkPhoneSuccessMsg(null);
+    setLinkPhoneErrorMsg(null);
+    try {
+      const res = await linkPhoneToAccount(paymentPhoneInput);
+      if (res.success) {
+        setLinkPhoneSuccessMsg(res.message || '✓ Namba ya simu imeunganishwa na kifurushi kimesawazishwa!');
+        setPaymentPhoneInput('');
+        setTimeout(() => setLinkPhoneSuccessMsg(null), 5000);
+      } else {
+        setLinkPhoneErrorMsg(res.error || 'Imeshindikana kuunganisha namba.');
+      }
+    } catch {
+      setLinkPhoneErrorMsg('Hitilafu ya mtandao wakati wa kuunganisha.');
+    } finally {
+      setIsLinkingPhone(false);
+    }
+  };
 
   // 1-second real-time countdown ticker for Days, Hours, Minutes, Seconds
   useEffect(() => {
@@ -106,7 +135,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen pb-20 bg-[#070A0F] text-neutral-100 select-none">
+    <div className="min-h-screen pb-32 sm:pb-20 bg-[#070A0F] text-neutral-100 touch-pan-y">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
         {/* Title */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -327,6 +356,65 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                       : 'Nunua Kifurushi Sasa (Kuanzia TZS 1,000)'}
                   </span>
                 </button>
+              </div>
+
+              {/* UNGANISHA NAMBA YA SIMU ULIYOLIPIA (Cross-Account Linking for Google / Email or Changing Phone) */}
+              <div className="p-5 rounded-2xl bg-neutral-950 border border-cyan-500/30 space-y-3.5 shadow-md">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                      <span>Unganisha Namba ya Simu Uliyolipia</span>
+                      <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    </h4>
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      Umeingia kwa Gmail au Email lakini ulilipia kwa namba ya simu (M-Pesa, Tigo, Airtel, Halopesa)? Weka namba hiyo hapa chini kuunganisha kifurushi chako mara moja.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleLinkPaymentPhone} className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <div className="relative flex-1">
+                    <Smartphone className="w-4 h-4 text-neutral-500 absolute left-3 top-3" />
+                    <input
+                      type="tel"
+                      value={paymentPhoneInput}
+                      onChange={(e) => setPaymentPhoneInput(e.target.value)}
+                      placeholder={phone ? `Namba ya sasa: ${phone} (Weka namba uliyolipia)` : "Weka namba ya simu uliyolipia (mfano: 07XXXXXXXX)"}
+                      className="w-full pl-9 pr-3 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-xs font-mono text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isLinkingPhone || !paymentPhoneInput.trim()}
+                    className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-cyan-600 to-pink-600 hover:from-cyan-500 hover:to-pink-500 text-white text-xs font-bold shrink-0 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                  >
+                    {isLinkingPhone ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Unganisha Namba</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                {linkPhoneSuccessMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{linkPhoneSuccessMsg}</span>
+                  </div>
+                )}
+
+                {linkPhoneErrorMsg && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2 animate-fade-in">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>{linkPhoneErrorMsg}</span>
+                  </div>
+                )}
               </div>
 
               {/* Supabase & HarakaPay Instant Sync Tool */}

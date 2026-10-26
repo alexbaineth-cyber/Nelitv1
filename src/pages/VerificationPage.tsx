@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { syncSubscriptionToSupabaseClientSide } from '../lib/supabase.ts';
 import {
   ShieldCheck, CheckCircle2, AlertCircle, ArrowRight,
   Smartphone
@@ -50,23 +49,22 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
         body: JSON.stringify({
           orderId: currentOrderId || '',
           phone: currentPhone,
-          amount: amount
+          amount: amount,
+          email: user?.email || ''
         })
       });
 
       const data = await res.json();
       console.log('[Verification Response]', data);
 
-      if (data.verified || data.status === 'completed') {
+      if (data.verified === true && data.status === 'completed') {
         setStatus('completed');
-        // Activate local subscription and start countdown immediately
-        updateUserSubscriptionLocally(planName, durationDays, currentOrderId);
-        // Synchronize directly into user's Supabase dashboard (nelitv_subscriptions & nelitv_payments)
-        await syncSubscriptionToSupabaseClientSide(currentPhone, amount, undefined, currentOrderId);
+        // Auto-register unregistered user or update existing user subscription
+        updateUserSubscriptionLocally(planName, durationDays, currentOrderId, currentPhone);
         await refreshProfile();
       } else {
         if (isManualClick) {
-          setNoticeMessage(data.message || 'Weka PIN kwenye simu yako kisha bonyeza Nimelipa tena.');
+          setNoticeMessage(data.message || 'Bado hujaweka PIN au muamala bado haujathibitishwa na mtandao wako wa simu. Weka PIN kwenye simu yako kisha bonyeza Nimelipa tena.');
         }
       }
     } catch {

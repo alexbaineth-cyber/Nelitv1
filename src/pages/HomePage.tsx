@@ -199,7 +199,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   return (
-    <div className="min-h-screen pb-24 bg-[#070A0F] text-neutral-100 select-none">
+    <div className="min-h-screen pb-32 sm:pb-24 bg-[#070A0F] text-neutral-100 touch-pan-y">
       {/* SMART TV CHANNEL NUMBER DIAL OSD (On-Screen HUD Popup) */}
       {dialedNumber && (
         <div className="fixed top-20 right-4 sm:right-8 z-50 animate-bounce-short pointer-events-none">
@@ -238,7 +238,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       {/* 1. CATEGORY SELECTOR TABS WITH NEON ACCENT */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2 touch-pan-x">
           {categories.map((cat) => (
             <button
               key={cat.id}

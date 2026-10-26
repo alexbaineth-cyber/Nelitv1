@@ -84,6 +84,10 @@ function MainApp() {
       if (forcedWeb === 'true') {
         return false;
       }
+      // If user is already logged in, do not block with APK landing
+      if (localStorage.getItem('nelitv_user_profile')) {
+        return false;
+      }
       const isMobileUA = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const isSmallScreen = window.innerWidth <= 768;
       return isMobileUA || isSmallScreen;
@@ -110,9 +114,12 @@ function MainApp() {
     setShowSplash(false);
   };
 
-  // Anti-inspection and stream protection
+  // Anti-inspection and stream protection (do not block touch on mobile)
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        return;
+      }
       e.preventDefault();
     };
 
@@ -363,7 +370,7 @@ function MainApp() {
           )}
 
           {/* 4. PAGES SWITCHER (TV, PC, Tablets & Desktops) */}
-          <main className="flex-1">
+          <main className="flex-1 w-full touch-pan-y">
             {activeTab === 'home' && (
               <HomePage
                 channels={channels}
@@ -425,9 +432,9 @@ function MainApp() {
             )}
           </main>
 
-          {/* Floating Download Our App Prompt for Desktop */}
+          {/* Floating Download Our App Prompt for Desktop (hidden on mobile to prevent blocking touch scroll) */}
           {showDownloadBanner && !showSplash && activeTab !== 'watch' && (
-            <div className="fixed bottom-4 right-4 z-40 max-w-sm w-[calc(100%-2rem)] rounded-2xl bg-neutral-900/95 border border-cyan-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
+            <div className="hidden md:block fixed bottom-4 right-4 z-40 max-w-sm w-full rounded-2xl bg-neutral-900/95 border border-cyan-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-black border border-cyan-500/40 p-1 shrink-0 shadow-md shadow-cyan-500/20 overflow-hidden">

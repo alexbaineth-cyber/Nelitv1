@@ -61,7 +61,7 @@ export const MobileApkLandingView: React.FC<MobileApkLandingViewProps> = ({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#070A0F] text-neutral-100 flex flex-col justify-between px-4 py-8 relative overflow-hidden select-none">
+    <div className="min-h-screen bg-[#070A0F] text-neutral-100 flex flex-col justify-between px-4 py-8 relative overflow-y-auto touch-pan-y">
       {/* Background Neon Ambient Glows */}
       <div className="absolute top-10 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-gradient-to-tr from-amber-500/20 via-pink-600/25 to-cyan-400/20 blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-0 w-64 h-64 rounded-full bg-cyan-500/15 blur-3xl pointer-events-none" />

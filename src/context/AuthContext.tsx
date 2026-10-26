@@ -77,7 +77,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   recordTrialSecondWatched: () => Promise<void>;
-  updateUserSubscriptionLocally: (planName: string, days: number, orderId?: string) => void;
+  updateUserSubscriptionLocally: (planName: string, days: number, orderId?: string, paidPhone?: string) => void;
+  linkPhoneToAccount: (phone: string) => Promise<{ success: boolean; error?: string; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -605,13 +606,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateUserSubscriptionLocally = (planName: string, days: number, orderId?: string) => {
-    const currentPhone = phone || user?.phone || '0712345678';
+  const updateUserSubscriptionLocally = (planName: string, days: number, orderId?: string, paidPhone?: string) => {
+    const currentPhone = paidPhone ? normalizePhoneNumber(paidPhone) : (phone || user?.phone || '0712345678');
     const amount = days >= 30 ? 10000 : (days >= 7 ? 3000 : 1000);
+
+    setPhone(currentPhone);
+    localStorage.setItem(LOCAL_STORAGE_PHONE_KEY, currentPhone);
+
     const existing = user || {
       phone: currentPhone,
       email: firebaseUser?.email || '',
-      displayName: firebaseUser?.displayName || 'Mwanachama',
+      displayName: firebaseUser?.displayName || `Mtumiaji ${currentPhone.slice(-4)}`,
+      authProvider: (firebaseUser?.email ? 'google' : 'phone') as 'google' | 'phone' | 'email',
       createdDate: new Date().toISOString(),
       lastActive: new Date().toISOString(),
       trialSecondsUsed: 60,
@@ -637,6 +643,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedUser: UserData = {
       ...existing,
       phone: currentPhone,
+      displayName: existing.displayName || `Mtumiaji ${currentPhone.slice(-4)}`,
       isSubscribed: true,
       hasActiveSubscription: true,
       subscriptionPlan: planName,
@@ -665,6 +672,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     syncUserData(updatedUser);
+  };
+
+  // Link phone number to existing Gmail/Email account or auto-register with phone
+  const linkPhoneToAccount = async (inputPhone: string): Promise<{ success: boolean; error?: string; message?: string }> => {
+    const clean = normalizePhoneNumber(inputPhone);
+    if (clean.length < 9) {
+      return { success: false, error: 'Tafadhali weka namba sahihi ya simu ya Tanzania (taratibu 10, mfano: 0712345678).' };
+    }
+
+    try {
+      setPhone(clean);
+      localStorage.setItem(LOCAL_STORAGE_PHONE_KEY, clean);
+
+      const currentEmail = user?.email || firebaseUser?.email || '';
+
+      // 1. Tell server to link in Supabase & memory store
+      try {
+        await fetch('/api/auth/link-phone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: clean, email: currentEmail })
+        });
+      } catch (err) {
+        console.warn('Server link error note:', err);
+      }
+
+      // 2. Base user data
+      let baseUser: UserData = user || {
+        phone: clean,
+        email: currentEmail,
+        displayName: currentEmail ? (firebaseUser?.displayName || currentEmail.split('@')[0]) : `Mtumiaji ${clean.slice(-4)}`,
+        authProvider: currentEmail ? 'google' : 'phone',
+        createdDate: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        trialSecondsUsed: 60,
+        trialCompleted: true,
+        isSubscribed: false,
+        hasActiveSubscription: false,
+        payments: []
+      };
+
+      baseUser = {
+        ...baseUser,
+        phone: clean
+      };
+
+      // 3. Sync Supabase subscription for this phone and email
+      baseUser = await syncWithSupabase(clean, baseUser);
+      if (currentEmail) {
+        baseUser = await syncWithSupabase(currentEmail, baseUser);
+      }
+
+      syncUserData(baseUser);
+
+      if (baseUser.hasActiveSubscription) {
+        return {
+          success: true,
+          message: `Namba ${clean} imeunganishwa! Kifurushi chako kimepatikana na kimeunganishwa kikamilifu.`
+        };
+      }
+
+      return {
+        success: true,
+        message: `Namba ${clean} imeunganishwa kwenye akaunti yako.`
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        error: e.message || 'Hitilafu wakati wa kuunganisha namba ya simu.'
+      };
+    }
   };
 
   const isLoggedIn = Boolean(user && (user.phone || user.email || user.uid));
@@ -698,7 +776,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         refreshProfile,
         recordTrialSecondWatched,
-        updateUserSubscriptionLocally
+        updateUserSubscriptionLocally,
+        linkPhoneToAccount
       }}
     >
       {children}

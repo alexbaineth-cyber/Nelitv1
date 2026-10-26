@@ -761,6 +761,85 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   });
 });
 
+// 3.5 Link Phone Number to Account / Email with Supabase Sync
+app.post('/api/auth/link-phone', async (req: Request, res: Response) => {
+  const { phone, email } = req.body;
+  if (!phone || typeof phone !== 'string') {
+    return res.status(400).json({ success: false, error: 'Namba ya simu inahitajika' });
+  }
+
+  const cleanPhone = normalizePhone(phone);
+  const cleanEmail = email && typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+  // Update or create user in usersStore
+  let user = usersStore[cleanPhone];
+  if (!user) {
+    user = {
+      phone: cleanPhone,
+      createdDate: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      trialSecondsUsed: 60,
+      trialCompleted: true,
+      isSubscribed: false,
+      deviceInfo: 'Web / Cross-Device Link'
+    };
+    usersStore[cleanPhone] = user;
+  }
+  user.lastActive = new Date().toISOString();
+  persistData();
+
+  let activeSub: any = null;
+
+  // Supabase linking
+  if (supabase) {
+    try {
+      // 1. Check if phone has active subscription in nelitv_subscriptions
+      const phoneSub = await querySupabaseSubscription(cleanPhone);
+      if (phoneSub && cleanEmail) {
+        // Link email into this subscription row!
+        await supabase
+          .from('nelitv_subscriptions')
+          .update({ user_email: cleanEmail, updated_at: new Date().toISOString() })
+          .in('phone_number', getPhoneVariants(cleanPhone));
+        activeSub = phoneSub;
+        activeSub.user_email = cleanEmail;
+      }
+
+      // 2. Also check if email has an active subscription in nelitv_subscriptions
+      if (!activeSub && cleanEmail) {
+        const emailSub = await querySupabaseSubscription(cleanEmail);
+        if (emailSub) {
+          // Link phone into this subscription row!
+          await supabase
+            .from('nelitv_subscriptions')
+            .update({ phone_number: cleanPhone, updated_at: new Date().toISOString() })
+            .ilike('user_email', cleanEmail);
+          activeSub = emailSub;
+          activeSub.phone_number = cleanPhone;
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Link-Phone Supabase error]', e.message);
+    }
+  }
+
+  // Update local user subscription if found
+  if (activeSub && activeSub.expires_at) {
+    user.isSubscribed = true;
+    user.subscriptionPlan = activeSub.plan_id || activeSub.plan_name || 'Kifurushi Hai';
+    user.subscriptionExpiresAt = activeSub.expires_at;
+    persistData();
+  }
+
+  res.json({
+    success: true,
+    phone: cleanPhone,
+    email: cleanEmail,
+    user,
+    subscription: activeSub
+  });
+});
+
 // 4. Update trial seconds
 app.post('/api/auth/update-trial', (req: Request, res: Response) => {
   const { phone, secondsWatched } = req.body;
@@ -1138,88 +1217,115 @@ app.get('/api/harakapay/status/:orderId', async (req: Request, res: Response) =>
 // 8. One-Click Verification Endpoint for "Nimelipa" button
 // Checks HarakaPay, activates & extends subscription in Supabase, and syncs across devices
 app.post('/api/harakapay/verify-payment', async (req: Request, res: Response) => {
-  const { orderId, phone, amount } = req.body;
+  const { orderId, phone, amount, email } = req.body;
   const cleanPhone = normalizePhone(phone || '');
   const numAmount = Number(amount) || 1000;
+  const cleanEmail = email && typeof email === 'string' ? email.trim().toLowerCase() : undefined;
 
-  // 1. If orderId is provided, query HarakaPay server in real-time
-  if (orderId) {
-    try {
-      console.log(`[Verify-Payment] Checking real HarakaPay status for order ${orderId}`);
-      const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
-        headers: { 'X-API-Key': HARAKAPAY_API_KEY }
-      });
-      const data: any = await response.json();
-      console.log(`[Verify-Payment Result for ${orderId}]`, data);
-
-      if (data && data.success && data.payment) {
-        const paymentStatus = data.payment.status;
-        if (paymentStatus === 'completed') {
-          const verifiedAmount = data.payment.amount || numAmount;
-          const targetPhone = cleanPhone || normalizePhone(data.payment.phone || '');
-          const subInfo = await saveOrExtendSupabaseSubscription(targetPhone, verifiedAmount);
-
-          if (paymentsStore[orderId]) {
-            paymentsStore[orderId].status = 'completed';
-            paymentsStore[orderId].completedAt = data.payment.completed_at || new Date().toISOString();
-            persistData();
-          }
-
-          return res.json({
-            success: true,
-            verified: true,
-            status: 'completed',
-            message: 'Malipo yako yamethibitishwa kikamilifu! Kifurushi chako kimewashwa.',
-            subscription: subInfo,
-            user: usersStore[targetPhone]
-          });
-        } else if (paymentStatus === 'pending') {
-          return res.json({
-            success: true,
-            verified: false,
-            status: 'pending',
-            message: 'Ujumbe wa USSD umetumwa kwenye simu yako. Tafadhali kamilisha kuweka PIN kisha ubonyeze Nimelipa tena.'
-          });
-        }
-      }
-    } catch (err: any) {
-      console.warn('[HarakaPay verify error]', err.message);
-    }
+  if (!orderId) {
+    return res.json({
+      success: true,
+      verified: false,
+      status: 'pending',
+      message: 'Muamala haujakamilika. Tafadhali ingiza namba ya siri (PIN) kwenye simu yako kisha bonyeza Nimelipa tena.'
+    });
   }
 
-  // 2. Check local payments record
-  const local = orderId ? paymentsStore[orderId] : null;
+  // 1. Query HarakaPay status API in real-time for THIS EXACT orderId
+  try {
+    console.log(`[Verify-Payment] Checking real HarakaPay status for order ${orderId}`);
+    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
+      headers: { 'X-API-Key': HARAKAPAY_API_KEY }
+    });
+    const data: any = await response.json();
+    console.log(`[Verify-Payment Result for ${orderId}]`, data);
+
+    if (data && data.success && data.payment) {
+      const paymentStatus = data.payment.status;
+      if (paymentStatus === 'completed') {
+        const verifiedAmount = data.payment.amount || numAmount;
+        const targetPhone = cleanPhone || normalizePhone(data.payment.phone || '');
+        const subInfo = await saveOrExtendSupabaseSubscription(targetPhone, verifiedAmount, cleanEmail, orderId);
+
+        if (paymentsStore[orderId]) {
+          paymentsStore[orderId].status = 'completed';
+          paymentsStore[orderId].completedAt = data.payment.completed_at || new Date().toISOString();
+          persistData();
+        }
+
+        return res.json({
+          success: true,
+          verified: true,
+          status: 'completed',
+          message: 'Malipo yako yamethibitishwa kikamilifu! Kifurushi chako kimewashwa.',
+          subscription: subInfo,
+          user: usersStore[targetPhone]
+        });
+      } else if (paymentStatus === 'failed') {
+        if (paymentsStore[orderId]) {
+          paymentsStore[orderId].status = 'failed';
+          persistData();
+        }
+        return res.json({
+          success: true,
+          verified: false,
+          status: 'failed',
+          message: 'Malipo yameshindikana au yamekataliwa. Tafadhali jaribu tena au tuma ombi jipya la USSD.'
+        });
+      } else {
+        // Still pending / user hasn't entered PIN yet
+        return res.json({
+          success: true,
+          verified: false,
+          status: 'pending',
+          message: 'Tafadhali ingiza namba yako ya siri (PIN) kwenye simu yako kukamilisha malipo, kisha bonyeza Nimelipa tena.'
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn('[HarakaPay verify error]', err.message);
+  }
+
+  // 2. Check local payments record strictly for THIS orderId
+  const local = paymentsStore[orderId];
   if (local && local.status === 'completed') {
-    const subInfo = await saveOrExtendSupabaseSubscription(local.phone, local.amount);
     return res.json({
       success: true,
       verified: true,
       status: 'completed',
       message: 'Malipo yamethibitishwa kikamilifu!',
-      subscription: subInfo,
       user: usersStore[cleanPhone || local.phone]
     });
   }
 
-  // 3. Fallback check Supabase directly in case webhook already updated it
-  if (cleanPhone) {
-    const existing = await querySupabaseSubscription(cleanPhone);
-    if (existing && existing.premium_status === 'active' && new Date(existing.expires_at).getTime() > Date.now()) {
-      return res.json({
-        success: true,
-        verified: true,
-        status: 'completed',
-        message: 'Kifurushi chako kipo hai kwenye Supabase!',
-        user: usersStore[cleanPhone]
-      });
-    }
+  // 3. Check Supabase nelitv_payments table strictly for THIS order_id
+  if (supabase) {
+    try {
+      const { data: payRow } = await supabase
+        .from('nelitv_payments')
+        .select('*')
+        .eq('order_id', orderId)
+        .eq('status', 'completed')
+        .maybeSingle();
+
+      if (payRow) {
+        return res.json({
+          success: true,
+          verified: true,
+          status: 'completed',
+          message: 'Malipo yamethibitishwa kikamilifu!',
+          user: usersStore[cleanPhone]
+        });
+      }
+    } catch {}
   }
 
-  res.json({
+  // STRICTLY NOT VERIFIED: If user did not put PIN, it stays pending and never passes!
+  return res.json({
     success: true,
     verified: false,
     status: 'pending',
-    message: 'Tafadhali kamilisha kuweka PIN kwenye simu yako, kisha bonyeza Nimelipa tena.'
+    message: 'Bado hujaweka namba ya siri (PIN) au muamala bado haujathibitishwa na mtandao wako wa simu. Tafadhali ingiza PIN kwenye simu yako kisha bonyeza Nimelipa tena.'
   });
 });
 
