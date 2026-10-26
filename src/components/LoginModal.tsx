@@ -249,7 +249,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Barua pepe (mfano: user1@login.com au user1)"
+                  placeholder="Barua pepe (mfano: jina@gmail.com)"
                   required
                   className="w-full pl-9 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-600 transition font-sans"
                 />
@@ -281,19 +281,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   </>
                 )}
               </button>
-
-              {/* Free VIP Accounts Hint */}
-              <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-pink-500/10 to-cyan-500/10 border border-amber-500/20 text-left space-y-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Akaunti za Bure (Free VIP Accounts):</span>
-                </div>
-                <p className="text-[10px] text-neutral-300 leading-relaxed">
-                  Email: <span className="font-mono text-cyan-300 font-bold">user1@login.com</span> mpaka <span className="font-mono text-cyan-300 font-bold">user10@login.com</span> (au <span className="font-mono text-cyan-300 font-bold">user1</span> .. <span className="font-mono text-cyan-300 font-bold">user10</span>)
-                  <br />
-                  Nenosiri: <span className="font-mono text-amber-300 font-bold">Free123</span>
-                </p>
-              </div>
 
               <div className="text-center pt-1">
                 <button

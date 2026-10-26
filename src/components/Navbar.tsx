@@ -18,8 +18,17 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenI
         {/* 1. BRAND LOGO */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setActiveTab('home')}
+            onClick={() => {
+              setActiveTab('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              try {
+                if (window.location.pathname !== '/' && window.location.pathname !== '/download') {
+                  window.history.pushState({}, '', '/');
+                }
+              } catch {}
+            }}
             className="flex items-center gap-2.5 group focus:outline-none cursor-pointer"
+            title="NeliTv Nyumbani"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[1.5px] shadow-lg shadow-pink-500/25 group-hover:scale-105 transition">
               <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center p-1">

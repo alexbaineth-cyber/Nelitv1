@@ -21,7 +21,7 @@ const HARAKAPAY_BASE_URL = 'https://harakapay.net';
 
 // Supabase client configuration
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://qqwlekumeltrdfvutmmt.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_secret_0DIu1uze15Fo1K8D4KtO5w__XNiQqYh';
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_KEY || 'sb_publishable_RU9QIfJMuQzk_w4eJRGiKA_akpI_o7S';
 
 export const supabase = (SUPABASE_URL && SUPABASE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -35,13 +35,15 @@ if (supabase) {
 
 app.use(express.json());
 
-// Global Security Headers for Browser Safety & Certificate Compliance (Anti-Dangerous-Site / Safe Browsing)
+// Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(self)');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
 

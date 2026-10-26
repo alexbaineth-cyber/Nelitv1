@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
   User, Smartphone, Mail, Crown, LogOut, CheckCircle2,
-  AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap
+  AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap, Sparkles
 } from 'lucide-react';
 import { fetchCustomerSubscriptionFromSupabase, normalizePhoneNumber, isSubscriptionActive } from '../lib/supabase.ts';
+import { isFreeAccountEmail } from '../data/freeAccounts.ts';
 
 interface AccountPageProps {
   onNavigateToPremium: () => void;
@@ -42,15 +43,18 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-refresh subscription from Supabase on mount
+  // Auto-refresh subscription once on mount (prevents infinite re-render loop!)
   useEffect(() => {
     refreshProfile();
-  }, [refreshProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isFreeVip = isFreeAccountEmail(user?.email);
 
   // Calculate live countdown breakdown
   const expiryTimestamp = user?.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt).getTime() : 0;
   const timeDifferenceMs = Math.max(0, expiryTimestamp - now);
-  const isSubscriptionExpired = expiryTimestamp > 0 && timeDifferenceMs <= 0;
+  const isSubscriptionExpired = !isFreeVip && expiryTimestamp > 0 && timeDifferenceMs <= 0;
 
   const daysLeft = Math.floor(timeDifferenceMs / (1000 * 60 * 60 * 24));
   const hoursLeft = Math.floor((timeDifferenceMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -59,20 +63,38 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
   // Manual direct sync with Supabase and server
   const handleDirectSyncWithSupabase = async () => {
+    if (isFreeVip) {
+      setSyncStatusMessage('✓ Akaunti yako ni Free VIP Lifetime - haina kikomo!');
+      setTimeout(() => setSyncStatusMessage(null), 3000);
+      return;
+    }
     setIsSyncing(true);
     setSyncStatusMessage('Inatafuta rekodi kutoka Supabase na HarakaPay...');
     try {
       const targetPhone = phone || user?.phone;
+      const targetEmail = email || user?.email;
+      let foundActive = false;
+
       if (targetPhone) {
         const cleanPhone = normalizePhoneNumber(targetPhone);
         const sub = await fetchCustomerSubscriptionFromSupabase(cleanPhone);
         if (sub && isSubscriptionActive(sub)) {
-          setSyncStatusMessage('✓ Kifurushi hai kimepatikana na kusawazishwa kutoka Supabase!');
-        } else {
-          setSyncStatusMessage('✓ Taarifa za akaunti zimesawazishwa kutoka Supabase na server.');
+          foundActive = true;
         }
       }
+      if (!foundActive && targetEmail) {
+        const sub = await fetchCustomerSubscriptionFromSupabase(targetEmail);
+        if (sub && isSubscriptionActive(sub)) {
+          foundActive = true;
+        }
+      }
+
       await refreshProfile();
+      if (foundActive) {
+        setSyncStatusMessage('✓ Kifurushi hai kimepatikana na kusawazishwa!');
+      } else {
+        setSyncStatusMessage('✓ Usawazishaji umekamilika.');
+      }
       setTimeout(() => setSyncStatusMessage(null), 4000);
     } catch (err: any) {
       console.warn('Sync notice:', err);
@@ -217,7 +239,17 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   </span>
                 </div>
 
-                {hasActiveSubscription && !isSubscriptionExpired ? (
+                {isFreeVip ? (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-pink-500/15 to-cyan-500/15 border border-amber-500/30 text-center space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black uppercase tracking-wider">
+                      <Crown className="w-4 h-4 text-amber-400" />
+                      <span>Uanachama wa Kudumu wa Bure (VIP Lifetime)</span>
+                    </div>
+                    <p className="text-xs text-neutral-300">
+                      Akaunti yako imeunganishwa na <strong className="text-white">VIP Lifetime Pass</strong>. Una uwezo wa kutazama mechi na vituo vyote vya NeliTv moja kwa moja bila kikomo chochote cha muda.
+                    </p>
+                  </div>
+                ) : hasActiveSubscription && !isSubscriptionExpired ? (
                   <div>
                     {/* 4 Neon Countdown Cards */}
                     <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center">

@@ -421,11 +421,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         subscriptionExpiresAt: freeAccount.expiresAt,
         payments: []
       };
-      syncUserData(freeUserData);
-      // Background attempt to connect Firebase session if available (silent)
-      signInWithEmail(freeAccount.email, pass).catch(() => {
-        signUpWithEmail(freeAccount.email, pass, freeAccount.displayName).catch(() => {});
+      saveAccountSubscriptionCache(freeAccount.email, {
+        planName: freeAccount.planName,
+        expiresAt: freeAccount.expiresAt
       });
+      syncUserData(freeUserData);
       return { success: true };
     }
 
@@ -508,9 +508,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTrialCompleted(false);
   };
 
+  const isRefreshingRef = React.useRef<boolean>(false);
   const refreshProfile = async () => {
+    if (isRefreshingRef.current) return;
+    if (isFreeAccountEmail(user?.email)) return;
     if (!phone && !user?.email) return;
 
+    isRefreshingRef.current = true;
     try {
       let updatedUser = user;
       if (phone) {
@@ -532,6 +536,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e) {
       console.warn('Profile refresh note:', e);
+    } finally {
+      isRefreshingRef.current = false;
     }
   };
 
