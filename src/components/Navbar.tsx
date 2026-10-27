@@ -30,20 +30,20 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
             className="flex items-center gap-2.5 group focus:outline-none cursor-pointer"
             title="NeliTv Nyumbani"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-400 p-[1.5px] shadow-lg shadow-blue-600/30 group-hover:scale-105 transition">
-              <div className="w-full h-full rounded-[10px] bg-[#070A14] flex items-center justify-center p-1">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[1.5px] shadow-lg shadow-pink-600/30 group-hover:scale-105 transition">
+              <div className="w-full h-full rounded-[10px] bg-[#070A14] flex items-center justify-center p-0.5 overflow-hidden">
                 <img
-                  src="/logo.png"
+                  src="/icon.svg"
                   alt="NeliTv Logo"
-                  className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(0,102,255,0.4)]"
+                  className="w-full h-full object-contain filter drop-shadow-[0_2px_8px_rgba(255,0,128,0.4)]"
                 />
               </div>
             </div>
             <div className="flex items-center tracking-tight">
-              <span className="font-extrabold text-xl text-white group-hover:text-cyan-400 transition">
+              <span className="font-extrabold text-xl text-white group-hover:text-pink-400 transition">
                 Neli
               </span>
-              <span className="font-black text-xl text-blue-500 ml-0.5">
+              <span className="font-black text-xl text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-cyan-400 ml-0.5">
                 Tv
               </span>
             </div>
@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
             <button
               onClick={onOpenDownloadModal}
               title="Pakua NeliTv APK (Android & Smart TV)"
-              className="py-1.5 px-3 sm:px-3.5 sm:py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-blue-600/25 active:scale-95 cursor-pointer"
+              className="py-1.5 px-3 sm:px-3.5 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 hover:opacity-95 text-white text-xs font-black flex items-center gap-1.5 transition shadow-md shadow-pink-600/25 active:scale-95 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 animate-bounce" />
               <span>Pakua App</span>
@@ -72,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
               title="Tafuta Chaneli"
               className={`p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'search'
-                  ? 'bg-blue-600/20 text-cyan-400 border border-blue-500/40'
+                  ? 'bg-pink-600/20 text-pink-300 border border-pink-500/40'
                   : 'text-neutral-400 hover:text-white hover:bg-white/10'
               }`}
             >
@@ -85,7 +85,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
               onClick={() => setActiveTab('premium')}
               className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'premium'
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 border border-blue-400'
+                  ? 'bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 text-white shadow-lg shadow-pink-600/30 border border-pink-400'
                   : 'bg-[#0B1020] hover:bg-white/10 text-neutral-200 border border-white/10'
               }`}
             >

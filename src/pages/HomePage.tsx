@@ -252,63 +252,8 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* 1. AZAM MAX STYLE OTT HERO BANNER (Featured Top Live Match / Channel) */}
+      {/* 1. CATEGORY SELECTOR TABS (Neon Gradient App Theme) */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4 sm:pt-6">
-        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-[#0B1020] via-slate-900 to-[#070A14] border border-white/10 shadow-2xl p-6 sm:p-10 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="max-w-xl space-y-3 z-10 text-left">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-red-600/30">
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                <span>MUBASHARA 24/7</span>
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-blue-600/30 border border-blue-400/40 text-cyan-300 text-[10px] font-bold uppercase tracking-wider">
-                NBC Premier League & Live TV
-              </span>
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight leading-tight">
-              Tazama Mechi Zote za NBC & Chaneli za Azam TV Mubashara
-            </h1>
-
-            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
-              Azam Sports 1-4 HD, Sinema Zetu, Baynith Sports, TBC 1 na zaidi kwa ubora wa HD na ucheleweshaji wa sekunde 30 tu bila kukwama.
-            </p>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                onClick={() => onSelectChannel(channels[0])}
-                className="py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-blue-600/30 transition cursor-pointer"
-              >
-                <Play className="w-4 h-4 fill-white" />
-                <span>Tazama Sasa</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  const as1 = channels.find(c => c.id.includes('azam-sports-1')) || channels[0];
-                  onSelectChannel(as1);
-                }}
-                className="py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-neutral-200 text-xs sm:text-sm font-semibold border border-white/15 transition cursor-pointer backdrop-blur-md"
-              >
-                Azam Sports 1 HD
-              </button>
-            </div>
-          </div>
-
-          {/* Right Hero Badge Visual */}
-          <div className="hidden md:flex flex-col items-center justify-center p-6 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md shrink-0 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 mb-3 shadow-inner">
-              <Tv className="w-8 h-8" />
-            </div>
-            <div className="text-2xl font-black text-white">{channels.length}+</div>
-            <div className="text-xs text-neutral-400 font-medium">Chaneli za Moja kwa Moja</div>
-            <div className="text-[10px] text-cyan-400 font-mono mt-1 font-bold">4K / Full HD 1080p</div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. CATEGORY SELECTOR TABS (Azam Max Clean Navy Style) */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2 touch-pan-x">
           {categories.map((cat) => (
             <button
@@ -319,7 +264,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               }}
               className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
                 selectedCategory === cat.id
-                  ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/30 border border-blue-400'
+                  ? 'bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 text-white font-black shadow-lg shadow-pink-600/30 border border-pink-400'
                   : 'bg-[#0B1020] text-neutral-300 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -334,7 +279,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-white/10">
           <div>
             <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              <Tv className="w-5 h-5 text-blue-500" />
+              <Tv className="w-5 h-5 text-pink-500" />
               <span>
                 {selectedCategory === 'all'
                   ? `Vituo Vyote vya NeliTv (${channels.length})`
@@ -400,10 +345,10 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
           onSelectChannel(channel);
         }
       }}
-      className={`group relative rounded-2xl bg-[#0B1020] border overflow-hidden cursor-pointer transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-600/20 focus:scale-105 focus:ring-4 focus:ring-blue-500 ${
+      className={`group relative rounded-2xl bg-[#0B1020] border overflow-hidden cursor-pointer transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-600/25 focus:scale-105 focus:ring-4 focus:ring-pink-500 ${
         isFocused
-          ? 'ring-4 ring-blue-500 scale-105 border-transparent shadow-2xl shadow-blue-600/40 z-10'
-          : 'border-white/10 hover:border-blue-500/50'
+          ? 'ring-4 ring-pink-500 scale-105 border-transparent shadow-2xl shadow-pink-600/40 z-10'
+          : 'border-white/10 hover:border-pink-500/50'
       }`}
     >
       {/* 16:9 Thumbnail Container */}
@@ -443,7 +388,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
 
         {/* Play Icon Hover Overlay */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40 backdrop-blur-[1px]">
-          <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/50 transform group-hover:scale-110 transition-transform">
+          <div className="w-11 h-11 rounded-full bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 text-white flex items-center justify-center shadow-lg shadow-pink-600/50 transform group-hover:scale-110 transition-transform">
             <Play className="w-5 h-5 fill-white ml-0.5" />
           </div>
         </div>
@@ -452,7 +397,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
       {/* Info Block */}
       <div className="p-3 sm:p-3.5">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-cyan-400 transition line-clamp-1">
+          <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-pink-400 transition line-clamp-1">
             {channel.name}
           </h3>
           <span className="text-[10px] font-mono font-semibold text-neutral-500 shrink-0">

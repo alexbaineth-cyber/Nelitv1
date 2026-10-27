@@ -8,10 +8,9 @@ import {
   Volume2, Volume1, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
   Lock, ArrowRight, ArrowLeft, Languages, Radio, X, Play,
-  Sliders, Check, Gauge, Calendar
+  Sliders, Check, Gauge
 } from 'lucide-react';
 import { QualityMeterModal } from './QualityMeterModal.tsx';
-import { ChannelEPGView } from './ChannelEPGView.tsx';
 import {
   requestFullscreenWithLandscape,
   exitFullscreenAndUnlock,
@@ -94,7 +93,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   });
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
-  const [showFullscreenEPG, setShowFullscreenEPG] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
@@ -309,38 +307,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const isPaidChannel = Boolean(channel.requiredPackages?.includes('PAID') || channel.isAzam || channel.requiredPackages?.length);
   const showTrialBadge = !hasActiveSubscription && !isPaidChannel;
 
-  // Auto-activate full screen on mount for embedded players (like pressing the 'F' button)
-  useEffect(() => {
-    if (isEmbedded) {
-      setIsFullscreen(true);
-      if (onToggleFullscreen) onToggleFullscreen(true);
-
-      try {
-        document.body.style.overflow = 'hidden';
-        document.documentElement.style.overflow = 'hidden';
-      } catch {}
-
-      // Attempt native HTML5 full screen & landscape orientation (equivalent to pressing F)
-      const enterNativeFs = async () => {
-        try {
-          if (containerRef.current) {
-            await requestFullscreenWithLandscape(containerRef.current, videoRef.current);
-          }
-        } catch (err) {
-          console.warn('Auto native fullscreen awaiting interaction note:', err);
-        }
-      };
-
-      const timer = setTimeout(enterNativeFs, 100);
-      return () => {
-        clearTimeout(timer);
-        try {
-          document.body.style.overflow = '';
-          document.documentElement.style.overflow = '';
-        } catch {}
-      };
-    }
-  }, [isEmbedded, onToggleFullscreen]);
+  // Embedded channels now open inline with the sidepanel just like standard channels
 
   // Timer to record trial usage while playing or watching embedded channel
   useEffect(() => {
@@ -1104,15 +1071,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
+      // Fullscreen toggle ('f' or 'F') works across all streams (Native DASH, HLS, and Embedded Iframes)
+      if (e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) return;
 
       switch (e.key.toLowerCase()) {
         case 'm':
           toggleMute();
-          break;
-        case 'f':
-          toggleFullscreen();
           break;
         case 'k':
         case ' ':
@@ -1249,113 +1220,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Invisible Top Edge Hover/Touch Detector to reveal controls on interaction */}
-      {!showControls && !isPaywallTriggered && (
-        <div
-          onMouseMove={resetControlsTimeout}
-          onMouseEnter={resetControlsTimeout}
-          onTouchStart={resetControlsTimeout}
-          onClick={resetControlsTimeout}
-          className="absolute top-0 inset-x-0 h-16 sm:h-20 z-[99999] cursor-pointer pointer-events-auto bg-transparent"
-        />
-      )}
 
-      {/* Top Bar inside Player: Back Button, Channel Name & Controls (Auto-Hides Smoothly) */}
-      {!isPaywallTriggered && (
-        <div
-          onMouseEnter={resetControlsTimeout}
-          onTouchStart={resetControlsTimeout}
-          className={`absolute inset-x-0 top-0 z-[100000] p-2.5 sm:p-4 flex items-center justify-between gap-3 bg-gradient-to-b from-black/90 via-black/45 to-transparent transition-all duration-500 ease-in-out ${
-            showControls
-              ? 'opacity-100 translate-y-0 pointer-events-auto'
-              : 'opacity-0 -translate-y-full pointer-events-none'
-          }`}
-        >
-          {/* Back / Exit Fullscreen Button */}
-          <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  await exitFullscreenAndUnlock(videoRef.current);
-                } catch {}
-                setIsFullscreen(false);
-                if (onToggleFullscreen) onToggleFullscreen(false);
-                if (onBack) {
-                  onBack();
-                } else if (window.history.length > 1) {
-                  window.history.back();
-                }
-              }}
-              className="py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl bg-black/85 hover:bg-red-600 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 shadow-2xl border border-white/25 cursor-pointer backdrop-blur-md transition group"
-              title="Rudi Nyuma"
-            >
-              <ArrowLeft className="w-4 h-4 text-white group-hover:-translate-x-0.5 transition" />
-              <span>Rudi Nyuma</span>
-            </button>
-
-            {/* Embedded channel live badge */}
-            {isEmbedded && (
-              <div className="flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 shadow-lg">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                <span className="text-xs sm:text-sm font-black text-white truncate max-w-[130px] sm:max-w-xs">
-                  {channel.name}
-                </span>
-                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider hidden sm:inline">
-                  LIVE
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Right items: Fullscreen (F) toggle, Unmute & Trial counter */}
-          <div className="flex items-center gap-2 pointer-events-auto">
-            {/* Quick Fullscreen (F) toggle button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFullscreen();
-              }}
-              className="py-1.5 sm:py-2 px-2.5 sm:px-3.5 rounded-xl bg-black/85 hover:bg-neutral-800 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-xl border border-white/20 cursor-pointer backdrop-blur-md transition"
-              title={isFullscreen ? 'Punguza Skrini (Exit Full Screen)' : 'Skrini Kamili (F / Full Screen)'}
-            >
-              {isFullscreen ? (
-                <>
-                  <Minimize2 className="w-4 h-4 text-red-400" />
-                  <span className="hidden sm:inline">Punguza</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="w-4 h-4 text-amber-400" />
-                  <span className="hidden sm:inline">Full (F)</span>
-                </>
-              )}
-            </button>
-
-            {/* Trial timer only shown if not subscribed AND not a paid channel */}
-            {showTrialBadge && (
-              <div className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-amber-500/50 text-xs font-semibold text-neutral-100 flex items-center gap-2 shadow-lg">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-300/90 hidden xs:inline">Majaribio:</span>
-                <span className="font-mono font-black text-amber-300">{formatSeconds(trialRemainingSeconds)}</span>
-              </div>
-            )}
-
-            {!isEmbedded && isMuted && isPlaying && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleMute();
-                }}
-                className="px-2.5 py-1 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer"
-              >
-                <VolumeX className="w-3.5 h-3.5 text-red-500" />
-                <span>Washa Sauti</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Error Overlay */}
       {errorMessage && !isPaywallTriggered && (
@@ -1419,7 +1284,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <button
                 type="submit"
                 disabled={isDirectPayLoading}
-                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 hover:opacity-95 active:scale-95 text-white font-black text-xs shadow-lg shadow-pink-600/30 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {isDirectPayLoading ? (
                   <>
@@ -1466,7 +1331,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           {/* DESKTOP & TABLET VIEW (>=sm): 3-Card Grid */}
           <div className="hidden sm:flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 mb-3">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 via-pink-500/20 to-cyan-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 mb-3">
               <Lock className="w-7 h-7" />
             </div>
 
@@ -1486,7 +1351,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   onSelectPlanClick?.('plan_2days');
                 }}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-blue-500 text-left transition group cursor-pointer"
+                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-pink-500 text-left transition group cursor-pointer"
               >
                 <span className="text-[10px] text-neutral-400 block uppercase font-medium">Siku 2</span>
                 <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 1,000</div>
@@ -1499,12 +1364,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   onSelectPlanClick?.('plan_7days');
                 }}
-                className="p-3 rounded-xl bg-blue-600/20 border-2 border-blue-500 text-left transition relative cursor-pointer"
+                className="p-3 rounded-xl bg-gradient-to-br from-pink-950/40 to-cyan-950/40 border-2 border-pink-500 text-left transition relative cursor-pointer"
               >
-                <span className="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-blue-600 text-white text-[9px] font-black uppercase">
+                <span className="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-gradient-to-r from-amber-500 to-pink-500 text-white text-[9px] font-black uppercase">
                   BORA
                 </span>
-                <span className="text-[10px] text-blue-300 block uppercase font-medium">Wiki 1 (Siku 7)</span>
+                <span className="text-[10px] text-pink-300 block uppercase font-medium">Wiki 1 (Siku 7)</span>
                 <div className="text-base font-bold text-white">TZS 3,000</div>
               </button>
 
@@ -1515,7 +1380,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   onSelectPlanClick?.('plan_30days');
                 }}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-blue-500 text-left transition group cursor-pointer"
+                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-cyan-500 text-left transition group cursor-pointer"
               >
                 <span className="text-[10px] text-neutral-400 block uppercase font-medium">Mwezi 1 (Siku 30)</span>
                 <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 10,000</div>
@@ -1530,7 +1395,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   onSelectPlanClick?.('plan_7days');
                 }}
-                className="py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition cursor-pointer active:scale-95"
+                className="py-3 px-6 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 hover:opacity-95 text-white font-black text-xs sm:text-sm shadow-xl shadow-pink-600/30 flex items-center gap-2 transition cursor-pointer active:scale-95"
               >
                 <span>Lipia kwa Simu Sasa</span>
                 <ArrowRight className="w-4 h-4" />
@@ -1623,86 +1488,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* FULLSCREEN TOP BAR (Channel Title, Live Tag & EPG Toggle) */}
-      {isFullscreen && !isPaywallTriggered && (
-        <div
-          className={`absolute top-0 inset-x-0 z-30 p-3 sm:p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-all duration-300 flex items-center justify-between ${
-            showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
-          onClick={(e) => e.stopPropagation()}
-        >
+      {/* YouTube-Style Bottom Overlay Controls (Unified for both Native & Embedded Streams) */}
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-all duration-300 ease-in-out ${
+          showControls && !isPaywallTriggered
+            ? 'opacity-100 pointer-events-auto translate-y-0'
+            : 'opacity-0 pointer-events-none translate-y-full'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3">
+          {/* Left: YouTube Volume Slider & Channel Name for Native, or Live indicator for Embedded */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {onBack && (
-              <button
-                onClick={async () => {
-                  await toggleFullscreen();
-                  onBack();
-                }}
-                className="py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md border border-white/15 transition cursor-pointer active:scale-95"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Rudi</span>
-              </button>
-            )}
-
-            <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[160px] sm:max-w-xs">
-                {channel.name}
-              </span>
-              <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.2 rounded font-black uppercase">
-                LIVE
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Fullscreen EPG Button */}
-            <button
-              onClick={() => setShowFullscreenEPG((prev) => !prev)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition backdrop-blur-md cursor-pointer ${
-                showFullscreenEPG
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 border border-blue-400'
-                  : 'bg-black/60 hover:bg-black/80 text-neutral-200 border border-white/15'
-              }`}
-              title="Ratiba ya Vipindi (EPG)"
-            >
-              <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Ratiba ya Vipindi</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* FULLSCREEN EPG DRAWER OVERLAY */}
-      {showFullscreenEPG && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute top-0 right-0 bottom-0 z-40 w-full max-w-sm sm:max-w-md animate-fade-in"
-        >
-          <ChannelEPGView
-            channelId={channel.id}
-            channelName={channel.name}
-            variant="drawer"
-            onClose={() => setShowFullscreenEPG(false)}
-          />
-        </div>
-      )}
-
-      {/* YouTube-Style Bottom Overlay Controls (Native non-embedded streams only) */}
-      {!isEmbedded && (
-        <div
-          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 ease-in-out ${
-            showControls && !isPaywallTriggered
-              ? 'opacity-100 pointer-events-auto translate-y-0'
-              : 'opacity-0 pointer-events-none translate-y-full'
-          }`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between gap-3">
-            {/* Left: YouTube Volume Slider & Channel Name */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              {/* YouTube Volume Control with Expandable Slider */}
+            {!isEmbedded ? (
               <div
                 className="flex items-center group/vol"
                 onMouseEnter={() => setShowVolumeSlider(true)}
@@ -1752,114 +1550,125 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   />
                 </div>
               </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+                  LIVE
+                </span>
+              </div>
+            )}
 
-              <span className="text-xs font-bold text-neutral-200 truncate max-w-[130px] sm:max-w-xs">
-                {channel.name}
-              </span>
-            </div>
+            <span className="text-xs font-bold text-neutral-200 truncate max-w-[130px] sm:max-w-xs">
+              {channel.name}
+            </span>
+          </div>
 
-            {/* Right: Quality, Language, Kipimo cha Ubora, Single Fullscreen Button */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Quality Switcher */}
-              <div className="relative">
+          {/* Right: Quality, Language, Single YouTube Fullscreen Button */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {!isEmbedded && (
+              <>
+                {/* Quality Switcher */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowQualityMenu((prev) => !prev);
+                      resetControlsTimeout();
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
+                    title="Badili Ubora wa Video"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="hidden xs:inline sm:inline">
+                      {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
+                    </span>
+                    <span className="xs:hidden sm:hidden">
+                      {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
+                    </span>
+                  </button>
+
+                  {/* Floating Quality Menu */}
+                  {showQualityMenu && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
+                    >
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                        <span>Ubora wa Video</span>
+                        <span className="text-cyan-400 text-[9px] font-normal">Kulingana na mtandao</span>
+                      </div>
+
+                      <button
+                        onClick={() => handleSelectQuality('auto')}
+                        className="w-full px-3 py-2 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <div>
+                          <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
+                          <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
+                        </div>
+                        {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                      </button>
+
+                      <div className="my-1 border-t border-neutral-800" />
+
+                      {[
+                        { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
+                        { id: '720', label: '720p HD', desc: 'Imependekezwa' },
+                        { id: '480', label: '480p SD', desc: 'Kawaida' },
+                        { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => handleSelectQuality(item.id as QualityOption)}
+                          className="w-full px-3 py-1.5 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
+                        >
+                          <div>
+                            <div className="text-white font-medium">{item.label}</div>
+                            <div className="text-[10px] text-neutral-500">{item.desc}</div>
+                          </div>
+                          {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Audio Language Switcher */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowQualityMenu((prev) => !prev);
+                    toggleLanguage();
                     resetControlsTimeout();
                   }}
                   className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
-                  title="Badili Ubora wa Video"
+                  title="Badili Lugha ya Sauti (Swahili / English)"
                 >
-                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="hidden xs:inline sm:inline">
-                    {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
-                  </span>
-                  <span className="xs:hidden sm:hidden">
-                    {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
-                  </span>
+                  <Languages className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
                 </button>
+              </>
+            )}
 
-                {/* Floating Quality Menu */}
-                {showQualityMenu && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
-                  >
-                    <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
-                      <span>Ubora wa Video</span>
-                      <span className="text-cyan-400 text-[9px] font-normal">Kulingana na mtandao</span>
-                    </div>
-
-                    <button
-                      onClick={() => handleSelectQuality('auto')}
-                      className="w-full px-3 py-2 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
-                    >
-                      <div>
-                        <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
-                        <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
-                      </div>
-                      {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-                    </button>
-
-                    <div className="my-1 border-t border-neutral-800" />
-
-                    {[
-                      { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
-                      { id: '720', label: '720p HD', desc: 'Imependekezwa' },
-                      { id: '480', label: '480p SD', desc: 'Kawaida' },
-                      { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelectQuality(item.id as QualityOption)}
-                        className="w-full px-3 py-1.5 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
-                      >
-                        <div>
-                          <div className="text-white font-medium">{item.label}</div>
-                          <div className="text-[10px] text-neutral-500">{item.desc}</div>
-                        </div>
-                        {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Audio Language Switcher */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleLanguage();
-                  resetControlsTimeout();
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
-                title="Badili Lugha ya Sauti (Swahili / English)"
-              >
-                <Languages className="w-3.5 h-3.5 text-amber-400" />
-                <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
-              </button>
-
-              {/* Single Clean Fullscreen Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                  resetControlsTimeout();
-                }}
-                className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
-                  isFullscreen
-                    ? 'text-cyan-400 bg-blue-600/30 hover:bg-blue-600/40 border border-cyan-500/50'
-                    : 'text-neutral-300 hover:text-white hover:bg-white/10 border border-transparent'
-                }`}
-                title={isFullscreen ? 'Punguza Skrini (Exit Fullscreen)' : 'Skrini Nzima (Fullscreen)'}
-              >
-                {isFullscreen ? <Minimize2 className="w-5 h-5 text-cyan-400" /> : <Maximize2 className="w-5 h-5" />}
-              </button>
-            </div>
+            {/* Single YouTube Fullscreen Button (The only one!) */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+                resetControlsTimeout();
+              }}
+              className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
+                isFullscreen
+                  ? 'text-cyan-400 bg-cyan-600/30 hover:bg-cyan-600/40 border border-cyan-500/50'
+                  : 'text-neutral-300 hover:text-white hover:bg-white/10 border border-transparent'
+              }`}
+              title={isFullscreen ? 'Punguza Skrini (Exit Fullscreen / F)' : 'Skrini Nzima (Fullscreen / F)'}
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5 text-cyan-400" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Quality Meter Modal */}
       <QualityMeterModal

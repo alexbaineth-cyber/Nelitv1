@@ -6,6 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
+import { getChannelRouteSlug, findChannelFromRoute } from './src/utils/channelRoute.ts';
 import { requireChannelAuth } from './src/server/authMiddleware.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
 
@@ -1362,6 +1363,54 @@ app.get('/api/harakapay/balance', async (_req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 11. Dynamic Sitemap Generator for Google Search Console & SEO
+app.get('/sitemap.xml', (_req: Request, res: Response) => {
+  const baseUrl = 'https://nelitv.online';
+  const today = new Date().toISOString().split('T')[0];
+
+  const channelUrls = CHANNELS_DATA.map((ch) => {
+    const slug = getChannelRouteSlug(ch);
+    return `  <url>
+    <loc>${baseUrl}/${slug}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>`;
+  }).join('\n');
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/download</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/privacy</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+${channelUrls}
+</urlset>`;
+
+  res.setHeader('Content-Type', 'application/xml');
+  res.send(sitemapXml);
+});
+
+// 12. Robots.txt
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(`User-agent: *\nAllow: /\n\nSitemap: https://nelitv.online/sitemap.xml\n`);
 });
 
 // -------------------------------------------------------------

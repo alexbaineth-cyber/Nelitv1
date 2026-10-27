@@ -24,7 +24,6 @@ import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 import { getAppAuthHeaders } from './utils/apiAuth.ts';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
-import { FloatingPiPPlayer } from './components/FloatingPiPPlayer.tsx';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -63,8 +62,6 @@ function MainApp() {
   const [initialPlanForPremium, setInitialPlanForPremium] = useState<string>('plan_7days');
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
-  const [isPiPActive, setIsPiPActive] = useState<boolean>(false);
-  const [pipChannel, setPipChannel] = useState<Channel | null>(null);
 
   // Automatic Browser & Environment Detection on Mount
   useEffect(() => {
@@ -105,13 +102,6 @@ function MainApp() {
   const [showSplash, setShowSplash] = useState<boolean>(!initialSharedChannel);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const [downloadModalTab, setDownloadModalTab] = useState<'direct' | 'qr'>('direct');
-  const [showDownloadBanner, setShowDownloadBanner] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('nelitv_hide_app_banner') !== 'true';
-    } catch {
-      return true;
-    }
-  });
 
   const handleSplashComplete = () => {
     setShowSplash(false);
@@ -175,9 +165,7 @@ function MainApp() {
 
   // When a channel is selected, set state and push clean shareable URL (/channel-slug or channel ID)
   const handleSelectChannel = (channel: Channel) => {
-    setIsPiPActive(false);
     setSelectedChannel(channel);
-    setPipChannel(channel);
     setActiveTab('watch');
     window.scrollTo(0, 0);
     try {
@@ -187,13 +175,6 @@ function MainApp() {
   };
 
   const handleTabChange = (tab: TabType) => {
-    if (activeTab === 'watch' && tab !== 'watch' && selectedChannel) {
-      // Auto PiP engages automatically when leaving watch page
-      setIsPiPActive(true);
-      setPipChannel(selectedChannel);
-    } else if (tab === 'watch') {
-      setIsPiPActive(false);
-    }
     setActiveTab(tab);
     window.scrollTo(0, 0);
     if (tab !== 'watch') {
@@ -444,82 +425,7 @@ function MainApp() {
             )}
           </main>
 
-          {/* Floating Download Our App Prompt for Desktop (hidden on mobile to prevent blocking touch scroll) */}
-          {showDownloadBanner && !showSplash && activeTab !== 'watch' && (
-            <div className="hidden md:block fixed bottom-4 right-4 z-40 max-w-sm w-full rounded-2xl bg-neutral-900/95 border border-cyan-500/30 p-3.5 shadow-2xl backdrop-blur-md animate-fade-in text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-black border border-cyan-500/40 p-1 shrink-0 shadow-md shadow-cyan-500/20 overflow-hidden">
-                    <img
-                      src="/app-logo.png"
-                      alt="NeliTv App"
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-bold text-white tracking-tight">NeliTv App</h4>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/40 font-mono font-bold">APK</span>
-                    </div>
-                    <p className="text-[11px] text-neutral-400 truncate">
-                      Tazama mechi na TV bila kukwama
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowDownloadBanner(false);
-                    try { localStorage.setItem('nelitv_hide_app_banner', 'true'); } catch {}
-                  }}
-                  className="p-1 text-neutral-400 hover:text-white rounded-lg transition"
-                  title="Funga"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-neutral-800/80">
-                <button
-                  onClick={() => {
-                    setDownloadModalTab('direct');
-                    setIsDownloadModalOpen(true);
-                  }}
-                  className="py-1.5 px-2.5 rounded-lg bg-gradient-to-r from-pink-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-pink-600/20"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Pakua APK</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setDownloadModalTab('qr');
-                    setIsDownloadModalOpen(true);
-                  }}
-                  className="py-1.5 px-2.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 border border-neutral-700"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Scan QR</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Auto Picture-in-Picture (PiP) Floating Player */}
-          {isPiPActive && pipChannel && activeTab !== 'watch' && (
-            <FloatingPiPPlayer
-              channel={pipChannel}
-              onExpand={() => {
-                setSelectedChannel(pipChannel);
-                setActiveTab('watch');
-                setIsPiPActive(false);
-                window.scrollTo(0, 0);
-              }}
-              onClose={() => setIsPiPActive(false)}
-            />
-          )}
 
           {/* 6. TV & PC CLEAN FOOTER */}
           <footer className="border-t border-neutral-900 bg-[#070A0F] py-8 px-4 text-center text-xs text-neutral-500 space-y-3">
