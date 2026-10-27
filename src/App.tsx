@@ -24,6 +24,7 @@ import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 import { getAppAuthHeaders } from './utils/apiAuth.ts';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
+import { FloatingPiPPlayer } from './components/FloatingPiPPlayer.tsx';
 
 type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
 
@@ -62,6 +63,8 @@ function MainApp() {
   const [initialPlanForPremium, setInitialPlanForPremium] = useState<string>('plan_7days');
 
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null);
+  const [isPiPActive, setIsPiPActive] = useState<boolean>(false);
+  const [pipChannel, setPipChannel] = useState<Channel | null>(null);
 
   // Automatic Browser & Environment Detection on Mount
   useEffect(() => {
@@ -172,7 +175,9 @@ function MainApp() {
 
   // When a channel is selected, set state and push clean shareable URL (/channel-slug or channel ID)
   const handleSelectChannel = (channel: Channel) => {
+    setIsPiPActive(false);
     setSelectedChannel(channel);
+    setPipChannel(channel);
     setActiveTab('watch');
     window.scrollTo(0, 0);
     try {
@@ -182,6 +187,13 @@ function MainApp() {
   };
 
   const handleTabChange = (tab: TabType) => {
+    if (activeTab === 'watch' && tab !== 'watch' && selectedChannel) {
+      // Auto PiP engages automatically when leaving watch page
+      setIsPiPActive(true);
+      setPipChannel(selectedChannel);
+    } else if (tab === 'watch') {
+      setIsPiPActive(false);
+    }
     setActiveTab(tab);
     window.scrollTo(0, 0);
     if (tab !== 'watch') {
@@ -493,6 +505,20 @@ function MainApp() {
                 </button>
               </div>
             </div>
+          )}
+
+          {/* Auto Picture-in-Picture (PiP) Floating Player */}
+          {isPiPActive && pipChannel && activeTab !== 'watch' && (
+            <FloatingPiPPlayer
+              channel={pipChannel}
+              onExpand={() => {
+                setSelectedChannel(pipChannel);
+                setActiveTab('watch');
+                setIsPiPActive(false);
+                window.scrollTo(0, 0);
+              }}
+              onClose={() => setIsPiPActive(false)}
+            />
           )}
 
           {/* 6. TV & PC CLEAN FOOTER */}

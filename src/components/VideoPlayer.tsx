@@ -5,12 +5,13 @@ import { Channel, ALL_KNOWN_CLEAR_KEYS } from '../data/channels.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.ts';
 import {
-  Volume2, VolumeX, Maximize2, Minimize2,
+  Volume2, Volume1, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
   Lock, ArrowRight, ArrowLeft, Languages, Radio, X, Play,
-  Sliders, Check, Gauge
+  Sliders, Check, Gauge, Calendar
 } from 'lucide-react';
 import { QualityMeterModal } from './QualityMeterModal.tsx';
+import { ChannelEPGView } from './ChannelEPGView.tsx';
 import {
   requestFullscreenWithLandscape,
   exitFullscreenAndUnlock,
@@ -84,7 +85,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [volume, setVolume] = useState<number>(1);
+  const [volume, setVolume] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('nelitv_player_volume');
+      return v !== null ? Math.max(0, Math.min(1, parseFloat(v))) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
+  const [showFullscreenEPG, setShowFullscreenEPG] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
@@ -248,6 +258,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setIsPaywallTriggered(isLocked);
 
     if (isLocked) {
+      // Exit HTML5 fullscreen immediately so input fields & payment modals work seamlessly!
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        try {
+          exitFullscreenAndUnlock();
+        } catch {}
+      }
       setIsPlaying(false);
       setIsBuffering(false);
 
@@ -276,8 +292,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           hlsPlayerRef.current.detachMedia();
         } catch {}
       }
+    } else {
+      // Audio Restore: When user pays or logs in, cleanly unmute and restore user volume!
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.muted = false;
+          video.volume = volume || 1;
+        } catch {}
+      }
+      setIsMuted(false);
     }
-  }, [hasActiveSubscription, trialCompleted]);
+  }, [hasActiveSubscription, trialCompleted, volume]);
 
   const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
   const isPaidChannel = Boolean(channel.requiredPackages?.includes('PAID') || channel.isAzam || channel.requiredPackages?.length);
@@ -442,15 +468,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 45,          // 45s buffer reservoir to eliminate buffering
-              rebufferingGoal: 2.5,       // Quick resume in 2.5s
-              bufferBehind: 30,           // Keeps 30s behind in memory for stability
-              safeSeekOffset: 45,         // 45s safe delay from live encoder edge
+              bufferingGoal: 30,          // 30s buffer reservoir for smooth low-latency
+              rebufferingGoal: 1.5,       // Quick resume in 1.5s
+              bufferBehind: 20,           // Keeps 20s behind in memory for stability
+              safeSeekOffset: 30,         // 30s safe delay from live encoder edge
               gapDetectionThreshold: 0.8, // Silently skips timestamp micro-gaps
               stallEnabled: true,         // Detects browser decoder stalls
               stallThreshold: 1.5,
               stallSkip: 0.3,
-              segmentPrefetchLimit: 4,    // Pre-fetches next 4 segments ahead of time
+              segmentPrefetchLimit: 3,    // Pre-fetches next 3 segments ahead of time
               ignoreTextStreamFailures: true,
               retryParameters: {
                 maxAttempts: 6,
@@ -459,11 +485,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             },
             manifest: {
-              defaultPresentationDelay: 45, // 45 seconds delay behind live TV broadcast for continuous stream
+              defaultPresentationDelay: 30, // 30 seconds delay behind live TV broadcast for quick start
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
-                ignoreSuggestedPresentationDelay: true // Overrides broadcaster 2s delay with 45s reservoir
+                ignoreSuggestedPresentationDelay: true // 30s broadcast sync
               },
               retryParameters: {
                 maxAttempts: 6,
@@ -1356,29 +1382,65 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* 1-MINUTE TRIAL PAYWALL MODAL */}
+      {/* 1-MINUTE TRIAL PAYWALL OVERLAY */}
       {isPaywallTriggered && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-40 flex flex-col items-center justify-center p-4 sm:p-6 bg-black text-center animate-fade-in cursor-default"
+          className="absolute inset-0 z-40 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#070A14] text-center animate-fade-in cursor-default"
         >
-          {/* MOBILE VIEW (<sm): Pure black overlay, simple "Lipia kutazama", small responsive "1,000 TSH" button */}
-          <div className="block sm:hidden w-full max-w-[220px] space-y-2.5">
-            <p className="text-sm font-semibold text-neutral-200">
-              Lipia kutazama
-            </p>
+          {/* MOBILE VIEW (<sm): Clean paywall with direct phone input and quick 1,000 TSH payment */}
+          <div className="block sm:hidden w-full max-w-[260px] space-y-3">
+            <div className="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+              <Lock className="w-5 h-5" />
+            </div>
 
-            <button
-              onClick={() => setShowDirectPayModal(true)}
-              className="w-full py-2 px-3 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs shadow-md transition"
-            >
-              1,000 TSH
-            </button>
+            <div>
+              <h3 className="text-sm font-black text-white">Muda wa Majaribio Umekwisha</h3>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Lipia kifurushi uendelee kutazama mubashara
+              </p>
+            </div>
+
+            <form onSubmit={handleDirectPaySubmit} className="space-y-2.5 pt-1">
+              <input
+                type="tel"
+                value={directPayPhone}
+                onChange={(e) => setDirectPayPhone(e.target.value)}
+                placeholder="07XXXXXXXX au 06XXXXXXXX"
+                className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/20 text-white placeholder-neutral-500 font-mono text-xs focus:outline-none focus:border-blue-500 text-center"
+              />
+
+              {directPayError && (
+                <div className="p-2 rounded-lg bg-red-950/60 border border-red-800/80 text-[10px] text-red-300">
+                  {directPayError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isDirectPayLoading}
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isDirectPayLoading ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Inatuma USSD...</span>
+                  </>
+                ) : (
+                  <span>Lipa 1,000 TSH (Siku 2)</span>
+                )}
+              </button>
+            </form>
 
             <div className="flex items-center justify-center gap-3 pt-1 text-[11px]">
               <button
-                onClick={() => onSelectPlanClick?.('plan_7days')}
-                className="text-neutral-400 hover:text-white transition underline"
+                onClick={async () => {
+                  if (document.fullscreenElement) {
+                    try { await exitFullscreenAndUnlock(); } catch {}
+                  }
+                  onSelectPlanClick?.('plan_7days');
+                }}
+                className="text-neutral-400 hover:text-white transition underline cursor-pointer"
               >
                 Vifurushi Vingine
               </button>
@@ -1387,8 +1449,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <>
                   <span className="text-neutral-600">•</span>
                   <button
-                    onClick={onOpenLoginModal}
-                    className="text-neutral-400 hover:text-white transition underline"
+                    onClick={async () => {
+                      if (document.fullscreenElement) {
+                        try { await exitFullscreenAndUnlock(); } catch {}
+                      }
+                      onOpenLoginModal();
+                    }}
+                    className="text-neutral-400 hover:text-white transition underline cursor-pointer"
                   >
                     Ulishalipia? Ingia
                   </button>
@@ -1399,7 +1466,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           {/* DESKTOP & TABLET VIEW (>=sm): 3-Card Grid */}
           <div className="hidden sm:flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 mb-3">
+            <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 mb-3">
               <Lock className="w-7 h-7" />
             </div>
 
@@ -1407,43 +1474,63 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               Muda Wako wa Majaribio Umekwisha
             </h3>
 
-            <p className="text-xs sm:text-sm text-neutral-300 max-w-md mb-6 leading-relaxed">
-              Umetumia dakika 1 ya majaribio ya bure. Lipia kifurushi uendelee kutazama chaneli zote mubashara:
+            <p className="text-xs sm:text-sm text-neutral-300 max-w-md mb-5 leading-relaxed">
+              Umetumia dakika 1 ya majaribio ya bure. Chagua kifurushi uendelee kutazama chaneli zote mubashara:
             </p>
 
-            <div className="grid grid-cols-3 gap-3 w-full max-w-lg mb-6">
+            <div className="grid grid-cols-3 gap-3 w-full max-w-lg mb-5">
               <button
-                onClick={() => onSelectPlanClick?.('plan_2days')}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-red-600 text-left transition group"
+                onClick={async () => {
+                  if (document.fullscreenElement) {
+                    try { await exitFullscreenAndUnlock(); } catch {}
+                  }
+                  onSelectPlanClick?.('plan_2days');
+                }}
+                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-blue-500 text-left transition group cursor-pointer"
               >
-                <span className="text-[10px] text-neutral-400 block uppercase">Siku 2</span>
-                <div className="text-base font-bold text-white group-hover:text-red-500">TZS 1,000</div>
+                <span className="text-[10px] text-neutral-400 block uppercase font-medium">Siku 2</span>
+                <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 1,000</div>
               </button>
 
               <button
-                onClick={() => onSelectPlanClick?.('plan_7days')}
-                className="p-3 rounded-xl bg-red-600/15 border-2 border-red-600 text-left transition relative"
+                onClick={async () => {
+                  if (document.fullscreenElement) {
+                    try { await exitFullscreenAndUnlock(); } catch {}
+                  }
+                  onSelectPlanClick?.('plan_7days');
+                }}
+                className="p-3 rounded-xl bg-blue-600/20 border-2 border-blue-500 text-left transition relative cursor-pointer"
               >
-                <span className="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-black uppercase">
+                <span className="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-blue-600 text-white text-[9px] font-black uppercase">
                   BORA
                 </span>
-                <span className="text-[10px] text-red-300 block uppercase">Wiki 1 (Siku 7)</span>
+                <span className="text-[10px] text-blue-300 block uppercase font-medium">Wiki 1 (Siku 7)</span>
                 <div className="text-base font-bold text-white">TZS 3,000</div>
               </button>
 
               <button
-                onClick={() => onSelectPlanClick?.('plan_30days')}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-red-600 text-left transition group"
+                onClick={async () => {
+                  if (document.fullscreenElement) {
+                    try { await exitFullscreenAndUnlock(); } catch {}
+                  }
+                  onSelectPlanClick?.('plan_30days');
+                }}
+                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-blue-500 text-left transition group cursor-pointer"
               >
-                <span className="text-[10px] text-neutral-400 block uppercase">Mwezi 1 (Siku 30)</span>
-                <div className="text-base font-bold text-white group-hover:text-red-500">TZS 10,000</div>
+                <span className="text-[10px] text-neutral-400 block uppercase font-medium">Mwezi 1 (Siku 30)</span>
+                <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 10,000</div>
               </button>
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
-                onClick={() => onSelectPlanClick?.('plan_7days')}
-                className="py-3 px-6 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-red-600/30 flex items-center gap-2 transition"
+                onClick={async () => {
+                  if (document.fullscreenElement) {
+                    try { await exitFullscreenAndUnlock(); } catch {}
+                  }
+                  onSelectPlanClick?.('plan_7days');
+                }}
+                className="py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition cursor-pointer active:scale-95"
               >
                 <span>Lipia kwa Simu Sasa</span>
                 <ArrowRight className="w-4 h-4" />
@@ -1451,8 +1538,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
               {onOpenLoginModal && (
                 <button
-                  onClick={onOpenLoginModal}
-                  className="py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold border border-neutral-700 transition"
+                  onClick={async () => {
+                    if (document.fullscreenElement) {
+                      try { await exitFullscreenAndUnlock(); } catch {}
+                    }
+                    onOpenLoginModal();
+                  }}
+                  className="py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold border border-neutral-700 transition cursor-pointer"
                 >
                   Ulishalipia? Ingia
                 </button>
@@ -1462,7 +1554,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* DIRECT PAY POPUP MODAL (Opens directly when tapping 1,000 TSH on mobile) */}
+      {/* DIRECT PAY POPUP MODAL */}
       {showDirectPayModal && (
         <div
           onClick={(e) => {
@@ -1473,7 +1565,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xs rounded-2xl bg-neutral-900 border border-neutral-800 p-5 shadow-2xl relative space-y-4"
+            className="w-full max-w-xs rounded-2xl bg-[#0B1020] border border-blue-500/40 p-5 shadow-2xl relative space-y-4"
           >
             <button
               onClick={() => setShowDirectPayModal(false)}
@@ -1483,7 +1575,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </button>
 
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
                 Lipa Papo Hapo
               </div>
               <h3 className="text-base font-black text-white mt-0.5">
@@ -1501,7 +1593,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   value={directPayPhone}
                   onChange={(e) => setDirectPayPhone(e.target.value)}
                   placeholder="07XXXXXXXX au 06XXXXXXXX"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-950 border border-neutral-700 text-white placeholder-neutral-500 font-mono text-sm focus:outline-none focus:border-red-500 transition"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-neutral-700 text-white placeholder-neutral-500 font-mono text-sm focus:outline-none focus:border-blue-500 transition"
                   autoFocus
                 />
               </div>
@@ -1515,7 +1607,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <button
                 type="submit"
                 disabled={isDirectPayLoading}
-                className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition disabled:opacity-50"
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition disabled:opacity-50"
               >
                 {isDirectPayLoading ? (
                   <>
@@ -1531,151 +1623,242 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* YouTube-Style Overlay Controls (Native non-embedded streams only) */}
-      {!isEmbedded && (
+      {/* FULLSCREEN TOP BAR (Channel Title, Live Tag & EPG Toggle) */}
+      {isFullscreen && !isPaywallTriggered && (
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-500 ease-in-out ${
-          showControls && !isPaywallTriggered
-            ? 'opacity-100 pointer-events-auto translate-y-0'
-            : 'opacity-0 pointer-events-none translate-y-full'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3">
-          {/* Left: Volume & Channel Name */}
+          className={`absolute top-0 inset-x-0 z-30 p-3 sm:p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-all duration-300 flex items-center justify-between ${
+            showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleMute();
-                resetControlsTimeout();
-              }}
-              className="p-2 text-white hover:text-red-500 rounded-lg hover:bg-white/10 active:scale-95 transition"
-              title={isMuted ? 'Washa Sauti (M)' : 'Zima Sauti (M)'}
-            >
-              {isMuted || volume === 0 ? <VolumeX className="w-5 h-5 text-red-500" /> : <Volume2 className="w-5 h-5" />}
-            </button>
+            {onBack && (
+              <button
+                onClick={async () => {
+                  await toggleFullscreen();
+                  onBack();
+                }}
+                className="py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md border border-white/15 transition cursor-pointer active:scale-95"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Rudi</span>
+              </button>
+            )}
 
-            <span className="text-xs font-semibold text-neutral-200 truncate max-w-[140px] sm:max-w-xs">
-              {channel.name}
-            </span>
+            <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[160px] sm:max-w-xs">
+                {channel.name}
+              </span>
+              <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.2 rounded font-black uppercase">
+                LIVE
+              </span>
+            </div>
           </div>
 
-          {/* Right: Quality Switcher, Audio Language Switcher & Fullscreen */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Quality Selector with Automatic Internet Stability Adjustment */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowQualityMenu(prev => !prev);
-                  resetControlsTimeout();
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                title="Badili Ubora wa Video (Quality / Mtandao)"
-              >
-                <Sliders className="w-3.5 h-3.5 text-red-500" />
-                <span className="hidden xs:inline sm:inline">
-                  {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
-                </span>
-                <span className="xs:hidden sm:hidden">
-                  {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
-                </span>
-              </button>
-
-              {/* Floating Quality Menu */}
-              {showQualityMenu && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-neutral-900 border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
-                >
-                  <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
-                    <span>Ubora wa Video</span>
-                    <span className="text-amber-400 text-[9px] font-normal">Kulingana na mtandao</span>
-                  </div>
-
-                  <button
-                    onClick={() => handleSelectQuality('auto')}
-                    className="w-full px-3 py-2 text-left hover:bg-neutral-800 flex items-center justify-between transition"
-                  >
-                    <div>
-                      <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
-                      <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
-                    </div>
-                    {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-red-500" />}
-                  </button>
-
-                  <div className="my-1 border-t border-neutral-800" />
-
-                  {[
-                    { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
-                    { id: '720', label: '720p HD', desc: 'Imependekezwa' },
-                    { id: '480', label: '480p SD', desc: 'Kawaida' },
-                    { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSelectQuality(item.id as QualityOption)}
-                      className="w-full px-3 py-1.5 text-left hover:bg-neutral-800 flex items-center justify-between transition"
-                    >
-                      <div>
-                        <div className="text-white font-medium">{item.label}</div>
-                        <div className="text-[10px] text-neutral-500">{item.desc}</div>
-                      </div>
-                      {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-red-500" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Audio Language Switcher */}
+          <div className="flex items-center gap-2">
+            {/* Fullscreen EPG Button */}
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleLanguage();
-                resetControlsTimeout();
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-              title="Badili Lugha ya Sauti (Swahili / English)"
-            >
-              <Languages className="w-3.5 h-3.5 text-amber-400" />
-              <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
-            </button>
-
-            {/* Quality Meter (Kipimo cha Ubora) */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowQualityMeterModal(true);
-                resetControlsTimeout();
-              }}
-              className="px-2 sm:px-2.5 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-cyan-500/30 shadow-sm"
-              title="Kipimo cha Ubora na Buffer ya Sekunde 30"
-            >
-              <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline text-cyan-300 font-mono text-[11px]">{bufferSeconds.toFixed(0)}s buffer</span>
-            </button>
-
-            {/* Fullscreen */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFullscreen();
-                resetControlsTimeout();
-              }}
-              className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
-                isFullscreen
-                  ? 'text-red-400 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40'
-                  : 'text-neutral-300 hover:text-white hover:bg-white/10'
+              onClick={() => setShowFullscreenEPG((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition backdrop-blur-md cursor-pointer ${
+                showFullscreenEPG
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 border border-blue-400'
+                  : 'bg-black/60 hover:bg-black/80 text-neutral-200 border border-white/15'
               }`}
-              title={isFullscreen ? 'Punguza Skrini (Exit Full Screen)' : 'Skrini Nzima (Full Page / Fullscreen)'}
+              title="Ratiba ya Vipindi (EPG)"
             >
-              {isFullscreen ? <Minimize2 className="w-5 h-5 text-red-400" /> : <Maximize2 className="w-5 h-5" />}
+              <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Ratiba ya Vipindi</span>
             </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* FULLSCREEN EPG DRAWER OVERLAY */}
+      {showFullscreenEPG && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-0 right-0 bottom-0 z-40 w-full max-w-sm sm:max-w-md animate-fade-in"
+        >
+          <ChannelEPGView
+            channelId={channel.id}
+            channelName={channel.name}
+            variant="drawer"
+            onClose={() => setShowFullscreenEPG(false)}
+          />
+        </div>
+      )}
+
+      {/* YouTube-Style Bottom Overlay Controls (Native non-embedded streams only) */}
+      {!isEmbedded && (
+        <div
+          className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 ease-in-out ${
+            showControls && !isPaywallTriggered
+              ? 'opacity-100 pointer-events-auto translate-y-0'
+              : 'opacity-0 pointer-events-none translate-y-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-3">
+            {/* Left: YouTube Volume Slider & Channel Name */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* YouTube Volume Control with Expandable Slider */}
+              <div
+                className="flex items-center group/vol"
+                onMouseEnter={() => setShowVolumeSlider(true)}
+                onMouseLeave={() => setShowVolumeSlider(false)}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMute();
+                    resetControlsTimeout();
+                  }}
+                  className="p-2 text-white hover:text-cyan-400 rounded-lg hover:bg-white/10 active:scale-95 transition cursor-pointer"
+                  title={isMuted ? 'Washa Sauti (M)' : 'Zima Sauti (M)'}
+                >
+                  {isMuted || volume === 0 ? (
+                    <VolumeX className="w-5 h-5 text-red-500" />
+                  ) : volume < 0.5 ? (
+                    <Volume1 className="w-5 h-5 text-cyan-300" />
+                  ) : (
+                    <Volume2 className="w-5 h-5 text-white" />
+                  )}
+                </button>
+
+                {/* Smooth YouTube Volume Slider */}
+                <div className="flex items-center transition-all duration-300 overflow-hidden w-0 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-focus-within/vol:w-20 pl-1">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      const val = parseFloat(e.target.value);
+                      setVolume(val);
+                      setIsMuted(val === 0);
+                      if (videoRef.current) {
+                        videoRef.current.volume = val;
+                        videoRef.current.muted = val === 0;
+                      }
+                      try {
+                        localStorage.setItem('nelitv_player_volume', String(val));
+                      } catch {}
+                    }}
+                    className="w-16 sm:w-20 h-1 bg-white/30 hover:bg-white/50 rounded-lg appearance-none cursor-pointer accent-cyan-400 focus:outline-none"
+                    title={`Sauti: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                  />
+                </div>
+              </div>
+
+              <span className="text-xs font-bold text-neutral-200 truncate max-w-[130px] sm:max-w-xs">
+                {channel.name}
+              </span>
+            </div>
+
+            {/* Right: Quality, Language, Kipimo cha Ubora, Single Fullscreen Button */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Quality Switcher */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowQualityMenu((prev) => !prev);
+                    resetControlsTimeout();
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
+                  title="Badili Ubora wa Video"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="hidden xs:inline sm:inline">
+                    {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
+                  </span>
+                  <span className="xs:hidden sm:hidden">
+                    {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
+                  </span>
+                </button>
+
+                {/* Floating Quality Menu */}
+                {showQualityMenu && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
+                  >
+                    <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                      <span>Ubora wa Video</span>
+                      <span className="text-cyan-400 text-[9px] font-normal">Kulingana na mtandao</span>
+                    </div>
+
+                    <button
+                      onClick={() => handleSelectQuality('auto')}
+                      className="w-full px-3 py-2 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
+                        <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
+                      </div>
+                      {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </button>
+
+                    <div className="my-1 border-t border-neutral-800" />
+
+                    {[
+                      { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
+                      { id: '720', label: '720p HD', desc: 'Imependekezwa' },
+                      { id: '480', label: '480p SD', desc: 'Kawaida' },
+                      { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => handleSelectQuality(item.id as QualityOption)}
+                        className="w-full px-3 py-1.5 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
+                      >
+                        <div>
+                          <div className="text-white font-medium">{item.label}</div>
+                          <div className="text-[10px] text-neutral-500">{item.desc}</div>
+                        </div>
+                        {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Audio Language Switcher */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleLanguage();
+                  resetControlsTimeout();
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
+                title="Badili Lugha ya Sauti (Swahili / English)"
+              >
+                <Languages className="w-3.5 h-3.5 text-amber-400" />
+                <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
+              </button>
+
+              {/* Single Clean Fullscreen Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen();
+                  resetControlsTimeout();
+                }}
+                className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
+                  isFullscreen
+                    ? 'text-cyan-400 bg-blue-600/30 hover:bg-blue-600/40 border border-cyan-500/50'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/10 border border-transparent'
+                }`}
+                title={isFullscreen ? 'Punguza Skrini (Exit Fullscreen)' : 'Skrini Nzima (Fullscreen)'}
+              >
+                {isFullscreen ? <Minimize2 className="w-5 h-5 text-cyan-400" /> : <Maximize2 className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Quality Meter Modal */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
-import { Play, Eye, Flame, Tv, Hash, Check } from 'lucide-react';
+import { Play, Eye, Flame, Tv, Check, Radio, Sparkles } from 'lucide-react';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -57,13 +57,13 @@ export const HomePage: React.FC<HomePageProps> = ({
   );
 
   const categories = [
-    { id: 'all', label: '📺 Vituo Vyote' },
-    { id: 'sport', label: '⚽ Michezo' },
-    { id: 'movies', label: '🎬 Sinema & Filamu' },
-    { id: 'entertainment', label: '📺 Burudani' },
-    { id: 'kids', label: '🧸 Watoto' },
-    { id: 'news', label: '📰 Habari & Dini' },
-    { id: 'africa', label: '🌍 Afrika' },
+    { id: 'all', label: 'Vituo Vyote' },
+    { id: 'sport', label: 'Michezo (Sports)' },
+    { id: 'movies', label: 'Sinema Zetu & Filamu' },
+    { id: 'entertainment', label: 'Burudani' },
+    { id: 'news', label: 'Habari & Taarifa' },
+    { id: 'kids', label: 'Watoto' },
+    { id: 'africa', label: 'Utamaduni & Safari' },
   ];
 
   const currentDisplayChannels = selectedCategory === 'all'
@@ -154,7 +154,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         setFocusedChannelIndex(prev => {
-          const next = Math.min(currentDisplayChannels.length - 1, prev + 1);
+          const next = Math.min(currentDisplayChannels.length - 1, (prev < 0 ? 0 : prev) + 1);
           scrollToChannelCard(next);
           return next;
         });
@@ -166,16 +166,34 @@ export const HomePage: React.FC<HomePageProps> = ({
           return next;
         });
       } else if (e.key === 'ArrowDown') {
+        if (focusedChannelIndex < 0) {
+          e.preventDefault();
+          setFocusedChannelIndex(0);
+          scrollToChannelCard(0);
+          return;
+        }
         e.preventDefault();
         setFocusedChannelIndex(prev => {
-          const next = Math.min(currentDisplayChannels.length - 1, (prev < 0 ? 0 : prev) + cols);
+          const next = Math.min(currentDisplayChannels.length - 1, prev + cols);
           scrollToChannelCard(next);
           return next;
         });
       } else if (e.key === 'ArrowUp') {
+        // Fix for keyboard Up arrow getting stuck at the first channel row!
+        // When on top row (or index 0), scroll smoothly to the very top of the window
+        // and unfocus the cards so the user can reach the top header/banner.
+        if (focusedChannelIndex < cols) {
+          setFocusedChannelIndex(-1);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
         e.preventDefault();
         setFocusedChannelIndex(prev => {
-          const next = Math.max(0, prev - cols);
+          const next = prev - cols;
+          if (next < 0) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return -1;
+          }
           scrollToChannelCard(next);
           return next;
         });
@@ -199,19 +217,17 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   return (
-    <div className="min-h-screen pb-32 sm:pb-24 bg-[#070A0F] text-neutral-100 touch-pan-y">
-      {/* SMART TV CHANNEL NUMBER DIAL OSD (On-Screen HUD Popup) */}
+    <div className="min-h-screen pb-32 sm:pb-24 bg-[#070A14] text-neutral-100 touch-pan-y">
+      {/* SMART TV CHANNEL NUMBER DIAL OSD */}
       {dialedNumber && (
-        <div className="fixed top-20 right-4 sm:right-8 z-50 animate-bounce-short pointer-events-none">
-          <div className="p-4 rounded-2xl bg-neutral-950/95 border-2 border-cyan-400 shadow-2xl shadow-cyan-500/50 backdrop-blur-md flex items-center gap-3.5 text-white pointer-events-auto">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-600 to-cyan-500 p-[1.5px] shadow-md">
-              <div className="w-full h-full rounded-[10px] bg-neutral-950 flex items-center justify-center font-black font-mono text-2xl text-cyan-300">
-                {dialedNumber}
-              </div>
+        <div className="fixed top-20 right-4 sm:right-8 z-50 animate-fade-in pointer-events-none">
+          <div className="p-4 rounded-2xl bg-[#0B1020]/95 border-2 border-blue-500 shadow-2xl shadow-blue-500/40 backdrop-blur-md flex items-center gap-3.5 text-white pointer-events-auto">
+            <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400 p-1 flex items-center justify-center font-black font-mono text-2xl text-cyan-300">
+              {dialedNumber}
             </div>
 
             <div className="min-w-[150px]">
-              <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <div className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
                 <Tv className="w-3 h-3" />
                 <span>Nambari ya Chaneli</span>
               </div>
@@ -226,7 +242,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             {dialedTargetChannel && (
               <button
                 onClick={() => triggerChannelJump(dialedTargetChannel)}
-                className="py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer"
+                className="py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer"
               >
                 <span>OK</span>
                 <Check className="w-3.5 h-3.5" />
@@ -236,7 +252,62 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* 1. CATEGORY SELECTOR TABS WITH NEON ACCENT */}
+      {/* 1. AZAM MAX STYLE OTT HERO BANNER (Featured Top Live Match / Channel) */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4 sm:pt-6">
+        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-[#0B1020] via-slate-900 to-[#070A14] border border-white/10 shadow-2xl p-6 sm:p-10 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="max-w-xl space-y-3 z-10 text-left">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-red-600/30">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <span>MUBASHARA 24/7</span>
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-blue-600/30 border border-blue-400/40 text-cyan-300 text-[10px] font-bold uppercase tracking-wider">
+                NBC Premier League & Live TV
+              </span>
+            </div>
+
+            <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight leading-tight">
+              Tazama Mechi Zote za NBC & Chaneli za Azam TV Mubashara
+            </h1>
+
+            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
+              Azam Sports 1-4 HD, Sinema Zetu, Baynith Sports, TBC 1 na zaidi kwa ubora wa HD na ucheleweshaji wa sekunde 30 tu bila kukwama.
+            </p>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={() => onSelectChannel(channels[0])}
+                className="py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-blue-600/30 transition cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-white" />
+                <span>Tazama Sasa</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const as1 = channels.find(c => c.id.includes('azam-sports-1')) || channels[0];
+                  onSelectChannel(as1);
+                }}
+                className="py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-neutral-200 text-xs sm:text-sm font-semibold border border-white/15 transition cursor-pointer backdrop-blur-md"
+              >
+                Azam Sports 1 HD
+              </button>
+            </div>
+          </div>
+
+          {/* Right Hero Badge Visual */}
+          <div className="hidden md:flex flex-col items-center justify-center p-6 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md shrink-0 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 mb-3 shadow-inner">
+              <Tv className="w-8 h-8" />
+            </div>
+            <div className="text-2xl font-black text-white">{channels.length}+</div>
+            <div className="text-xs text-neutral-400 font-medium">Chaneli za Moja kwa Moja</div>
+            <div className="text-[10px] text-cyan-400 font-mono mt-1 font-bold">4K / Full HD 1080p</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. CATEGORY SELECTOR TABS (Azam Max Clean Navy Style) */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-2 touch-pan-x">
           {categories.map((cat) => (
@@ -246,10 +317,10 @@ export const HomePage: React.FC<HomePageProps> = ({
                 setSelectedCategory(cat.id);
                 setFocusedChannelIndex(-1);
               }}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
                 selectedCategory === cat.id
-                  ? 'bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-400 text-black font-black shadow-lg shadow-pink-500/25 scale-105'
-                  : 'bg-neutral-900/90 text-neutral-300 hover:text-white hover:bg-neutral-800 border border-neutral-800'
+                  ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/30 border border-blue-400'
+                  : 'bg-[#0B1020] text-neutral-300 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
               {cat.label}
@@ -258,79 +329,45 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 2. MAIN CHANNELS CONTENT - SINGLE UNIFIED GRID FOR VITUO VYOTE & CATEGORY GRIDS */}
+      {/* 3. MAIN CHANNELS GRID (Azam Max OTT Theme) */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
-        {selectedCategory === 'all' ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-white/10">
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-neutral-800">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-red-500 animate-pulse" />
-                  <span>Vituo Vyote vya NeliTv ({channels.length})</span>
-                </h2>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Vituo vyote vimepangwa pamoja kwenye gridi moja. Tumia nambari kwenye remote au keyboard kubonyeza kituo cha haraka (#1 Baynith Sports, #2 Baynith Sports 2, nk.)
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-neutral-300 bg-neutral-900/90 px-3.5 py-1.5 rounded-xl border border-neutral-800 self-start sm:self-auto shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="font-semibold">{channels.length} Vituo Mubashara 24/7</span>
-              </div>
-            </div>
-
-            {/* All channels unified in a single high-performance grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
-              {channels.map((channel, idx) => {
-                const channelNumber = idx + 1;
-                return (
-                  <ChannelCard
-                    key={channel.id}
-                    domId={`channel-card-${idx}`}
-                    channel={channel}
-                    channelNumber={channelNumber}
-                    isFocused={focusedChannelIndex === idx}
-                    onSelectChannel={onSelectChannel}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className="flex items-baseline justify-between mb-6 pb-3 border-b border-neutral-800">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-pink-500" />
-                  <span>Chaneli Zilizochaguliwa ({currentDisplayChannels.length})</span>
-                </h2>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Chagua kituo unachotaka au andika nambari ya chaneli kwenye remote au keyboard
-                </p>
-              </div>
-              <span className="text-xs font-mono text-cyan-400 font-semibold">
-                {currentDisplayChannels.length} vituo
+            <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+              <Tv className="w-5 h-5 text-blue-500" />
+              <span>
+                {selectedCategory === 'all'
+                  ? `Vituo Vyote vya NeliTv (${channels.length})`
+                  : `${categories.find(c => c.id === selectedCategory)?.label || 'Vituo'} (${currentDisplayChannels.length})`}
               </span>
-            </div>
-
-            {/* Category filtered grid with generous spacing */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
-              {currentDisplayChannels.map((channel, idx) => {
-                const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-                return (
-                  <ChannelCard
-                    key={channel.id}
-                    domId={`channel-card-${idx}`}
-                    channel={channel}
-                    channelNumber={channelNumber}
-                    isFocused={focusedChannelIndex === idx}
-                    onSelectChannel={onSelectChannel}
-                  />
-                );
-              })}
-            </div>
+            </h2>
+            <p className="text-xs text-neutral-400 mt-1">
+              Tumia nambari kwenye remote au keyboard kubonyeza kituo moja kwa moja (#1, #2, nk.)
+            </p>
           </div>
-        )}
+
+          <div className="flex items-center gap-2 text-xs text-neutral-300 bg-[#0B1020] px-3.5 py-1.5 rounded-xl border border-white/10 self-start sm:self-auto shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-semibold">{currentDisplayChannels.length} Vituo Mubashara</span>
+          </div>
+        </div>
+
+        {/* Clean Grid of Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-5">
+          {currentDisplayChannels.map((channel, idx) => {
+            const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
+            return (
+              <ChannelCard
+                key={channel.id}
+                domId={`channel-card-${idx}`}
+                channel={channel}
+                channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
+                isFocused={focusedChannelIndex === idx}
+                onSelectChannel={onSelectChannel}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -363,59 +400,59 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
           onSelectChannel(channel);
         }
       }}
-      className={`group relative rounded-2xl bg-neutral-900/90 border overflow-hidden cursor-pointer transition-all duration-200 transform outline-none hover:-translate-y-1.5 hover:shadow-xl hover:shadow-pink-500/15 focus:scale-105 focus:ring-4 focus:ring-cyan-400 focus:shadow-2xl focus:shadow-cyan-500/50 ${
+      className={`group relative rounded-2xl bg-[#0B1020] border overflow-hidden cursor-pointer transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-600/20 focus:scale-105 focus:ring-4 focus:ring-blue-500 ${
         isFocused
-          ? 'ring-4 ring-pink-500 scale-105 sm:scale-108 border-transparent shadow-2xl shadow-pink-500/50 z-10'
-          : 'border-neutral-800 hover:border-pink-500/50'
+          ? 'ring-4 ring-blue-500 scale-105 border-transparent shadow-2xl shadow-blue-600/40 z-10'
+          : 'border-white/10 hover:border-blue-500/50'
       }`}
     >
       {/* 16:9 Thumbnail Container */}
-      <div className="aspect-video w-full bg-neutral-950 relative overflow-hidden">
+      <div className="aspect-video w-full bg-black relative overflow-hidden">
         <img
           src={channel.thumbnailUrl}
           alt={channel.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0B1020] via-transparent to-transparent opacity-90" />
 
         {/* Top Badges: Channel Number Badge (#1, #2) & LIVE Indicator */}
         <div className="absolute top-2 left-2 flex items-center gap-1.5">
           <span className="px-2 py-0.5 rounded-md bg-black/85 border border-amber-400/50 text-[10px] sm:text-[11px] font-mono font-black text-amber-300 shadow">
             #{channelNumber}
           </span>
-          <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-md bg-gradient-to-r from-pink-600 to-cyan-500 text-white shadow-md shadow-pink-600/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+          <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-md bg-red-600 text-white shadow-md shadow-red-600/30">
+            <Radio className="w-2.5 h-2.5" />
             <span>LIVE</span>
           </span>
         </div>
 
-        {/* Viewers Count & HD resolution tag */}
+        {/* Viewers Count & HD Tag */}
         <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] sm:text-[11px] text-neutral-300 font-medium">
-          <div className="flex items-center gap-1 bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
+          <div className="flex items-center gap-1 bg-black/75 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
             <Eye className="w-3 h-3 text-cyan-400" />
             <span>{(channel.viewerCount || 650).toLocaleString()}</span>
           </div>
 
           {channel.isAzam && (
-            <span className="text-[9px] font-bold text-amber-300 bg-black/70 border border-amber-500/30 px-1.5 py-0.5 rounded-md backdrop-blur-sm">
+            <span className="text-[9px] font-bold text-amber-300 bg-black/75 border border-amber-500/30 px-1.5 py-0.5 rounded-md backdrop-blur-sm">
               HD 1080p
             </span>
           )}
         </div>
 
-        {/* Hover Play Icon Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40 backdrop-blur-[2px]">
-          <div className="w-11 h-11 rounded-full bg-gradient-to-r from-pink-600 to-cyan-500 text-white flex items-center justify-center shadow-lg shadow-pink-600/40 transform group-hover:scale-110 transition-transform">
+        {/* Play Icon Hover Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40 backdrop-blur-[1px]">
+          <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/50 transform group-hover:scale-110 transition-transform">
             <Play className="w-5 h-5 fill-white ml-0.5" />
           </div>
         </div>
       </div>
 
       {/* Info Block */}
-      <div className="p-3.5">
+      <div className="p-3 sm:p-3.5">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-pink-400 transition line-clamp-1">
+          <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-cyan-400 transition line-clamp-1">
             {channel.name}
           </h3>
           <span className="text-[10px] font-mono font-semibold text-neutral-500 shrink-0">

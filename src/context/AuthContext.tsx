@@ -747,8 +747,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isLoggedIn = Boolean(user && (user.phone || user.email || user.uid));
   const hasActiveSubscription = Boolean(
-    user?.isSubscribed &&
-    user?.subscriptionExpiresAt &&
+    isLoggedIn &&
+    user &&
+    user.isSubscribed &&
+    user.subscriptionExpiresAt &&
     new Date(user.subscriptionExpiresAt).getTime() > Date.now()
   );
 
