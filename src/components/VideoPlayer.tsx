@@ -83,6 +83,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
+  const [isUserPaused, setIsUserPaused] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(() => {
     try {
@@ -354,6 +355,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const loadStream = async () => {
       await cleanup();
       if (!isMounted) return;
+      setIsUserPaused(false);
+
+      // Automated instant play with muted policy fallback
+      const attemptAutoPlay = async () => {
+        if (!isMounted) return;
+        setIsBuffering(false);
+        const vid = videoRef.current;
+        if (!vid) return;
+        try {
+          // Attempt unmuted play first
+          vid.muted = false;
+          await vid.play();
+          setIsPlaying(true);
+          setIsMuted(false);
+        } catch {
+          // If browser blocks unmuted audio, play muted without stopping
+          try {
+            vid.muted = true;
+            setIsMuted(true);
+            await vid.play();
+            setIsPlaying(true);
+          } catch (pErr) {
+            console.warn('AutoPlay muted fallback note:', pErr);
+          }
+        }
+      };
 
       // Never initialize or load video/audio stream if subscription paywall is active
       if (!hasActiveSubscription && trialCompleted) {
@@ -387,12 +414,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       }
 
-      // Safety timeout against infinite buffering
-      const stallTimer = setTimeout(() => {
+      // Fast startup timeout: if stream is ready but waiting, trigger autoplay
+      const stallTimer = setTimeout(async () => {
         if (isMounted && isBuffering && !errorMessage) {
-          setIsBuffering(false);
+          await attemptAutoPlay();
         }
-      }, 7000);
+      }, 3500);
 
       // 0. EMBEDDED STREAM (Baynith Sports 1 & 2, etc.)
       if (channel.streamFormat === 'embed' || channel.embedUrl) {
@@ -435,41 +462,45 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 30,          // 30s buffer reservoir for smooth low-latency
-              rebufferingGoal: 1.5,       // Quick resume in 1.5s
-              bufferBehind: 20,           // Keeps 20s behind in memory for stability
-              safeSeekOffset: 30,         // 30s safe delay from live encoder edge
-              gapDetectionThreshold: 0.8, // Silently skips timestamp micro-gaps
-              stallEnabled: true,         // Detects browser decoder stalls
-              stallThreshold: 1.5,
-              stallSkip: 0.3,
-              segmentPrefetchLimit: 3,    // Pre-fetches next 3 segments ahead of time
+              bufferingGoal: 4,          // 4s buffer reservoir for instant live start (was 30s!)
+              rebufferingGoal: 0.5,      // Quick resume in 0.5s (was 1.5s!)
+              bufferBehind: 15,          // Keeps 15s behind in memory
+              safeSeekOffset: 3,         // 3s delay from live encoder edge
+              gapDetectionThreshold: 0.5, // Silently skips timestamp micro-gaps
+              smallGapLimit: 0.5,
+              jumpLargeGaps: true,
+              stallEnabled: true,        // Detects browser decoder stalls
+              stallThreshold: 1.0,
+              stallSkip: 0.2,
+              segmentPrefetchLimit: 2,   // Pre-fetches next 2 segments ahead of time
               ignoreTextStreamFailures: true,
+              alwaysStreamText: false,
               retryParameters: {
-                maxAttempts: 6,
-                baseDelay: 250,
+                maxAttempts: 4,
+                baseDelay: 150,
                 backoffFactor: 1.2
               }
             },
             manifest: {
-              defaultPresentationDelay: 30, // 30 seconds delay behind live TV broadcast for quick start
+              defaultPresentationDelay: 4, // 4 seconds delay behind live TV broadcast for instant start
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
-                ignoreSuggestedPresentationDelay: true // 30s broadcast sync
+                ignoreSuggestedPresentationDelay: true,
+                clockSyncUri: ''
               },
               retryParameters: {
-                maxAttempts: 6,
-                baseDelay: 250,
+                maxAttempts: 4,
+                baseDelay: 150,
                 backoffFactor: 1.2
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 400000,   // Start on lightweight 360p/480p for instant startup
-              switchInterval: 15,                 // 15s stable observation window before any quality increase
-              bandwidthDowngradeTarget: 0.99,     // Instant downshift on network dip before it buffers
-              bandwidthUpgradeTarget: 0.40        // Conservative upshift: requires 2.5x sustained bandwidth margin
+              defaultBandwidthEstimate: 500000,   // Start on lightweight 360p/480p for instant startup
+              switchInterval: 8,                  // Quick 8s observation window
+              bandwidthDowngradeTarget: 0.95,     // Instant downshift on network dip
+              bandwidthUpgradeTarget: 0.50
             }
           });
 
@@ -658,26 +689,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           clearTimeout(stallTimer);
 
           if (isMounted) {
-            setIsBuffering(false);
-            try {
-              await video.play();
-              setIsPlaying(true);
-            } catch (playErr) {
-              console.warn('Initial play blocked, attempting muted autoplay:', playErr);
-              try {
-                video.muted = true;
-                setIsMuted(true);
-                await video.play();
-                setIsPlaying(true);
-              } catch {
-                setIsPlaying(false);
-              }
-            }
+            await attemptAutoPlay();
           }
         } catch (error: any) {
           console.warn('Shaka load initial note:', error);
-          if (isAzam && !autoTokenRetried && shakaPlayerRef.current) {
-            autoTokenRetried = true;
+          if (shakaPlayerRef.current) {
             try {
               const freshToken = await getLiveCdnToken(true);
               activeTokenRef.current = freshToken.token;
@@ -686,35 +702,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               await shakaPlayerRef.current.load(freshUrl);
               clearTimeout(stallTimer);
               if (isMounted) {
-                setIsBuffering(false);
-                try {
-                  await video.play();
-                  setIsPlaying(true);
-                } catch {
-                  try {
-                    video.muted = true;
-                    setIsMuted(true);
-                    await video.play();
-                    setIsPlaying(true);
-                  } catch {
-                    setIsPlaying(false);
-                  }
-                }
+                await attemptAutoPlay();
+                return;
               }
-              return;
             } catch (retryErr) {
-              console.warn('Retry with fresh token note:', retryErr);
-              // Proxy fallback attempt
+              // Proxy fallback attempt for cross-regional connection stability
               try {
                 const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
                 await shakaPlayerRef.current.load(proxyUrl);
                 clearTimeout(stallTimer);
                 if (isMounted) {
-                  setIsBuffering(false);
-                  video.muted = true;
-                  setIsMuted(true);
-                  await video.play();
-                  setIsPlaying(true);
+                  await attemptAutoPlay();
                   return;
                 }
               } catch (proxyErr) {
@@ -729,21 +727,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }
       }
-      // 2. HLS STREAM
+      // 2. HLS STREAM (Low-latency startup)
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
-            maxBufferLength: 45,
-            maxMaxBufferLength: 90,
-            liveSyncDurationCount: 8,
-            liveMaxLatencyDurationCount: 16,
-            lowLatencyMode: false,
-            backBufferLength: 30,
+            maxBufferLength: 10,
+            maxMaxBufferLength: 20,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 6,
+            lowLatencyMode: true,
+            backBufferLength: 15,
             startLevel: 0, // Starts on lowest/fastest bandwidth level for instant startup without loading
             autoStartLoad: true,
             capLevelToPlayerSize: true,
             abrBandWidthFactor: 0.7,
-            abrBandWidthUpFactor: 0.5, // Conservative upgrade factor
+            abrBandWidthUpFactor: 0.5,
           });
           hlsPlayerRef.current = hls;
 
@@ -752,26 +750,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           hls.on(Hls.Events.MANIFEST_PARSED, async () => {
             if (!isMounted) return;
-            setIsBuffering(false);
-            try {
-              await video.play();
-              setIsPlaying(true);
-            } catch (playErr) {
-              console.warn('HLS unmuted autoplay blocked, retrying muted:', playErr);
-              try {
-                video.muted = true;
-                setIsMuted(true);
-                await video.play();
-                setIsPlaying(true);
-              } catch {
-                setIsPlaying(false);
-              }
-            }
+            await attemptAutoPlay();
           });
 
           hls.on(Hls.Events.BUFFER_STALLED, () => {
             if (!isMounted) return;
-            // Instantly downshift to lowest bitrate stream (level 0) to unfreeze playback immediately
             try {
               if (hls.levels && hls.levels.length > 1) {
                 hls.nextLevel = 0;
@@ -788,20 +771,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           video.src = targetUrl;
           video.addEventListener('loadedmetadata', async () => {
             if (isMounted) {
-              setIsBuffering(false);
-              try {
-                await video.play();
-                setIsPlaying(true);
-              } catch {
-                try {
-                  video.muted = true;
-                  setIsMuted(true);
-                  await video.play();
-                  setIsPlaying(true);
-                } catch {
-                  setIsPlaying(false);
-                }
-              }
+              await attemptAutoPlay();
             }
           });
         }
@@ -811,20 +781,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.src = targetUrl;
         video.onloadeddata = async () => {
           if (isMounted) {
-            setIsBuffering(false);
-            try {
-              await video.play();
-              setIsPlaying(true);
-            } catch {
-              try {
-                video.muted = true;
-                setIsMuted(true);
-                await video.play();
-                setIsPlaying(true);
-              } catch {
-                setIsPlaying(false);
-              }
-            }
+            await attemptAutoPlay();
+          }
+        };
+        video.oncanplay = async () => {
+          if (isMounted && !isPlaying) {
+            await attemptAutoPlay();
           }
         };
       }
@@ -1261,13 +1223,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Big Center Play Button when paused - only for native video */}
-      {!isEmbedded && !isPlaying && !isBuffering && !isPaywallTriggered && !errorMessage && (
+      {/* Big Center Play Button ONLY when user explicitly paused video */}
+      {!isEmbedded && isUserPaused && !isBuffering && !isPaywallTriggered && !errorMessage && (
         <div
           onClick={(e) => {
             e.stopPropagation();
+            setIsUserPaused(false);
             if (videoRef.current) {
-              videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+              videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {
+                if (videoRef.current) {
+                  videoRef.current.muted = true;
+                  videoRef.current.play().then(() => setIsPlaying(true));
+                }
+              });
             }
           }}
           className="absolute inset-0 z-20 flex items-center justify-center bg-black/35 backdrop-blur-[1px] cursor-pointer"
@@ -1275,6 +1243,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-2xl transition transform hover:scale-110 active:scale-95">
             <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white ml-1" />
           </div>
+        </div>
+      )}
+
+      {/* Tap to Unmute Banner when autoplay policy muted the video */}
+      {!isEmbedded && isPlaying && isMuted && !isPaywallTriggered && !isOffline && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            if (videoRef.current) {
+              videoRef.current.muted = false;
+              setIsMuted(false);
+            }
+          }}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-25 py-1.5 px-4 rounded-full bg-black/85 hover:bg-neutral-900 text-white border border-cyan-500/50 text-[11px] sm:text-xs font-bold flex items-center gap-2 shadow-2xl cursor-pointer animate-pulse transition"
+        >
+          <VolumeX className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <span>Sauti imezimwa — Bonyeza hapa kufungua sauti 🔊</span>
         </div>
       )}
 

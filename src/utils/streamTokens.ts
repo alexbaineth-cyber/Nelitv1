@@ -9,10 +9,16 @@ export interface CdnTokenData {
   fetchedAt?: number;
 }
 
-const FALLBACK_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==";
+const FALLBACK_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkzMzM5NjIwIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMGM5MzI1NTExZmRlYjE2MyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDciLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.V72IVAu-hcQN1a6onYrH7eHY8ACNdEibg7w2c_q1JVaAl-kZxrjCTKVOu07UOP9C2W0a6NmjO3TTWB7lKgNyUA==";
 
-let inMemoryToken: CdnTokenData | null = null;
-let lastFetchTime = 0;
+let inMemoryToken: CdnTokenData | null = {
+  token: FALLBACK_TOKEN,
+  cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
+  exp: 1793339620,
+  source: "prewarmed_instant",
+  fetchedAt: Date.now()
+};
+let lastFetchTime = Date.now();
 const TOKEN_CACHE_DURATION = 3 * 60 * 1000; // 3 minutes
 
 // Fetch latest valid token from server or direct live CDN endpoint
@@ -24,17 +30,37 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
   if (
     !forceRefresh &&
     inMemoryToken &&
-    (nowMs - lastFetchTime < TOKEN_CACHE_DURATION) &&
     (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 90)
   ) {
+    // If cache is older than 3 minutes, refresh silently in background without blocking player
+    if (nowMs - lastFetchTime > TOKEN_CACHE_DURATION) {
+      setTimeout(() => {
+        fetch('/baynithalex/api/cdn-token', { headers: getAppAuthHeaders() })
+          .then(r => r.json())
+          .then(d => {
+            if (d?.token) {
+              inMemoryToken = {
+                token: d.token,
+                cdnHost: d.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
+                exp: d.exp || null,
+                source: 'server_api_bg',
+                fetchedAt: Date.now()
+              };
+              lastFetchTime = Date.now();
+              updateGlobalAzamToken(d.token);
+            }
+          })
+          .catch(() => {});
+      }, 0);
+    }
     return inMemoryToken;
   }
 
-  // 1. Try local server API endpoint (/baynithalex/api/cdn-token)
+  // 1. Try local server API endpoint (/baynithalex/api/cdn-token) - fast 1.5s timeout
   try {
     const url = forceRefresh ? '/baynithalex/api/cdn-token?refresh=true' : '/baynithalex/api/cdn-token';
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
 
     const res = await fetch(url, {
       signal: controller.signal,

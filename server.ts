@@ -480,8 +480,8 @@ async function getOrFetchCdnToken(force = false) {
   }
 
   cachedCdnToken = {
-    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==",
-    exp: 1792521597,
+    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkzMzM5NjIwIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMGM5MzI1NTExZmRlYjE2MyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDciLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.V72IVAu-hcQN1a6onYrH7eHY8ACNdEibg7w2c_q1JVaAl-kZxrjCTKVOu07UOP9C2W0a6NmjO3TTWB7lKgNyUA==",
+    exp: 1793339620,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
     source: "static_active"
   };
@@ -546,6 +546,19 @@ app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, r
   });
 });
 
+// 1.2 Fast CDN Token Endpoint for Client VideoPlayer (instant sub-millisecond response)
+app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (_req: Request, res: Response) => {
+  const tokenData = await getOrFetchCdnToken();
+  res.setHeader('Cache-Control', 'public, max-age=120');
+  res.json({
+    success: true,
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: tokenData.exp,
+    source: tokenData.source
+  });
+});
+
 // 1.5 Low-Latency Streaming Proxy for DRM DASH/HLS segments and manifests
 app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -599,7 +612,11 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     }
 
     if (contentType && (contentType.includes('dash+xml') || targetUrl.includes('.mpd'))) {
-      const text = await response.text();
+      let text = await response.text();
+      if (!text.includes('<BaseURL>')) {
+        const baseDir = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+        text = text.replace(/<MPD([^>]*)>/, `<MPD$1>\n  <BaseURL>${baseDir}</BaseURL>`);
+      }
       return res.send(text);
     }
 
