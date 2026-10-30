@@ -1123,26 +1123,84 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPaywallTriggered, hasActiveSubscription, trialCompleted]);
 
+  // Automatic Reconnect & Auto-Play Watchdog:
+  // When internet reconnects after being offline, automatically resume and start playback
+  // without waiting for the user to press the play button!
+  useEffect(() => {
+    const attemptAutoPlay = async () => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) return;
+
+      try {
+        await video.play();
+        setIsPlaying(true);
+        setIsBuffering(false);
+      } catch {
+        // Autoplay policy fallback: mute and play
+        try {
+          video.muted = true;
+          setIsMuted(true);
+          await video.play();
+          setIsPlaying(true);
+          setIsBuffering(false);
+        } catch {}
+      }
+    };
+
+    const handleWindowOnline = async () => {
+      setErrorMessage(null);
+      setIsBuffering(true);
+
+      // Re-trigger stream connection
+      if (shakaPlayerRef.current) {
+        try {
+          await shakaPlayerRef.current.retryStreaming();
+          setIsBuffering(false);
+        } catch {
+          setRetryCount((prev) => prev + 1);
+        }
+      } else if (hlsPlayerRef.current) {
+        try {
+          hlsPlayerRef.current.startLoad();
+          setIsBuffering(false);
+        } catch {
+          setRetryCount((prev) => prev + 1);
+        }
+      } else {
+        setRetryCount((prev) => prev + 1);
+      }
+
+      // Auto-start stream playback immediately
+      setTimeout(() => {
+        attemptAutoPlay();
+      }, 400);
+    };
+
+    window.addEventListener('online', handleWindowOnline);
+
+    // Watchdog: If online and stream paused unexpectedly, auto-resume
+    const watchdog = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (isOffline || isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) return;
+      const video = videoRef.current;
+      if (video && video.paused && !channel.streamFormat?.includes('embed') && !channel.embedUrl) {
+        attemptAutoPlay();
+      }
+    }, 4000);
+
+    return () => {
+      window.removeEventListener('online', handleWindowOnline);
+      clearInterval(watchdog);
+    };
+  }, [hasActiveSubscription, trialCompleted, isPaywallTriggered, isOffline, channel]);
+
   const formatSeconds = (sec: number) => {
     const s = Math.max(0, sec);
     const mins = Math.floor(s / 60);
     const remainingSecs = s % 60;
     return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
   };
-
-  // Custom Offline Component with cached placeholder UI when user loses connection while watching
-  if (isOffline) {
-    return (
-      <OfflineWatchPlaceholder
-        channel={channel}
-        isFullPage={isFullPage}
-        onRetry={handleOfflineRetry}
-        onBack={onBack}
-        swStatus={swStatus}
-        isReconnecting={isReconnecting}
-      />
-    );
-  }
 
   return (
     <div
@@ -1222,8 +1280,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
 
 
+      {/* Offline Overlay - Keep <video> mounted in DOM so it immediately resumes upon reconnect without manual button press! */}
+      {isOffline && !isPaywallTriggered && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 z-35 overflow-y-auto bg-[#070A0F]"
+        >
+          <OfflineWatchPlaceholder
+            channel={channel}
+            isFullPage={false}
+            onRetry={handleOfflineRetry}
+            onBack={onBack}
+            swStatus={swStatus}
+            isReconnecting={isReconnecting}
+          />
+        </div>
+      )}
+
       {/* Error Overlay */}
-      {errorMessage && !isPaywallTriggered && (
+      {errorMessage && !isPaywallTriggered && !isOffline && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-black/90 backdrop-blur-md text-center"

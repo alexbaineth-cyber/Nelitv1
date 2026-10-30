@@ -127,16 +127,20 @@ export async function fetchCustomerSubscriptionFromSupabase(
     const res = await fetch(`/api/subscription/check?${param}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && data.success && data.subscription) {
-        return {
-          id: data.subscription.id,
-          phone_number: data.subscription.phone_number || clean,
-          email: data.subscription.user_email || data.subscription.email || (isEmail ? clean : undefined),
-          premium_status: data.subscription.premium_status || (data.active ? 'active' : 'expired'),
-          expires_at: data.subscription.expires_at,
-          plan_name: data.subscription.plan_id || data.subscription.plan_name,
-          amount: data.subscription.amount_paid || data.subscription.amount
-        };
+      if (data && data.success && data.active && data.subscription) {
+        const expiresAt = data.subscription.expires_at;
+        const expTime = expiresAt ? new Date(expiresAt).getTime() : 0;
+        if (expTime > Date.now()) {
+          return {
+            id: data.subscription.id,
+            phone_number: data.subscription.phone_number || clean,
+            email: data.subscription.user_email || data.subscription.email || (isEmail ? clean : undefined),
+            premium_status: 'active',
+            expires_at: expiresAt,
+            plan_name: data.subscription.plan_id || data.subscription.plan_name,
+            amount: data.subscription.amount_paid || data.subscription.amount
+          };
+        }
       }
     }
     return null;

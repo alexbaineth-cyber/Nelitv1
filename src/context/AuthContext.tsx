@@ -226,10 +226,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 1. Account-Isolated Browser Cache Check:
-    // If this specific account has a valid, non-expired cached payment, immediately honor it
-    const cachedSub = getAccountSubscriptionCache(identifier) ||
-      (currentUserData.phone ? getAccountSubscriptionCache(currentUserData.phone) : null) ||
-      (currentUserData.email ? getAccountSubscriptionCache(currentUserData.email) : null);
+    // Strictly check cache for this specific identifier only (prevent cross-account cache inheritance)
+    const cachedSub = getAccountSubscriptionCache(identifier);
 
     if (cachedSub) {
       currentUserData = {
@@ -682,23 +680,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      setPhone(clean);
-      localStorage.setItem(LOCAL_STORAGE_PHONE_KEY, clean);
-
       const currentEmail = user?.email || firebaseUser?.email || '';
 
       // 1. Tell server to link in Supabase & memory store
+      let serverData: any = null;
       try {
-        await fetch('/api/auth/link-phone', {
+        const linkRes = await fetch('/api/auth/link-phone', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: clean, email: currentEmail })
         });
+        if (linkRes.ok) {
+          serverData = await linkRes.json();
+        }
       } catch (err) {
         console.warn('Server link error note:', err);
       }
 
-      // 2. Base user data
+      // 2. Query Supabase directly to verify if this phone has a genuine active paid subscription
+      const phoneSub = await fetchCustomerSubscriptionFromSupabase(clean);
+      const isPaid = Boolean(
+        (phoneSub && isSubscriptionActive(phoneSub)) ||
+        (serverData?.hasActiveSubscription && serverData?.subscription)
+      );
+
+      // CRITICAL: Unpaid numbers must never pass or become active!
+      if (!isPaid) {
+        // Clear any stale local cache for this phone
+        try {
+          localStorage.removeItem(`nelitv_account_sub_${clean}`);
+        } catch {}
+
+        return {
+          success: false,
+          error: `Namba ${clean} haina kifurushi hai au malipo yaliyothibitishwa katika Supabase. Tafadhali hakikisha umefanya malipo kwanza au weka namba iliyolipia.`
+        };
+      }
+
+      // 3. User has a genuine paid subscription in Supabase
+      const activeExpiry = phoneSub?.expires_at || serverData?.subscription?.expires_at;
+      const activePlan = phoneSub?.plan_name || serverData?.subscription?.plan_id || 'Kifurushi Hai';
+
+      setPhone(clean);
+      localStorage.setItem(LOCAL_STORAGE_PHONE_KEY, clean);
+
       let baseUser: UserData = user || {
         phone: clean,
         email: currentEmail,
@@ -708,34 +733,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         lastActive: new Date().toISOString(),
         trialSecondsUsed: 60,
         trialCompleted: true,
-        isSubscribed: false,
-        hasActiveSubscription: false,
+        isSubscribed: true,
+        hasActiveSubscription: true,
         payments: []
       };
 
       baseUser = {
         ...baseUser,
-        phone: clean
+        phone: clean,
+        isSubscribed: true,
+        hasActiveSubscription: true,
+        subscriptionExpiresAt: activeExpiry,
+        subscriptionPlan: activePlan,
+        trialCompleted: false,
+        trialSecondsUsed: 0
       };
 
-      // 3. Sync Supabase subscription for this phone and email
-      baseUser = await syncWithSupabase(clean, baseUser);
-      if (currentEmail) {
-        baseUser = await syncWithSupabase(currentEmail, baseUser);
-      }
+      saveAccountSubscriptionCache(clean, {
+        planName: activePlan,
+        expiresAt: activeExpiry
+      });
 
       syncUserData(baseUser);
 
-      if (baseUser.hasActiveSubscription) {
-        return {
-          success: true,
-          message: `Namba ${clean} imeunganishwa! Kifurushi chako kimepatikana na kimeunganishwa kikamilifu.`
-        };
-      }
-
       return {
         success: true,
-        message: `Namba ${clean} imeunganishwa kwenye akaunti yako.`
+        message: `Namba ${clean} imethibitishwa na kifurushi kimesawazishwa kikamilifu!`
       };
     } catch (e: any) {
       return {

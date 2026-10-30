@@ -16,7 +16,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const portArgIndex = process.argv.indexOf('--port');
+const cliPort = portArgIndex !== -1 ? process.argv[portArgIndex + 1] : undefined;
+const PORT = process.env.PORT || cliPort || 3000;
 const HARAKAPAY_API_KEY = process.env.HARAKAPAY_API_KEY || 'hpk_93b63ba05db51f1963b174570c71762a73541195bdbc5538';
 const HARAKAPAY_BASE_URL = 'https://harakapay.net';
 
@@ -265,7 +267,7 @@ async function querySupabaseSubscription(identifier: string) {
 
         if (activeSub) return activeSub;
 
-        // Check if latest was active but expired
+        // Check if latest was active but expired - update in background if needed
         const latest = data[0];
         if (latest && (latest.premium_status || '').toLowerCase() === 'active' && new Date(latest.expires_at).getTime() <= now) {
           try {
@@ -275,7 +277,8 @@ async function querySupabaseSubscription(identifier: string) {
               .eq('id', latest.id);
           } catch {}
         }
-        return latest;
+        // Do NOT return expired or unpaid records - return null!
+        continue;
       } catch {
         // try next table
       }
@@ -674,10 +677,10 @@ app.get(['/api/subscription/check', '/api/subscription/status'], async (req: Req
     return res.json({
       success: true,
       active: isActive,
-      subscription: activeSub || null
+      subscription: isActive ? activeSub : null
     });
   } catch (err: any) {
-    return res.json({ success: false, active: false, error: err.message });
+    return res.json({ success: false, active: false, subscription: null, error: err.message });
   }
 });
 
@@ -824,20 +827,33 @@ app.post('/api/auth/link-phone', async (req: Request, res: Response) => {
     }
   }
 
-  // Update local user subscription if found
-  if (activeSub && activeSub.expires_at) {
+  // Update local user subscription ONLY if genuinely active and paid (not expired or unpaid)
+  const now = Date.now();
+  const isReallyActive = Boolean(
+    activeSub &&
+    activeSub.expires_at &&
+    (activeSub.premium_status === 'active' || (activeSub.premium_status && activeSub.premium_status.toLowerCase() !== 'expired')) &&
+    new Date(activeSub.expires_at).getTime() > now
+  );
+
+  if (isReallyActive) {
     user.isSubscribed = true;
     user.subscriptionPlan = activeSub.plan_id || activeSub.plan_name || 'Kifurushi Hai';
     user.subscriptionExpiresAt = activeSub.expires_at;
-    persistData();
+  } else {
+    // Unpaid numbers must never pass or become active
+    user.isSubscribed = false;
+    user.subscriptionExpiresAt = undefined;
   }
+  persistData();
 
   res.json({
     success: true,
+    hasActiveSubscription: isReallyActive,
     phone: cleanPhone,
     email: cleanEmail,
     user,
-    subscription: activeSub
+    subscription: isReallyActive ? activeSub : null
   });
 });
 
