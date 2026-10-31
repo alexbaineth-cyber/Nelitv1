@@ -19,13 +19,17 @@ import { SearchPage } from './pages/SearchPage.tsx';
 import { PremiumPage } from './pages/PremiumPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { AccountPage } from './pages/AccountPage.tsx';
+import { DmcaPage } from './pages/DmcaPage.tsx';
+import { AboutPage } from './pages/AboutPage.tsx';
+import { TermsPage } from './pages/TermsPage.tsx';
+import { ContactPage } from './pages/ContactPage.tsx';
 
 import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 import { getAppAuthHeaders } from './utils/apiAuth.ts';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 
-type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
+type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify' | 'about' | 'dmca' | 'privacy' | 'terms' | 'contact';
 
 interface ActivePayment {
   orderId: string;
@@ -37,9 +41,22 @@ interface ActivePayment {
 function MainApp() {
   const { isLoggedIn, hasActiveSubscription, isLoginModalOpen, setLoginModalOpen } = useAuth();
 
+  const initialLegalPage = (() => {
+    try {
+      const path = window.location.pathname;
+      if (path === '/dmca') return 'dmca';
+      if (path === '/about') return 'about';
+      if (path === '/terms') return 'terms';
+      if (path === '/contact') return 'contact';
+      if (path === '/privacy') return 'privacy';
+    } catch {}
+    return null;
+  })();
+
   // 0. Detect shareable channel link on entry (e.g. /azam-one, /azam-sports-1-hd, /5, ?channel=...)
   const initialSharedChannel = (() => {
     try {
+      if (initialLegalPage) return null;
       const search = new URLSearchParams(window.location.search);
       const q = search.get('channel') || search.get('ch');
       if (q) {
@@ -55,7 +72,9 @@ function MainApp() {
     return null;
   })();
 
-  const [activeTab, setActiveTab] = useState<TabType>(initialSharedChannel ? 'watch' : 'home');
+  const [activeTab, setActiveTab] = useState<TabType>(
+    initialLegalPage === 'privacy' ? 'home' : (initialLegalPage as TabType || (initialSharedChannel ? 'watch' : 'home'))
+  );
   const [channels, setChannels] = useState<Channel[]>(CHANNELS_DATA);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(initialSharedChannel || CHANNELS_DATA[0]);
   const [pendingChannelToPlay, setPendingChannelToPlay] = useState<Channel | null>(null);
@@ -175,16 +194,22 @@ function MainApp() {
   };
 
   const handleTabChange = (tab: TabType) => {
+    if (tab === 'privacy') {
+      setIsPrivacyModalOpen(true);
+      return;
+    }
     setActiveTab(tab);
     window.scrollTo(0, 0);
-    if (tab !== 'watch') {
-      try {
+    try {
+      if (['about', 'dmca', 'terms', 'contact'].includes(tab)) {
+        window.history.pushState({}, '', `/${tab}`);
+      } else if (tab !== 'watch') {
         const path = window.location.pathname;
         if (path !== '/' && path !== '/download') {
           window.history.pushState({}, '', '/');
         }
-      } catch {}
-    }
+      }
+    } catch {}
   };
 
   // Synchronize browser history and back/forward navigation with channel URLs
@@ -194,6 +219,13 @@ function MainApp() {
         const search = new URLSearchParams(window.location.search);
         const chId = search.get('channel') || search.get('ch');
         const path = window.location.pathname;
+
+        if (path === '/dmca') { setActiveTab('dmca'); return; }
+        if (path === '/about') { setActiveTab('about'); return; }
+        if (path === '/terms') { setActiveTab('terms'); return; }
+        if (path === '/contact') { setActiveTab('contact'); return; }
+        if (path === '/privacy') { setIsPrivacyModalOpen(true); return; }
+
         const target = chId || (path !== '/' && path !== '/download' ? path : '');
         if (target) {
           const match = findChannelFromRoute(target, channels);
@@ -421,13 +453,31 @@ function MainApp() {
               <AccountPage
                 onNavigateToPremium={() => handleNavigateToPremiumWithPlan('plan_7days')}
                 onOpenLoginModal={() => setLoginModalOpen(true)}
+                onNavigateToPage={(p) => handleTabChange(p as TabType)}
               />
+            )}
+
+            {activeTab === 'dmca' && (
+              <DmcaPage onBack={() => handleTabChange('home')} />
+            )}
+
+            {activeTab === 'about' && (
+              <AboutPage
+                onBack={() => handleTabChange('home')}
+                onNavigateHome={() => handleTabChange('home')}
+              />
+            )}
+
+            {activeTab === 'terms' && (
+              <TermsPage onBack={() => handleTabChange('home')} />
+            )}
+
+            {activeTab === 'contact' && (
+              <ContactPage onBack={() => handleTabChange('home')} />
             )}
           </main>
 
-
-
-          {/* 6. TV & PC CLEAN FOOTER */}
+          {/* 6. TV & PC CLEAN FOOTER (Blogger-style accessible links for AdSense & Users) */}
           <footer className="border-t border-neutral-900 bg-[#070A0F] py-8 px-4 text-center text-xs text-neutral-500 space-y-3">
             <p className="font-bold text-neutral-300 tracking-wide">
               NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming
@@ -435,29 +485,48 @@ function MainApp() {
             <p className="text-neutral-500 max-w-sm mx-auto text-[11px]">
               Tazama mechi za ligi kuu ya NBC, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa 4K na HD kwenye TV, PC na Simu.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-neutral-400 pt-1">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-[11px] text-neutral-400 pt-2">
+              <button
+                onClick={() => handleTabChange('about')}
+                className="hover:text-cyan-400 transition cursor-pointer"
+              >
+                Kuhusu Sisi (About Us)
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleTabChange('dmca')}
+                className="hover:text-pink-400 transition cursor-pointer"
+              >
+                DMCA & Hakimiliki
+              </button>
+              <span>•</span>
               <button
                 onClick={() => setIsPrivacyModalOpen(true)}
-                className="hover:text-cyan-400 transition underline cursor-pointer"
+                className="hover:text-cyan-400 transition cursor-pointer"
               >
-                Sera ya Faragha (Privacy Policy)
+                Sera ya Faragha (Privacy)
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleTabChange('terms')}
+                className="hover:text-amber-400 transition cursor-pointer"
+              >
+                Masharti ya Huduma (Terms)
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleTabChange('contact')}
+                className="hover:text-cyan-400 transition cursor-pointer"
+              >
+                Wasiliana Nasi (Contact)
               </button>
               <span>•</span>
               <button
                 onClick={() => setIsMobileLanding(true)}
-                className="hover:text-cyan-400 transition underline cursor-pointer"
+                className="hover:text-cyan-400 transition cursor-pointer"
               >
-                Pakua NeliTv APK
+                Pakua APK
               </button>
-              <span>•</span>
-              <a
-                href="https://nelitv.online"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-cyan-400 transition"
-              >
-                nelitv.online
-              </a>
             </div>
           </footer>
 

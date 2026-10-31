@@ -2,41 +2,46 @@ import React, { useEffect, useRef } from 'react';
 
 interface AdBannerProps {
   className?: string;
-  bannerId?: string;
+  slotId?: string;
 }
 
+/**
+ * Google AdSense Ad Unit Component
+ * Auto-activates once the AdSense account ca-pub-7483821694512350 is approved.
+ * Remains completely unobtrusive, lightweight, and invisible until approved ads load.
+ */
 export const AdBanner: React.FC<AdBannerProps> = ({
   className = '',
-  bannerId = '2030681'
+  slotId
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const adRef = useRef<HTMLModElement>(null);
+  const pushedRef = useRef<boolean>(false);
 
   useEffect(() => {
-    // Attempt to invoke the ad network manager if already loaded on SPA navigation
-    const triggerAdManager = () => {
-      try {
-        const win = window as any;
-        if (win.a3klsam && typeof win.a3klsam.init === 'function') {
-          win.a3klsam.init();
-        }
-      } catch (err) {
-        // Silent fail - script will render when ready
+    // Only attempt push once per DOM node mount
+    if (pushedRef.current) return;
+    try {
+      const win = window as any;
+      if (typeof win !== 'undefined') {
+        win.adsbygoogle = win.adsbygoogle || [];
+        win.adsbygoogle.push({});
+        pushedRef.current = true;
       }
-    };
-
-    const timer = setTimeout(triggerAdManager, 100);
-    return () => clearTimeout(timer);
+    } catch (e) {
+      // Ignored: AdSense will automatically serve auto-ads or populate once approved
+    }
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={`w-full flex justify-center items-center my-3 overflow-hidden rounded-xl bg-neutral-900/40 border border-neutral-800/60 p-2 min-h-[60px] text-center transition-all ${className}`}
-      aria-label="Matangazo"
-    >
-      <div
-        data-banner-id={bannerId}
-        className="w-full flex justify-center items-center"
+    <div className={`w-full flex justify-center items-center my-2 overflow-hidden transition-all duration-300 ${className}`}>
+      <ins
+        ref={adRef}
+        className="adsbygoogle"
+        style={{ display: 'block', width: '100%', textAlign: 'center' }}
+        data-ad-client="ca-pub-7483821694512350"
+        {...(slotId ? { 'data-ad-slot': slotId } : {})}
+        data-ad-format="auto"
+        data-full-width-responsive="true"
       />
     </div>
   );

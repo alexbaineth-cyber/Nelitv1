@@ -493,6 +493,13 @@ setInterval(() => {
   getOrFetchCdnToken(true).catch(() => {});
 }, 3 * 60 * 1000);
 
+// Google AdSense ads.txt verification endpoint
+app.get('/ads.txt', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send('google.com, pub-7483821694512350, DIRECT, f08c47fec0942fa0\n');
+});
+
 // Block all direct / public exposure of /api/channels and /api/cdn-token
 app.all([
   '/api/channels', '/api/channels/*',

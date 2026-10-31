@@ -3,8 +3,8 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { Search, Crown, User, LogIn, Tv, Download } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify';
-  setActiveTab: (tab: 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify') => void;
+  activeTab: string;
+  setActiveTab: (tab: any) => void;
   onOpenIntro?: () => void;
   onOpenDownloadModal?: () => void;
 }

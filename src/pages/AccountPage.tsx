@@ -2,19 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
   User, Smartphone, Mail, Crown, LogOut, CheckCircle2,
-  AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap, Sparkles
+  AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap, Sparkles,
+  BookOpen, FileText, Info, Shield, ChevronRight, ShieldAlert
 } from 'lucide-react';
 import { fetchCustomerSubscriptionFromSupabase, normalizePhoneNumber, isSubscriptionActive } from '../lib/supabase.ts';
 import { isFreeAccountEmail } from '../data/freeAccounts.ts';
+import { DmcaPage } from './DmcaPage.tsx';
+import { AboutPage } from './AboutPage.tsx';
+import { TermsPage } from './TermsPage.tsx';
+import { ContactPage } from './ContactPage.tsx';
 
 interface AccountPageProps {
   onNavigateToPremium: () => void;
   onOpenLoginModal: () => void;
+  onNavigateToPage?: (page: 'about' | 'dmca' | 'privacy' | 'terms' | 'contact') => void;
 }
 
 export const AccountPage: React.FC<AccountPageProps> = ({
   onNavigateToPremium,
-  onOpenLoginModal
+  onOpenLoginModal,
+  onNavigateToPage
 }) => {
   const {
     user,
@@ -31,7 +38,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     linkPhoneToAccount
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'payments'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'payments' | 'pages'>('profile');
+  const [selectedSubpage, setSelectedSubpage] = useState<'about' | 'dmca' | 'privacy' | 'terms' | 'contact' | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
@@ -187,9 +195,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('payments')}
+            onClick={() => {
+              setActiveTab('payments');
+              setSelectedSubpage(null);
+            }}
             className={`px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer ${
-              activeTab === 'payments'
+              activeTab === 'payments' && !selectedSubpage
                 ? 'bg-gradient-to-r from-pink-600 to-cyan-600 text-white font-bold shadow-md shadow-pink-600/20'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
             }`}
@@ -197,10 +208,39 @@ export const AccountPage: React.FC<AccountPageProps> = ({
             <Crown className="w-4 h-4 text-amber-400" />
             <span>Historia ya Malipo</span>
           </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('pages');
+              setSelectedSubpage(null);
+            }}
+            className={`px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'pages' && !selectedSubpage
+                ? 'bg-gradient-to-r from-pink-600 to-cyan-600 text-white font-bold shadow-md shadow-pink-600/20'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 text-cyan-400" />
+            <span>Kurasa za Tovuti & DMCA</span>
+          </button>
         </div>
 
+        {/* SUBPAGE VIEWER (Lightweight, instant, blogger-style) */}
+        {selectedSubpage === 'dmca' && (
+          <DmcaPage onBack={() => setSelectedSubpage(null)} />
+        )}
+        {selectedSubpage === 'about' && (
+          <AboutPage onBack={() => setSelectedSubpage(null)} />
+        )}
+        {selectedSubpage === 'terms' && (
+          <TermsPage onBack={() => setSelectedSubpage(null)} />
+        )}
+        {selectedSubpage === 'contact' && (
+          <ContactPage onBack={() => setSelectedSubpage(null)} />
+        )}
+
         {/* TAB 1: PROFILE & LIVE COUNTDOWN */}
-        {activeTab === 'profile' && (
+        {!selectedSubpage && activeTab === 'profile' && (
           <div className="space-y-6">
             {/* User Profile Card */}
             <div className="p-6 rounded-3xl bg-neutral-900/90 border border-neutral-800 space-y-6 shadow-xl">
@@ -447,12 +487,73 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   {isSyncing ? 'Inasawazisha...' : 'Sawazisha Sasa'}
                 </button>
               </div>
+
+              {/* Quick Links to Legal & Information Pages */}
+              <div className="p-5 rounded-2xl bg-neutral-900/60 border border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-cyan-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Kurasa za Tovuti & Kisheria (Pages)
+                    </h4>
+                  </div>
+                  <span className="text-[10px] text-neutral-400 font-mono">Blogger View</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <button
+                    onClick={() => setSelectedSubpage('dmca')}
+                    className="p-3 rounded-xl bg-neutral-950 hover:bg-neutral-800/80 border border-neutral-800/80 text-left transition active:scale-95 cursor-pointer group"
+                  >
+                    <div className="text-[11px] font-bold text-pink-400 group-hover:text-pink-300 flex items-center justify-between">
+                      <span>DMCA Policy</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">Hakimiliki & Takedown</p>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedSubpage('about')}
+                    className="p-3 rounded-xl bg-neutral-950 hover:bg-neutral-800/80 border border-neutral-800/80 text-left transition active:scale-95 cursor-pointer group"
+                  >
+                    <div className="text-[11px] font-bold text-cyan-400 group-hover:text-cyan-300 flex items-center justify-between">
+                      <span>About Us</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">Kuhusu NeliTv</p>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (onNavigateToPage) onNavigateToPage('privacy');
+                      else setSelectedSubpage('terms');
+                    }}
+                    className="p-3 rounded-xl bg-neutral-950 hover:bg-neutral-800/80 border border-neutral-800/80 text-left transition active:scale-95 cursor-pointer group"
+                  >
+                    <div className="text-[11px] font-bold text-emerald-400 group-hover:text-emerald-300 flex items-center justify-between">
+                      <span>Privacy Policy</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">Sera ya Faragha & Ads</p>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedSubpage('contact')}
+                    className="p-3 rounded-xl bg-neutral-950 hover:bg-neutral-800/80 border border-neutral-800/80 text-left transition active:scale-95 cursor-pointer group"
+                  >
+                    <div className="text-[11px] font-bold text-amber-400 group-hover:text-amber-300 flex items-center justify-between">
+                      <span>Contact Us</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
+                    </div>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">Wasiliana Nasi 24/7</p>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* TAB 2: PAYMENTS HISTORY */}
-        {activeTab === 'payments' && (
+        {!selectedSubpage && activeTab === 'payments' && (
           <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
@@ -508,6 +609,150 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 3: PAGES & LEGAL (Lightweight, Blogger-style) */}
+        {!selectedSubpage && activeTab === 'pages' && (
+          <div className="space-y-4">
+            <div className="p-6 rounded-3xl bg-neutral-900/90 border border-neutral-800 space-y-2">
+              <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-cyan-400" />
+                <span>Kurasa Rasmi na Sera za NeliTv</span>
+              </h3>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                Kurasa zote zimebuniwa kuwa nyepesi, safi na zenye ufikiaji wa haraka bila kuchelewa, kufuata viwango vya Google AdSense na sheria za kidijitali.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 1. DMCA Card */}
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-pink-900/30 hover:border-pink-500/50 transition flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-pink-500/10 text-pink-400">
+                      <ShieldAlert className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-pink-950 text-pink-300 border border-pink-800/40">
+                      Hakimiliki
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">DMCA & Hakimiliki (Copyright)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Digital Millennium Copyright Act Takedown Policy, anwani ya Copyright Agent na taratibu za kulinda haki miliki za maudhui.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedSubpage('dmca')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-pink-600/20 hover:bg-pink-600 text-pink-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <span>Fungua Ukurasa wa DMCA</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* 2. About Us Card */}
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-cyan-900/30 hover:border-cyan-500/50 transition flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                      <Info className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40">
+                      Kuhusu Sisi
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Kuhusu NeliTv (About Us)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Dhamira yetu, teknolojia ya kisasa ya video ya HLS/DASH, utangazaji wa ligi kuu ya NBC, na maono ya burudani Tanzania.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedSubpage('about')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <span>Fungua Kuhusu NeliTv</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* 3. Privacy Policy Card */}
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-emerald-900/30 hover:border-emerald-500/50 transition flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                      <Shield className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/40">
+                      Google AdSense
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Sera ya Faragha (Privacy Policy)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Ulinzi wa data za kibinafsi, maelezo ya vidakuzi (Cookies & DART) kwa matangazo ya Google AdSense, na haki za mtumiaji.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (onNavigateToPage) onNavigateToPage('privacy');
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <span>Fungua Sera ya Faragha</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* 4. Terms of Service Card */}
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-amber-900/30 hover:border-amber-500/50 transition flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
+                      <FileText className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/40">
+                      Sheria & Vigezo
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Masharti ya Huduma (Terms)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Kanuni za matumizi, taratibu za vifurushi na malipo kupitia mitandao ya simu za mkononi, na haki za mtumiaji.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedSubpage('terms')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <span>Fungua Masharti ya Huduma</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* 5. Contact Us Card */}
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-blue-900/30 hover:border-blue-500/50 transition flex flex-col justify-between gap-4 md:col-span-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+                      <Mail className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/40">
+                      Msaada 24/7
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Wasiliana Nasi (Contact & Support)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Una tatizo la kifurushi, swali au pendekezo? Tuma ujumbe sasa hivi au barua pepe kwa alexbaineth@gmail.com.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedSubpage('contact')}
+                  className="w-full sm:w-auto self-start py-2.5 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Wasiliana na Msaada wa Wateja</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

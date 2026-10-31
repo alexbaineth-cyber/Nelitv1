@@ -93,14 +93,28 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             </p>
           </div>
 
-          {/* Section 4 */}
+          {/* Section 4: Google AdSense & Cookies */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
               <Eye className="w-4 h-4 text-amber-400" />
-              <h3>4. Haki za Mtumiaji na Kutoshiriki Taarifa</h3>
+              <h3>4. Vidakuzi (Cookies) na Matangazo ya Google AdSense</h3>
             </div>
             <p>
-              Hatuuzi, hatukodishi, wala hatushiriki taarifa zako binafsi kwa makampuni ya matangazo au washirika wa tatu. Una haki ya kuomba taarifa zako zifutwe au kuboreshwa wakati wowote kwa kuwasiliana nasi.
+              Tovuti ya NeliTv inatumia huduma ya matangazo ya Google AdSense. Google na washirika wake wa wahusika wengine (third-party vendors) hutumia vidakuzi (cookies kama vile Google DoubleClick cookie) kuonyesha matangazo yanayomfaa mtumiaji kulingana na matembezi yake ya awali kwenye tovuti hii au tovuti zingine kwenye mtandao wa intaneti.
+            </p>
+            <p className="text-neutral-400 text-xs">
+              Watumiaji wanaweza kuchagua kutotumia matangazo yaliyobinafsishwa (personalized ads) kwa kutembelea ukurasa wa mipangilio ya matangazo ya Google kupitia <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">Google Ads Settings</a> au kupitia tovuti ya <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">aboutads.info</a>.
+            </p>
+          </div>
+
+          {/* Section 5 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
+              <CheckCircle className="w-4 h-4 text-purple-400" />
+              <h3>5. Haki za Mtumiaji na Kutoshiriki Taarifa Binafsi</h3>
+            </div>
+            <p>
+              Hatuuzi wala hatukodishi namba zako za simu au taarifa zako binafsi kwa wahusika wengine. Taarifa zako zinatumika pekee kwa ajili ya kufanya huduma ya NeliTv ifanye kazi kwa usahihi.
             </p>
           </div>
 
