@@ -1,5 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 
+/**
+ * Global toggle for AdSense display.
+ * Kept FALSE until the user notifies that the AdSense account is approved.
+ * When false, zero DOM elements, zero margins, and zero layout spaces are rendered.
+ */
+export const ADS_ENABLED = false;
+
 interface AdBannerProps {
   className?: string;
   slotId?: string;
@@ -7,13 +14,18 @@ interface AdBannerProps {
 
 /**
  * Google AdSense Ad Unit Component
- * Auto-activates once the AdSense account ca-pub-7483821694512350 is approved.
- * Remains completely unobtrusive, lightweight, and invisible until approved ads load.
+ * Auto-activates once ADS_ENABLED is turned on after account approval.
+ * Currently completely hidden without taking any screen space.
  */
 export const AdBanner: React.FC<AdBannerProps> = ({
   className = '',
   slotId
 }) => {
+  // If ads are disabled pending approval, return null with zero layout space
+  if (!ADS_ENABLED) {
+    return null;
+  }
+
   const adRef = useRef<HTMLModElement>(null);
   const pushedRef = useRef<boolean>(false);
 
@@ -24,8 +36,7 @@ export const AdBanner: React.FC<AdBannerProps> = ({
   );
 
   useEffect(() => {
-    if (isEmbedOrApi) return;
-    // Only attempt push once per DOM node mount
+    if (!ADS_ENABLED || isEmbedOrApi) return;
     if (pushedRef.current) return;
     try {
       const win = window as any;
@@ -35,11 +46,11 @@ export const AdBanner: React.FC<AdBannerProps> = ({
         pushedRef.current = true;
       }
     } catch (e) {
-      // Ignored: AdSense will automatically serve auto-ads or populate once approved
+      // Ignored: AdSense will populate automatically once approved
     }
-  }, []);
+  }, [isEmbedOrApi]);
 
-  if (isEmbedOrApi) {
+  if (!ADS_ENABLED || isEmbedOrApi) {
     return null;
   }
 
@@ -59,3 +70,4 @@ export const AdBanner: React.FC<AdBannerProps> = ({
 };
 
 export default AdBanner;
+
