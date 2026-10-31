@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Play, Eye, Flame, Tv, Check, Radio, Sparkles } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -274,8 +275,13 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
+      {/* 2. AD BANNER (JUU YA CHANNELS) */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4">
+        <AdBanner />
+      </div>
+
       {/* 3. MAIN CHANNELS GRID (Azam Max OTT Theme) */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-white/10">
           <div>
             <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">

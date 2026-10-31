@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
+import { AdBanner } from '../components/AdBanner';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -170,6 +171,11 @@ export const WatchPage: React.FC<WatchPageProps> = ({
         <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
+            {/* Ad Banner juu ya Player */}
+            {!isFullViewport && (
+              <AdBanner className="my-0 mb-2" />
+            )}
+
             {/* The VideoPlayer wrapper: persistent DOM node to avoid reload on fullscreen toggle */}
             <div
               className={

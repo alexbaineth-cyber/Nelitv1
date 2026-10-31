@@ -514,6 +514,27 @@ app.all([
   return res.status(404).send('Not Found');
 });
 
+// 0. Root API endpoint for /baynithalex/api and /baynithalex/api/
+app.get(['/baynithalex/api', '/baynithalex/api/'], (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({
+    success: true,
+    name: 'NeliTv Live Stream API',
+    status: 'online',
+    version: '2.5.0',
+    description: 'NeliTv high-performance live TV and DRM stream delivery API',
+    endpoints: {
+      channels: '/baynithalex/api/channels',
+      cdnToken: '/baynithalex/api/cdn-token',
+      pricingPlans: '/api/vifurushi',
+      subscriptionCheck: '/api/subscription/check'
+    },
+    totalChannels: CHANNELS_DATA.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 1. Protected channels endpoint with Token-based / API Key authentication
 app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, res: Response) => {
   const tokenData = await getOrFetchCdnToken();
@@ -547,8 +568,9 @@ app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, r
 });
 
 // 1.2 Fast CDN Token Endpoint for Client VideoPlayer (instant sub-millisecond response)
-app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (_req: Request, res: Response) => {
-  const tokenData = await getOrFetchCdnToken();
+app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, res: Response) => {
+  const force = req.query.refresh === 'true' || req.query.fresh === '1';
+  const tokenData = await getOrFetchCdnToken(force);
   res.setHeader('Cache-Control', 'public, max-age=120');
   res.json({
     success: true,
@@ -911,12 +933,6 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
   });
 });
 
-// 5. CDN Token provider with Token-based / API Key authentication
-app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, res: Response) => {
-  const force = req.query.refresh === 'true' || req.query.fresh === '1';
-  const tokenData = await getOrFetchCdnToken(force);
-  res.json(tokenData);
-});
 
 // 5.5 Stream Proxy Fallback (Bypasses any ISP / client blocking or CORS restrictions)
 app.get('/api/proxy-stream', async (req: Request, res: Response) => {
