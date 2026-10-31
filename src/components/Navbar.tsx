@@ -93,6 +93,20 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
               <span>Vifurushi</span>
             </button>
 
+            {/* API PLATFORM */}
+            <button
+              onClick={() => setActiveTab('api')}
+              title="NeliTv Developer API"
+              className={`px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTab === 'api'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span className="font-mono text-cyan-400 font-black">&lt;/&gt;</span>
+              <span>API</span>
+            </button>
+
             {/* ACCOUNT OR LOGIN */}
             {isLoggedIn ? (
               <button

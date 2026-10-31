@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import nodeCrypto from 'crypto';
 import { Readable } from 'stream';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -39,9 +40,16 @@ if (supabase) {
 app.use(express.json());
 
 // Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // Allow framing for /embed so external blogs/websites can embed our player
+  if (!req.path.startsWith('/embed')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  } else {
+    // Explicitly allow embedding from any origin for the embed player
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
@@ -54,6 +62,22 @@ app.use((_req, res, next) => {
 const DATA_DIR = path.join(__dirname, '.data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
+const DEVELOPER_USERS_FILE = path.join(DATA_DIR, 'developerUsers.json');
+
+export interface DeveloperUser {
+  id: string;
+  email: string;
+  password?: string;
+  name?: string;
+  phone?: string;
+  apiKey: string;
+  isSubscribed: boolean;
+  subscriptionPlan?: string;
+  subscriptionExpiresAt?: string;
+  createdAt: string;
+}
+
+let developerUsersStore: Record<string, DeveloperUser> = {};
 
 interface UserProfile {
   phone: string;
@@ -95,6 +119,23 @@ function initDataStorage() {
     if (fs.existsSync(PAYMENTS_FILE)) {
       paymentsStore = JSON.parse(fs.readFileSync(PAYMENTS_FILE, 'utf-8'));
     }
+    if (fs.existsSync(DEVELOPER_USERS_FILE)) {
+      developerUsersStore = JSON.parse(fs.readFileSync(DEVELOPER_USERS_FILE, 'utf-8'));
+    }
+    // Always seed and guarantee the free developer test account:
+    // Email: adminapi@login.com | Password: 123Free | Lifetime VIP
+    developerUsersStore['adminapi@login.com'] = {
+      id: 'dev_admin_api_vip',
+      email: 'adminapi@login.com',
+      password: '123Free',
+      name: 'Admin API Developer (Free Lifetime VIP)',
+      phone: '0700000000',
+      apiKey: 'neli_live_sk_admin_api_vip_001',
+      isSubscribed: true,
+      subscriptionPlan: 'plan_api_yearly',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    };
   } catch (err) {
     console.error('Data storage initialization warning:', err);
   }
@@ -107,6 +148,7 @@ function persistData() {
     }
     fs.writeFileSync(USERS_FILE, JSON.stringify(usersStore, null, 2));
     fs.writeFileSync(PAYMENTS_FILE, JSON.stringify(paymentsStore, null, 2));
+    fs.writeFileSync(DEVELOPER_USERS_FILE, JSON.stringify(developerUsersStore, null, 2));
   } catch (err) {
     console.error('Failed to persist data:', err);
   }
@@ -940,6 +982,512 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
   });
 });
 
+
+// ==========================================
+// 5. DEVELOPER API PLATFORM & EMBED SYSTEM
+// ==========================================
+
+export const DEVELOPER_API_PLANS = [
+  {
+    id: 'plan_api_monthly',
+    name: 'Developer API Pro (Mwezi 1)',
+    priceTsh: 50000,
+    durationDays: 30,
+    bonusAppDays: 90,
+    description: 'Player API + Stream API, API Key binafsi, na Miezi 3 Bure ya VIP kwenye NeliTv App'
+  },
+  {
+    id: 'plan_api_yearly',
+    name: 'Developer API Enterprise (Mwaka 1)',
+    priceTsh: 1000000,
+    durationDays: 365,
+    bonusAppDays: 365,
+    description: 'Player API + Stream API, API Key bila kikomo, na Mwaka 1 Mzima Bure wa VIP kwenye NeliTv App'
+  }
+];
+
+function generateDeveloperApiKey(): string {
+  return 'neli_live_sk_' + nodeCrypto.randomBytes(16).toString('hex');
+}
+
+function getDeveloperByApiKey(apiKey?: string): DeveloperUser | null {
+  if (!apiKey) return null;
+  const cleanKey = apiKey.trim();
+  if (cleanKey === 'neli_live_sk_admin_api_vip_001') {
+    return developerUsersStore['adminapi@login.com'] || null;
+  }
+  const found = Object.values(developerUsersStore).find(u => u.apiKey === cleanKey);
+  if (found) {
+    const isNotExpired = Boolean(
+      found.isSubscribed &&
+      found.subscriptionExpiresAt &&
+      new Date(found.subscriptionExpiresAt).getTime() > Date.now()
+    );
+    if (isNotExpired) return found;
+  }
+  return null;
+}
+
+// 5.1 Developer Plans
+app.get('/api/developer/plans', (_req: Request, res: Response) => {
+  res.json({ success: true, plans: DEVELOPER_API_PLANS });
+});
+
+// 5.2 Developer Auth / Sign-in (Email & Password or Google Account)
+app.post('/api/developer/auth/login', (req: Request, res: Response) => {
+  const { email, password, googleUser } = req.body;
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ success: false, error: 'Barua pepe (email) inahitajika' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Test Account VIP Auto-Login: adminapi@login.com / 123Free
+  if (cleanEmail === 'adminapi@login.com') {
+    if (password && password !== '123Free') {
+      return res.status(401).json({ success: false, error: 'Nenosiri la akaunti ya adminapi si sahihi. Tumia: 123Free' });
+    }
+    const adminDev = developerUsersStore['adminapi@login.com'];
+    return res.json({
+      success: true,
+      message: 'Umeingia kama Admin API Developer (Lifetime VIP)!',
+      user: adminDev
+    });
+  }
+
+  let devUser = developerUsersStore[cleanEmail];
+  if (!devUser) {
+    // Auto-create new developer account
+    devUser = {
+      id: `dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      email: cleanEmail,
+      password: password || 'oauth_google',
+      name: googleUser?.displayName || cleanEmail.split('@')[0],
+      apiKey: generateDeveloperApiKey(),
+      isSubscribed: false,
+      createdAt: new Date().toISOString()
+    };
+    developerUsersStore[cleanEmail] = devUser;
+    persistData();
+  } else {
+    if (password && devUser.password && devUser.password !== 'oauth_google' && devUser.password !== password) {
+      return res.status(401).json({ success: false, error: 'Nenosiri si sahihi' });
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Umeingia kikamilifu kwenye NeliTv Developer Portal',
+    user: devUser
+  });
+});
+
+// 5.3 Developer Profile & Key Query
+app.get('/api/developer/profile', (req: Request, res: Response) => {
+  const email = typeof req.query.email === 'string' ? req.query.email.trim().toLowerCase() : '';
+  const apiKey = typeof req.query.api_key === 'string' ? req.query.api_key.trim() : '';
+
+  let devUser: DeveloperUser | null = null;
+  if (email && developerUsersStore[email]) {
+    devUser = developerUsersStore[email];
+  } else if (apiKey) {
+    devUser = getDeveloperByApiKey(apiKey);
+  }
+
+  if (!devUser) {
+    return res.status(404).json({ success: false, error: 'Mtumiaji wa API hajapatikana' });
+  }
+
+  const now = Date.now();
+  const isActive = Boolean(
+    (devUser.email === 'adminapi@login.com') ||
+    (devUser.isSubscribed && devUser.subscriptionExpiresAt && new Date(devUser.subscriptionExpiresAt).getTime() > now)
+  );
+
+  res.json({
+    success: true,
+    user: devUser,
+    isActive,
+    remainingSeconds: devUser.subscriptionExpiresAt ? Math.max(0, Math.floor((new Date(devUser.subscriptionExpiresAt).getTime() - now) / 1000)) : 0
+  });
+});
+
+// 5.4 Generate or Regenerate API Key
+app.post('/api/developer/keys/generate', (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email || !developerUsersStore[email.trim().toLowerCase()]) {
+    return res.status(400).json({ success: false, error: 'Tafadhali ingia kwanza kwenye akaunti ya API' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const devUser = developerUsersStore[cleanEmail];
+
+  const now = Date.now();
+  const isPaid = Boolean(
+    cleanEmail === 'adminapi@login.com' ||
+    (devUser.isSubscribed && devUser.subscriptionExpiresAt && new Date(devUser.subscriptionExpiresAt).getTime() > now)
+  );
+
+  if (!isPaid) {
+    return res.status(402).json({
+      success: false,
+      requirePayment: true,
+      error: 'Unahitaji kulipia kifurushi cha API (50,000 Tsh/Mwezi au 1,000,000 Tsh/Mwaka) ili kuzalisha API Key inayofanya kazi.',
+      plans: DEVELOPER_API_PLANS
+    });
+  }
+
+  devUser.apiKey = generateDeveloperApiKey();
+  persistData();
+
+  res.json({
+    success: true,
+    message: 'API Key mpya imezalishwa kikamilifu!',
+    apiKey: devUser.apiKey,
+    user: devUser
+  });
+});
+
+// 5.5 Developer API Payment Initiation (50k / month or 1M / year)
+app.post('/api/developer/payment/collect', async (req: Request, res: Response) => {
+  try {
+    const { email, phone, planId } = req.body;
+    if (!email || !phone) {
+      return res.status(400).json({ success: false, error: 'Email na Namba ya simu zinahitajika' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = normalizePhone(phone);
+    const plan = DEVELOPER_API_PLANS.find(p => p.id === planId) || DEVELOPER_API_PLANS[0];
+
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const webhookUrl = `${protocol}://${host}/api/harakapay/webhook`;
+
+    console.log(`[Developer API Collect] Email=${cleanEmail}, Phone=${cleanPhone}, Amount=${plan.priceTsh}`);
+
+    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': HARAKAPAY_API_KEY
+      },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        amount: plan.priceTsh,
+        description: `NeliTv API License: ${plan.name} (${cleanEmail})`,
+        webhook_url: webhookUrl
+      })
+    });
+
+    const data: any = await response.json();
+    console.log('[Developer API HarakaPay Response]', data);
+
+    if (data.success && data.order_id) {
+      const record: PaymentRecord = {
+        orderId: data.order_id,
+        phone: cleanPhone,
+        amount: data.amount || plan.priceTsh,
+        planId: plan.id,
+        planName: plan.name,
+        durationDays: plan.durationDays,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        rawResponse: { ...data, isDeveloperApi: true, developerEmail: cleanEmail, bonusAppDays: plan.bonusAppDays }
+      };
+
+      paymentsStore[data.order_id] = record;
+      persistData();
+
+      // Log into Supabase nelitv_payments if available
+      if (supabase) {
+        try {
+          await supabase.from('nelitv_payments').upsert({
+            order_id: data.order_id,
+            phone_number: cleanPhone,
+            amount: plan.priceTsh,
+            plan_id: plan.id,
+            status: 'pending',
+            payment_method: 'harakapay_api_license',
+            created_at: new Date().toISOString()
+          }, { onConflict: 'order_id' });
+        } catch {}
+      }
+
+      return res.json({
+        success: true,
+        orderId: data.order_id,
+        amount: plan.priceTsh,
+        message: 'Ombi la USSD limetumwa kwenye simu yako! Tafadhali weka PIN ya malipo sasa.',
+        plan
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: data.message || 'Haikuweza kuanzisha malipo. Hakikisha simu iko hewani na ina salio la kutosha.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5.6 Developer API Payment Verification & Bonus App VIP Activation
+app.post('/api/developer/payment/verify', async (req: Request, res: Response) => {
+  const { orderId, email, phone, planId } = req.body;
+  if (!orderId || !email) {
+    return res.status(400).json({ success: false, error: 'OrderId na Email zinahitajika' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanPhone = normalizePhone(phone || '');
+  const plan = DEVELOPER_API_PLANS.find(p => p.id === planId) || DEVELOPER_API_PLANS[0];
+
+  try {
+    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
+      headers: { 'X-API-Key': HARAKAPAY_API_KEY }
+    });
+    const data: any = await response.json();
+
+    const isCompleted = data && data.success && data.payment && data.payment.status === 'completed';
+
+    if (isCompleted) {
+      const now = Date.now();
+      const devDays = plan.durationDays;
+      const bonusDays = plan.bonusAppDays;
+
+      // 1. Activate Developer Subscription
+      let devUser = developerUsersStore[cleanEmail];
+      if (!devUser) {
+        devUser = {
+          id: `dev_${Date.now()}`,
+          email: cleanEmail,
+          apiKey: generateDeveloperApiKey(),
+          isSubscribed: true,
+          createdAt: new Date().toISOString()
+        };
+        developerUsersStore[cleanEmail] = devUser;
+      }
+
+      devUser.isSubscribed = true;
+      devUser.subscriptionPlan = plan.id;
+      devUser.phone = cleanPhone || devUser.phone;
+      devUser.subscriptionExpiresAt = new Date(now + devDays * 24 * 60 * 60 * 1000).toISOString();
+      if (!devUser.apiKey) {
+        devUser.apiKey = generateDeveloperApiKey();
+      }
+
+      // 2. Grant Bonus App VIP Pass (90 days for 50k, 365 days for 1M)
+      if (cleanPhone) {
+        let appUser = usersStore[cleanPhone];
+        if (!appUser) {
+          appUser = {
+            phone: cleanPhone,
+            createdDate: new Date().toISOString(),
+            lastActive: new Date().toISOString(),
+            trialSecondsUsed: 60,
+            trialCompleted: true,
+            isSubscribed: true
+          };
+          usersStore[cleanPhone] = appUser;
+        }
+
+        const bonusExpiry = new Date(now + bonusDays * 24 * 60 * 60 * 1000).toISOString();
+        appUser.isSubscribed = true;
+        appUser.subscriptionPlan = plan.id === 'plan_api_yearly' ? 'VIP Pass (Mwaka 1 Bure - API Subscriber)' : 'VIP Pass (Miezi 3 Bure - API Subscriber)';
+        appUser.subscriptionExpiresAt = bonusExpiry;
+
+        // Also sync into Supabase nelitv_subscriptions
+        if (supabase) {
+          try {
+            await supabase.from('nelitv_subscriptions').upsert({
+              phone_number: cleanPhone,
+              user_email: cleanEmail,
+              plan_id: plan.id === 'plan_api_yearly' ? 'api_bonus_1year' : 'api_bonus_3months',
+              plan_name: appUser.subscriptionPlan,
+              premium_status: 'active',
+              expires_at: bonusExpiry,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'phone_number' });
+          } catch (e: any) {
+            console.warn('[Supabase API bonus sync err]', e.message);
+          }
+        }
+      }
+
+      if (paymentsStore[orderId]) {
+        paymentsStore[orderId].status = 'completed';
+        paymentsStore[orderId].completedAt = new Date().toISOString();
+      }
+      persistData();
+
+      return res.json({
+        success: true,
+        verified: true,
+        message: `Malipo ya API yamethibitishwa! Umepewa API Key na ziada ya ${plan.bonusAppDays === 365 ? 'Mwaka 1 Mzima' : 'Miezi 3'} Bure kwenye NeliTv App!`,
+        developer: devUser,
+        bonusAppDays: plan.bonusAppDays,
+        phone: cleanPhone
+      });
+    }
+
+    return res.json({
+      success: true,
+      verified: false,
+      message: 'Malipo bado hayajakamilika. Tafadhali ingiza PIN kwenye simu yako kisha bonyeza Nimelipa tena.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5.7 Developer Live Stream API (JSON of live channels with tokenized stream URLs)
+app.get('/api/developer/channels', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+
+  const apiKey = (
+    req.headers['x-neli-api-key'] ||
+    req.headers['authorization']?.replace('Bearer ', '') ||
+    req.query.api_key
+  ) as string;
+
+  const devUser = getDeveloperByApiKey(apiKey);
+  if (!devUser) {
+    return res.status(401).json({
+      success: false,
+      error: 'API Key haijathibitishwa, haipo, au muda wake umekwisha. Tafadhali pata API Key halali kwenye /api',
+      portalUrl: '/api'
+    });
+  }
+
+  const tokenData = await getOrFetchCdnToken();
+  const host = tokenData.cdnHost.replace(/\/+$/, '');
+
+  const liveChannels = CHANNELS_DATA.map(ch => {
+    const isAzam = ch.isAzam || ch.streamUrl.includes('azamtvltd.co.tz');
+    if (!isAzam) return ch;
+
+    let p = ch.streamUrl;
+    try {
+      const u = new URL(ch.streamUrl);
+      p = u.pathname.replace(/^\/tok_[^/]+/, '');
+    } catch {}
+    if (!p.startsWith('/')) p = `/${p}`;
+
+    const freshUrl = `${host}/tok_${tokenData.token}${p}?cdntoken=${encodeURIComponent(tokenData.token)}`;
+    return {
+      id: ch.id,
+      name: ch.name,
+      category: ch.category,
+      streamUrl: freshUrl,
+      streamFormat: ch.streamFormat,
+      thumbnailUrl: ch.thumbnailUrl,
+      viewerCount: ch.viewerCount,
+      currentProgram: ch.currentProgram,
+      nextProgram: ch.nextProgram,
+      embedUrl: `/embed/${ch.id}`
+    };
+  });
+
+  res.json({
+    success: true,
+    status: 'online',
+    developer: {
+      email: devUser.email,
+      plan: devUser.subscriptionPlan,
+      expiresAt: devUser.subscriptionExpiresAt
+    },
+    totalChannels: liveChannels.length,
+    cdnTokenExpiresIn: tokenData.exp,
+    channels: liveChannels
+  });
+});
+
+// 5.8 Developer CDN Token Provider
+app.get('/api/developer/cdn-token', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const apiKey = (
+    req.headers['x-neli-api-key'] ||
+    req.headers['authorization']?.replace('Bearer ', '') ||
+    req.query.api_key
+  ) as string;
+
+  const devUser = getDeveloperByApiKey(apiKey);
+  if (!devUser) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or expired API Key' });
+  }
+
+  const tokenData = await getOrFetchCdnToken();
+  res.json({
+    success: true,
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: tokenData.exp,
+    source: tokenData.source
+  });
+});
+
+// 5.9 Player SDK JavaScript Distribution for Third-Party Websites
+app.get('/api/developer/player-sdk.js', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+
+  const host = req.get('host') || 'nelitv.online';
+  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const baseUrl = `${protocol}://${host}`;
+
+  const sdkCode = `
+/**
+ * NeliTv Player SDK v1.0
+ * Embed NeliTv Live TV & Sports anywhere easily.
+ * https://nelitv.online/api
+ */
+(function(window, document) {
+  function NeliTvPlayer(target, options) {
+    options = options || {};
+    var channel = options.channel || 'azam-sports-1-hd';
+    var width = options.width || '100%';
+    var height = options.height || '480px';
+    var autoplay = options.autoplay !== false;
+
+    var el = typeof target === 'string' ? document.querySelector(target) : target;
+    if (!el) {
+      console.error('[NeliTvPlayer] Target element not found:', target);
+      return;
+    }
+
+    var iframe = document.createElement('iframe');
+    var embedUrl = "${baseUrl}/embed/" + encodeURIComponent(channel) + "?autoplay=" + (autoplay ? '1' : '0');
+    if (options.apiKey) embedUrl += '&api_key=' + encodeURIComponent(options.apiKey);
+
+    iframe.src = embedUrl;
+    iframe.style.width = width;
+    iframe.style.height = height;
+    iframe.style.border = 'none';
+    iframe.style.borderRadius = options.borderRadius || '16px';
+    iframe.style.backgroundColor = '#000';
+    iframe.setAttribute('allowfullscreen', 'true');
+    iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+
+    el.innerHTML = '';
+    el.appendChild(iframe);
+
+    this.iframe = iframe;
+    this.reload = function() { iframe.src = iframe.src; };
+    this.changeChannel = function(newChannel) {
+      channel = newChannel;
+      iframe.src = "${baseUrl}/embed/" + encodeURIComponent(channel) + "?autoplay=1";
+    };
+  }
+
+  window.NeliTvPlayer = NeliTvPlayer;
+})(window, document);
+`;
+  res.send(sdkCode);
+});
 
 // 5.5 Stream Proxy Fallback (Bypasses any ISP / client blocking or CORS restrictions)
 app.get('/api/proxy-stream', async (req: Request, res: Response) => {

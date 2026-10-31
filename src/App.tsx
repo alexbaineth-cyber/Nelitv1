@@ -23,13 +23,16 @@ import { DmcaPage } from './pages/DmcaPage.tsx';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { TermsPage } from './pages/TermsPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
+import { ApiPortalPage } from './pages/ApiPortalPage.tsx';
+import { EmbedStudioPage } from './pages/EmbedStudioPage.tsx';
+import { EmbedPlayerView } from './components/EmbedPlayerView.tsx';
 
 import { detectBrowserAndDevice } from './utils/browserDetection.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './utils/channelRoute.ts';
 import { getAppAuthHeaders } from './utils/apiAuth.ts';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 
-type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify' | 'about' | 'dmca' | 'privacy' | 'terms' | 'contact';
+type TabType = 'home' | 'watch' | 'search' | 'premium' | 'account' | 'verify' | 'about' | 'dmca' | 'privacy' | 'terms' | 'contact' | 'api' | 'embed';
 
 interface ActivePayment {
   orderId: string;
@@ -41,9 +44,30 @@ interface ActivePayment {
 function MainApp() {
   const { isLoggedIn, hasActiveSubscription, isLoginModalOpen, setLoginModalOpen } = useAuth();
 
+  // Check for direct standalone embed player request (e.g. /embed/:channelId or /embed?ch=...)
+  const directEmbedChannel = (() => {
+    try {
+      const path = window.location.pathname;
+      if (path.startsWith('/embed/')) {
+        const slug = path.replace('/embed/', '').trim();
+        if (slug) {
+          return findChannelFromRoute(slug, CHANNELS_DATA) || CHANNELS_DATA[0];
+        }
+      }
+      const search = new URLSearchParams(window.location.search);
+      const chParam = search.get('ch') || search.get('channel');
+      if (path === '/embed' && chParam) {
+        return findChannelFromRoute(chParam, CHANNELS_DATA) || CHANNELS_DATA[0];
+      }
+    } catch {}
+    return null;
+  })();
+
   const initialLegalPage = (() => {
     try {
       const path = window.location.pathname;
+      if (path === '/api' || path === '/api/') return 'api';
+      if (path === '/embed' || path === '/embed/') return 'embed';
       if (path === '/dmca') return 'dmca';
       if (path === '/about') return 'about';
       if (path === '/terms') return 'terms';
@@ -56,7 +80,7 @@ function MainApp() {
   // 0. Detect shareable channel link on entry (e.g. /azam-one, /azam-sports-1-hd, /5, ?channel=...)
   const initialSharedChannel = (() => {
     try {
-      if (initialLegalPage) return null;
+      if (directEmbedChannel || initialLegalPage) return null;
       const search = new URLSearchParams(window.location.search);
       const q = search.get('channel') || search.get('ch');
       if (q) {
@@ -201,7 +225,7 @@ function MainApp() {
     setActiveTab(tab);
     window.scrollTo(0, 0);
     try {
-      if (['about', 'dmca', 'terms', 'contact'].includes(tab)) {
+      if (['about', 'dmca', 'terms', 'contact', 'api', 'embed'].includes(tab)) {
         window.history.pushState({}, '', `/${tab}`);
       } else if (tab !== 'watch') {
         const path = window.location.pathname;
@@ -220,6 +244,8 @@ function MainApp() {
         const chId = search.get('channel') || search.get('ch');
         const path = window.location.pathname;
 
+        if (path === '/api' || path === '/api/') { setActiveTab('api'); return; }
+        if (path === '/embed' || path === '/embed/') { setActiveTab('embed'); return; }
         if (path === '/dmca') { setActiveTab('dmca'); return; }
         if (path === '/about') { setActiveTab('about'); return; }
         if (path === '/terms') { setActiveTab('terms'); return; }
@@ -320,6 +346,11 @@ function MainApp() {
       if (globalDialTimerRef.current) clearTimeout(globalDialTimerRef.current);
     };
   }, [globalDialedNumber, globalDialedTarget, channels]);
+
+  // Standalone embed player (clean, borderless for external iframe embedding)
+  if (directEmbedChannel) {
+    return <EmbedPlayerView channel={directEmbedChannel} />;
+  }
 
   return (
     <div className="min-h-screen bg-black text-neutral-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
@@ -475,6 +506,21 @@ function MainApp() {
             {activeTab === 'contact' && (
               <ContactPage onBack={() => handleTabChange('home')} />
             )}
+
+            {activeTab === 'api' && (
+              <ApiPortalPage
+                onBack={() => handleTabChange('home')}
+                onNavigateToEmbed={() => handleTabChange('embed')}
+              />
+            )}
+
+            {activeTab === 'embed' && (
+              <EmbedStudioPage
+                channels={channels}
+                onBack={() => handleTabChange('home')}
+                onNavigateToApi={() => handleTabChange('api')}
+              />
+            )}
           </main>
 
           {/* 6. TV & PC CLEAN FOOTER (Blogger-style accessible links for AdSense & Users) */}
@@ -519,6 +565,20 @@ function MainApp() {
                 className="hover:text-cyan-400 transition cursor-pointer"
               >
                 Wasiliana Nasi (Contact)
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleTabChange('api')}
+                className="text-cyan-400 hover:text-cyan-300 font-bold transition cursor-pointer flex items-center gap-1"
+              >
+                <span>&lt;/&gt; API ya Watengenezaji</span>
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleTabChange('embed')}
+                className="text-pink-400 hover:text-pink-300 font-bold transition cursor-pointer"
+              >
+                Embed Player Studio
               </button>
               <span>•</span>
               <button

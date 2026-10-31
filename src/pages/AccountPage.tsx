@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext.tsx';
 import {
   User, Smartphone, Mail, Crown, LogOut, CheckCircle2,
   AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap, Sparkles,
-  BookOpen, FileText, Info, Shield, ChevronRight, ShieldAlert
+  BookOpen, FileText, Info, Shield, ChevronRight, ShieldAlert,
+  Code2, Tv2
 } from 'lucide-react';
 import { fetchCustomerSubscriptionFromSupabase, normalizePhoneNumber, isSubscriptionActive } from '../lib/supabase.ts';
 import { isFreeAccountEmail } from '../data/freeAccounts.ts';
@@ -15,7 +16,7 @@ import { ContactPage } from './ContactPage.tsx';
 interface AccountPageProps {
   onNavigateToPremium: () => void;
   onOpenLoginModal: () => void;
-  onNavigateToPage?: (page: 'about' | 'dmca' | 'privacy' | 'terms' | 'contact') => void;
+  onNavigateToPage?: (page: 'about' | 'dmca' | 'privacy' | 'terms' | 'contact' | 'api' | 'embed') => void;
 }
 
 export const AccountPage: React.FC<AccountPageProps> = ({
@@ -729,7 +730,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               </div>
 
               {/* 5. Contact Us Card */}
-              <div className="p-5 rounded-2xl bg-neutral-900 border border-blue-900/30 hover:border-blue-500/50 transition flex flex-col justify-between gap-4 md:col-span-2">
+              <div className="p-5 rounded-2xl bg-neutral-900 border border-blue-900/30 hover:border-blue-500/50 transition flex flex-col justify-between gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
@@ -746,10 +747,62 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 </div>
                 <button
                   onClick={() => setSelectedSubpage('contact')}
-                  className="w-full sm:w-auto self-start py-2.5 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
                 >
                   <Mail className="w-3.5 h-3.5" />
-                  <span>Wasiliana na Msaada wa Wateja</span>
+                  <span>Wasiliana na Msaada</span>
+                </button>
+              </div>
+
+              {/* 6. Developer API Card */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-cyan-950/40 border border-cyan-800/40 hover:border-cyan-400/60 transition flex flex-col justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                      <Code2 className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40 font-bold">
+                      Kwa Watengenezaji
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <span>API ya Watengenezaji (Developer Portal)</span>
+                  </h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Pata API Keys, Stream API tokens na Player API kuunganisha chaneli zetu kwenye programu au tovuti yako. Malipo ya API huja na miezi ya bure ya VIP kwenye NeliTv!
+                  </p>
+                </div>
+                <button
+                  onClick={() => onNavigateToPage && onNavigateToPage('api')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-lg shadow-cyan-500/20"
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span>Fungua API Portal (/api)</span>
+                </button>
+              </div>
+
+              {/* 7. Embed Player Studio Card */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-pink-950/40 border border-pink-800/40 hover:border-pink-400/60 transition flex flex-col justify-between gap-4 md:col-span-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-pink-500/10 text-pink-400">
+                      <Tv2 className="w-5 h-5" />
+                    </span>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-pink-950 text-pink-300 border border-pink-800/40 font-bold">
+                      Embed Studio
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Embed Studio (/embed)</h4>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Chagua chaneli yoyote na nakili msimbo wa &lt;iframe&gt; au JavaScript SDK ili kuweka player kwenye tovuti au blogu yako. Mtazamaji akitazama kwa dakika 1 atapewa fursa ya kulipia kifurushi moja kwa moja ndani ya player.
+                  </p>
+                </div>
+                <button
+                  onClick={() => onNavigateToPage && onNavigateToPage('embed')}
+                  className="w-full sm:w-auto self-start py-2.5 px-6 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-lg shadow-pink-500/20"
+                >
+                  <Tv2 className="w-3.5 h-3.5" />
+                  <span>Fungua Embed Studio (/embed)</span>
                 </button>
               </div>
             </div>

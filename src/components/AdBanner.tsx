@@ -17,7 +17,14 @@ export const AdBanner: React.FC<AdBannerProps> = ({
   const adRef = useRef<HTMLModElement>(null);
   const pushedRef = useRef<boolean>(false);
 
+  // Suppress ads completely on API portal and Embed pages
+  const isEmbedOrApi = typeof window !== 'undefined' && (
+    window.location.pathname.startsWith('/api') ||
+    window.location.pathname.startsWith('/embed')
+  );
+
   useEffect(() => {
+    if (isEmbedOrApi) return;
     // Only attempt push once per DOM node mount
     if (pushedRef.current) return;
     try {
@@ -31,6 +38,10 @@ export const AdBanner: React.FC<AdBannerProps> = ({
       // Ignored: AdSense will automatically serve auto-ads or populate once approved
     }
   }, []);
+
+  if (isEmbedOrApi) {
+    return null;
+  }
 
   return (
     <div className={`w-full flex justify-center items-center my-2 overflow-hidden transition-all duration-300 ${className}`}>
