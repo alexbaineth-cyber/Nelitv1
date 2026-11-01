@@ -5,6 +5,7 @@ import {
   Play, Sparkles, Layers, Globe, LogOut, CheckCircle2, Eye, EyeOff
 } from 'lucide-react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
+import { useAuth } from '../context/AuthContext.tsx';
 
 interface DeveloperSession {
   id: string;
@@ -27,6 +28,8 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   onBack,
   onNavigateToEmbed
 }) => {
+  const { user: appUser, loginWithGoogle } = useAuth();
+
   // Independent API Developer authentication state
   const [session, setSession] = useState<DeveloperSession | null>(() => {
     try {
@@ -53,8 +56,15 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   // Payment modal state
   const [showPayModal, setShowPayModal] = useState<boolean>(false);
   const [selectedPlanId, setSelectedPlanId] = useState<'plan_api_monthly' | 'plan_api_yearly'>('plan_api_monthly');
-  const [paymentPhone, setPaymentPhone] = useState<string>('');
+  const [paymentPhone, setPaymentPhone] = useState<string>(() => {
+    try {
+      return localStorage.getItem('nelitv_user_phone') || localStorage.getItem('nelitv_phone') || '';
+    } catch {
+      return '';
+    }
+  });
   const [isPaying, setIsPaying] = useState<boolean>(false);
+  const [isVerifyingNow, setIsVerifyingNow] = useState<boolean>(false);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [paySuccessMsg, setPaySuccessMsg] = useState<string | null>(null);
@@ -84,7 +94,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     } catch {}
   };
 
-  // Login handler
+  // Login handler with email & password
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
@@ -109,7 +119,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
         setEmailInput('');
         setPasswordInput('');
       } else {
-        setAuthError(data.error || 'Imeshindikana kuingia. Tafadhali kagua barua pepe na nenosiri.');
+        setAuthError(data.error || 'Imeshindikana kuingia. Kagua barua pepe na nenosiri.');
       }
     } catch {
       setAuthError('Hitilafu ya mtandao. Tafadhali jaribu tena.');
@@ -118,31 +128,64 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     }
   };
 
-  // Quick Login as adminapi@login.com
-  const handleQuickAdminLogin = () => {
-    setEmailInput('adminapi@login.com');
-    setPasswordInput('123Free');
+  // Google Sign-In Handler
+  const handleGoogleSignIn = async () => {
     setIsAuthLoading(true);
     setAuthError(null);
-
-    fetch('/api/developer/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'adminapi@login.com',
-        password: '123Free'
-      })
-    })
-      .then(res => res.json())
-      .then(data => {
+    try {
+      // If already logged in to NeliTv with Google email
+      if (appUser && appUser.email) {
+        const res = await fetch('/api/developer/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: appUser.email,
+            googleUser: { displayName: appUser.displayName || appUser.email.split('@')[0] }
+          })
+        });
+        const data = await res.json();
         if (data.success && data.user) {
           updateSession(data.user);
-        } else {
-          setAuthError(data.error || 'Hitilafu ya kuingia');
+          return;
         }
-      })
-      .catch(() => setAuthError('Hitilafu ya mtandao'))
-      .finally(() => setIsAuthLoading(false));
+      }
+
+      const gRes = await loginWithGoogle();
+      if (gRes.success) {
+        let loggedEmail = '';
+        let loggedName = '';
+        try {
+          const profileStr = localStorage.getItem('nelitv_user_profile');
+          if (profileStr) {
+            const parsed = JSON.parse(profileStr);
+            loggedEmail = parsed.email || '';
+            loggedName = parsed.displayName || '';
+          }
+        } catch {}
+
+        if (loggedEmail) {
+          const res = await fetch('/api/developer/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: loggedEmail,
+              googleUser: { displayName: loggedName || loggedEmail.split('@')[0] }
+            })
+          });
+          const data = await res.json();
+          if (data.success && data.user) {
+            updateSession(data.user);
+            return;
+          }
+        }
+      } else if (gRes.error) {
+        setAuthError(gRes.error);
+      }
+    } catch {
+      setAuthError('Hitilafu ya mtandao wakati wa kuingia na Google.');
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   // Generate or Regenerate API Key
@@ -177,13 +220,59 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     }
   };
 
+  // Centralized Order Verification helper
+  const verifyOrder = async (orderIdToCheck: string) => {
+    if (!orderIdToCheck || !session) return false;
+    try {
+      const res = await fetch('/api/developer/payment/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: orderIdToCheck,
+          email: session.email,
+          phone: paymentPhone.trim(),
+          planId: selectedPlanId
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.verified && data.developer) {
+        updateSession(data.developer);
+        setIsPaying(false);
+        setActiveOrderId(null);
+        setShowPayModal(false);
+        setKeySuccessMsg(`✓ Hongera! Malipo ya API yamethibitishwa! API Key yako imewashwa na pia umepewa ${data.bonusAppDays === 365 ? 'Mwaka 1 Mzima' : 'Miezi 3'} Bure ya VIP kwenye NeliTv App!`);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Status poll err', err);
+    }
+    return false;
+  };
+
+  // Manual Verify Button trigger
+  const handleManualVerify = async () => {
+    if (!activeOrderId) return;
+    setIsVerifyingNow(true);
+    setPayError(null);
+    const completed = await verifyOrder(activeOrderId);
+    if (!completed) {
+      setPayError('Malipo bado yanachakatwa. Hakikisha umeweka PIN kwenye simu yako kisha bonyeza tena.');
+    }
+    setIsVerifyingNow(false);
+  };
+
   // Initiate HarakaPay API License Payment
   const handleStartPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!paymentPhone || paymentPhone.trim().length < 9 || !session) {
+    const clean = paymentPhone.replace(/\D/g, '');
+    if (clean.length < 9 || !session) {
       setPayError('Tafadhali weka namba sahihi ya simu (mfano: 0712345678)');
       return;
     }
+
+    try {
+      localStorage.setItem('nelitv_user_phone', paymentPhone.trim());
+    } catch {}
 
     setIsPaying(true);
     setPayError(null);
@@ -202,45 +291,24 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
       const data = await res.json();
       if (data.success && data.orderId) {
         setActiveOrderId(data.orderId);
-        setPaySuccessMsg(data.message || 'Ombi la USSD limetumwa kwenye simu yako! Tafadhali ingiza PIN sasa.');
+        setPaySuccessMsg(data.message || 'Ombi la USSD limetumwa kwenye simu yako! Weka PIN sasa.');
       } else {
         setPayError(data.error || 'Imeshindikana kuanzisha malipo. Hakikisha simu ina salio na iko hewani.');
         setIsPaying(false);
       }
     } catch {
-      setPayError('Hitilafu ya mtandao.');
+      setPayError('Hitilafu ya mtandao. Jaribu tena.');
       setIsPaying(false);
     }
   };
 
-  // Poll status of payment order
+  // Poll status of payment order in background
   useEffect(() => {
     if (!activeOrderId || !session) return;
 
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/developer/payment/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderId: activeOrderId,
-            email: session.email,
-            phone: paymentPhone,
-            planId: selectedPlanId
-          })
-        });
-        const data = await res.json();
-        if (data.success && data.verified && data.developer) {
-          clearInterval(interval);
-          updateSession(data.developer);
-          setIsPaying(false);
-          setActiveOrderId(null);
-          setShowPayModal(false);
-          alert(`Hongera! Malipo yako ya API yamethibitishwa kikamilifu.\n\nAPI Key yako sasa inafanya kazi na pia upewe ${data.bonusAppDays === 365 ? 'Mwaka 1 Mzima' : 'Miezi 3'} Bure ya VIP kwenye NeliTv App!`);
-        }
-      } catch (err) {
-        console.warn('Status poll err', err);
-      }
+      const done = await verifyOrder(activeOrderId);
+      if (done) clearInterval(interval);
     }, 2500);
 
     return () => clearInterval(interval);
@@ -343,29 +411,26 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
                 </p>
               </div>
 
-              {/* One-Click Quick Admin Test Account Button */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-pink-500/15 to-cyan-500/15 border border-amber-500/30 text-left space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-black text-amber-300">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>Akaunti ya Jaribio ya Bure (Free Admin API):</span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
-                    VIP Lifetime
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-300">
-                  Email: <code className="text-cyan-300 font-bold">adminapi@login.com</code> • Password: <code className="text-cyan-300 font-bold">123Free</code>
-                </p>
-                <button
-                  type="button"
-                  onClick={handleQuickAdminLogin}
-                  disabled={isAuthLoading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-pink-600 hover:from-amber-400 hover:to-pink-500 text-black font-black text-xs flex items-center justify-center gap-2 shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Ingia Moja kwa Moja kama Admin API (1-Click Test)</span>
-                </button>
+              {/* Google Sign In Button */}
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isAuthLoading}
+                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-neutral-100 text-neutral-900 font-bold text-xs flex items-center justify-center gap-2.5 shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+                <span>Ingia kwa Akaunti ya Google</span>
+              </button>
+
+              <div className="flex items-center gap-3 my-2 text-neutral-500 text-[11px]">
+                <div className="flex-1 h-px bg-neutral-800" />
+                <span>au kwa barua pepe & nenosiri</span>
+                <div className="flex-1 h-px bg-neutral-800" />
               </div>
 
               {/* Form */}
@@ -902,32 +967,71 @@ $data = json_decode($response, true);
                   </div>
                 )}
 
-                {paySuccessMsg && (
-                  <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800 text-cyan-300 text-xs flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
-                    <span>{paySuccessMsg}</span>
-                  </div>
-                )}
+                {activeOrderId ? (
+                  <div className="space-y-3 pt-1">
+                    <div className="p-3.5 rounded-2xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-200 text-xs space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold text-white text-sm">
+                        <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+                        <span>Ombi la USSD limetumwa kwenye {paymentPhone}!</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-300 leading-relaxed">
+                        Tafadhali angalia simu yako, ingiza PIN ya mtandao wako wa simu (M-Pesa, Tigo, Airtel au Halopesa) kuthibitisha malipo ya <strong>TZS {selectedPlanId === 'plan_api_yearly' ? '1,000,000' : '50,000'}</strong>.
+                      </p>
+                    </div>
 
-                <button
-                  type="submit"
-                  disabled={isPaying}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white font-black text-sm shadow-xl shadow-pink-600/30 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  {isPaying ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Inasubiri PIN kwenye Simu yako...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>
-                        Lipa TZS {selectedPlanId === 'plan_api_yearly' ? '1,000,000' : '50,000'} Sasa
-                      </span>
-                    </>
-                  )}
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleManualVerify}
+                      disabled={isVerifyingNow}
+                      className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      {isVerifyingNow ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Inathibitisha malipo na mtandao...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Nimelipa Tayari (Thibitisha Malipo Sasa)</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveOrderId(null);
+                        setIsPaying(false);
+                        setPayError(null);
+                        setPaySuccessMsg(null);
+                      }}
+                      className="w-full py-2 text-center text-xs text-neutral-400 hover:text-white underline cursor-pointer"
+                    >
+                      Badilisha namba ya simu au jaribu tena
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isPaying}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white font-black text-sm shadow-xl shadow-pink-600/30 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    {isPaying ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Inatuma ombi la USSD...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                        <span>
+                          Lipa TZS {selectedPlanId === 'plan_api_yearly' ? '1,000,000' : '50,000'} Sasa
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
               </form>
 
               <div className="text-[10px] text-neutral-500 text-center flex items-center justify-center gap-1">

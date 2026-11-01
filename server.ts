@@ -42,13 +42,15 @@ app.use(express.json());
 // Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Allow framing for /embed so external blogs/websites can embed our player
-  if (!req.path.startsWith('/embed')) {
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  } else {
-    // Explicitly allow embedding from any origin for the embed player
+  // Allow framing for /embed and embed assets so external blogs (Blogger, WordPress, etc.) can embed our player
+  if (req.path.startsWith('/embed') || req.path.includes('/embed') || req.path.startsWith('/api/developer/player-sdk.js')) {
     res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *;");
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+  } else {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   }
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -1244,12 +1246,21 @@ app.post('/api/developer/payment/verify', async (req: Request, res: Response) =>
   const plan = DEVELOPER_API_PLANS.find(p => p.id === planId) || DEVELOPER_API_PLANS[0];
 
   try {
-    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
-      headers: { 'X-API-Key': HARAKAPAY_API_KEY }
-    });
-    const data: any = await response.json();
+    const localRecord = paymentsStore[orderId];
+    let isCompleted = Boolean(localRecord && localRecord.status === 'completed');
 
-    const isCompleted = data && data.success && data.payment && data.payment.status === 'completed';
+    try {
+      const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
+        headers: { 'X-API-Key': HARAKAPAY_API_KEY }
+      });
+      const data: any = await response.json();
+      console.log(`[Developer API Verify] orderId=${orderId}, status=${data?.payment?.status || data?.status}`);
+      if ((data && data.success && data.payment && data.payment.status === 'completed') || (data && data.status === 'completed')) {
+        isCompleted = true;
+      }
+    } catch (netErr: any) {
+      console.warn('[Developer Verify Net Error]', netErr.message);
+    }
 
     if (isCompleted) {
       const now = Date.now();
@@ -1754,8 +1765,8 @@ app.post('/api/harakapay/resend-push', async (req: Request, res: Response) => {
   }
 });
 
-// 7. HarakaPay Check Payment Status
-app.get('/api/harakapay/status/:orderId', async (req: Request, res: Response) => {
+// 7. HarakaPay Check Payment Status (supports both /status and /check-status)
+app.get(['/api/harakapay/status/:orderId', '/api/harakapay/check-status/:orderId'], async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     if (!orderId) {

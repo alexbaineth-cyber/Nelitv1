@@ -20,9 +20,12 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedSdk, setCopiedSdk] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [useCustomDomain, setUseCustomDomain] = useState<boolean>(true);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId) || channels[0];
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nelitv.online';
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://nelitv.online';
+  // Default to https://nelitv.online so external Blogger and websites don't get 'refuse to connect' from Cloud Run preview proxy
+  const origin = useCustomDomain ? 'https://nelitv.online' : currentOrigin;
 
   const embedUrl = `${origin}/embed/${selectedChannel.id}${autoplay ? '?autoplay=1' : ''}`;
 
@@ -227,6 +230,45 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* 3. Domain Mode for Blogger & Websites */}
+              <div className="pt-3 border-t border-neutral-800 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-white block">Kikoa cha Embed (Domain):</span>
+                    <span className="text-[10px] text-neutral-400">nelitv.online inapendekezwa kwa Blogger</span>
+                  </div>
+                  <div className="flex rounded-lg bg-neutral-950 p-1 border border-neutral-800 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setUseCustomDomain(true)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                        useCustomDomain ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      nelitv.online (Blogger)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseCustomDomain(false)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                        !useCustomDomain ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      Preview App
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-300 text-[11px] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-200">
+                    <span>💡 Muhimu kwa Watumiaji wa Blogger:</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Kwenye Blogger tumia kikoa cha <strong>https://nelitv.online/embed/...</strong>. Mfumo wetu umeruhusu iframe zote bila vikwazo vyovyote vya kiusalama!
+                  </p>
+                </div>
               </div>
             </div>
           </div>
