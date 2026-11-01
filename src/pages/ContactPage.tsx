@@ -64,10 +64,10 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
             <h3 className="font-bold text-white text-sm">Barua Pepe (Email)</h3>
             <p className="text-xs text-neutral-400">Kwa masuala yote na usaidizi wa kiufundi:</p>
             <a
-              href="mailto:alexbaineth@gmail.com"
+              href="mailto:support@nelitv.online"
               className="text-xs font-semibold text-cyan-400 hover:underline block break-all pt-1"
             >
-              alexbaineth@gmail.com
+              support@nelitv.online
             </a>
           </div>
 
@@ -86,10 +86,10 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
             <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400">
               <MapPin className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-white text-sm">Eneo & Nchi</h3>
-            <p className="text-xs text-neutral-400">Makao makuu ya kidijitali:</p>
+            <h3 className="font-bold text-white text-sm">Makao Makuu & Eneo</h3>
+            <p className="text-xs text-neutral-400">Imebuniwa Mombasa, Kenya:</p>
             <p className="text-xs font-semibold text-pink-400 pt-1">
-              Dar es Salaam, Tanzania
+              Mombasa, Kenya · (Inafanya kazi Tanzania Pekee)
             </p>
           </div>
         </div>
@@ -164,8 +164,9 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
         </div>
 
         {/* Footer */}
-        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500">
-          NeliTv Customer Support Team · Barua pepe: alexbaineth@gmail.com
+        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
+          <div>NeliTv Customer Support · Mombasa, Kenya (Inafanya kazi Tanzania pekee)</div>
+          <div>Barua pepe rasmi: <a href="mailto:support@nelitv.online" className="text-cyan-400 hover:underline">support@nelitv.online</a></div>
         </div>
       </div>
     </div>

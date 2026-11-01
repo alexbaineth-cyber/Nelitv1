@@ -53,10 +53,10 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
               <Lock className="w-4 h-4 text-pink-500" />
-              <h3>1. Utangulizi & Ahadi ya Usalama</h3>
+              <h3>1. Utangulizi, Eneo la Huduma & Ahadi ya Usalama</h3>
             </div>
             <p>
-              Karibu kwenye <strong>NeliTv</strong> (inayopatikana kupitia tovuti yetu na programu ya Android APK). Tunatambua umuhimu wa faragha yako na tumejitolea kuhakikisha kuwa taarifa zote za watumiaji wetu zinalindwa kwa viwango vya juu vya usalama vya kimataifa (SSL/TLS Encryption).
+              Karibu kwenye <strong>NeliTv</strong> (inayopatikana kupitia tovuti yetu na programu ya Android APK). NeliTv ina makao makuu Mombasa, Kenya, na huduma zake za matangazo ya runinga na mechi zimebuniwa mahususi kufanya kazi nchini Tanzania pekee (Works in Tanzania only). Tunatambua umuhimu wa faragha yako na tumejitolea kuhakikisha kuwa taarifa zote za watumiaji wetu zinalindwa kwa viwango vya juu vya usalama vya kimataifa (SSL/TLS Encryption).
             </p>
           </div>
 
@@ -128,7 +128,8 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               Ikiwa una maswali yoyote kuhusu sera hii au msaada wa akaunti yako ya NeliTv, tafadhali wasiliana na kitengo chetu cha msaada:
             </p>
             <div className="p-3 rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-300 font-mono text-xs">
-              <div>Barua Pepe: support@nelitv.online</div>
+              <div>Makao Makuu: Mombasa, Kenya (Inafanya kazi Tanzania pekee)</div>
+              <div className="mt-1">Barua Pepe: support@nelitv.online</div>
               <div className="mt-1">Tovuti Rasmi: https://nelitv.online</div>
             </div>
           </div>

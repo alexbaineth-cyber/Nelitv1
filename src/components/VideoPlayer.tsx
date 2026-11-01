@@ -467,14 +467,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               bufferBehind: 15,          // Keeps 15s behind in memory
               safeSeekOffset: 3,         // 3s delay from live encoder edge
               gapDetectionThreshold: 0.5, // Silently skips timestamp micro-gaps
-              smallGapLimit: 0.5,
-              jumpLargeGaps: true,
               stallEnabled: true,        // Detects browser decoder stalls
               stallThreshold: 1.0,
               stallSkip: 0.2,
               segmentPrefetchLimit: 2,   // Pre-fetches next 2 segments ahead of time
               ignoreTextStreamFailures: true,
-              alwaysStreamText: false,
               retryParameters: {
                 maxAttempts: 4,
                 baseDelay: 150,

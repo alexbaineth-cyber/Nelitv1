@@ -1,6 +1,6 @@
 {
   "name": "NeliTv - Tanzania Live TV & Sports",
-  "description": "Tazama mechi za ligi kuu ya NBC, Azam Sports, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa juu kwenye NeliTv.",
+  "description": "NeliTv – Jukwaa kutoka Mombasa, Kenya linalotoa mechi za ligi kuu ya NBC, Azam Sports, na vipindi vya moja kwa moja kwa watazamaji Tanzania pekee.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

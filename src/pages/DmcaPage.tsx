@@ -91,11 +91,11 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <a
-                href="mailto:alexbaineth@gmail.com?subject=DMCA%20Notice%20-%20NeliTv"
+                href="mailto:dmca@nelitv.online?subject=DMCA%20Notice%20-%20NeliTv"
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition"
               >
                 <Mail className="w-4 h-4" />
-                <span>Tuma Barua Pepe ya DMCA (alexbaineth@gmail.com)</span>
+                <span>Tuma Barua Pepe ya DMCA (dmca@nelitv.online)</span>
               </a>
             </div>
             <p className="text-[11px] text-neutral-400 pt-1">
@@ -115,8 +115,9 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
         </div>
 
         {/* Footer info */}
-        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500">
-          NeliTv Compliance Team · Ilisasishwa: Oktoba 2026
+        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
+          <div>NeliTv Compliance Team · Mombasa, Kenya (Inafanya kazi Tanzania pekee)</div>
+          <div>Barua pepe ya DMCA: <a href="mailto:dmca@nelitv.online" className="text-pink-400 hover:underline">dmca@nelitv.online</a> · {new Date().getFullYear()}</div>
         </div>
       </div>
     </div>

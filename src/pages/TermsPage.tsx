@@ -92,11 +92,22 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
               Tuna haki ya kurekebisha au kuboresha masharti haya wakati wowote. Tutawajulisha watumiaji kuhusu mabadiliko makubwa kupitia tovuti yetu au ujumbe kwenye programu.
             </p>
           </section>
+
+          <section className="space-y-2">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              6. Makao Makuu na Eneo la Huduma (Jurisdiction)
+            </h3>
+            <p>
+              NeliTv ina makao makuu yake Mombasa, Kenya. Maudhui yote ya matangazo ya televisheni na mechi (Live TV & Sports) yamebuniwa na yanafanya kazi nchini Tanzania pekee (Works in Tanzania only). Mawasiliano yote yafanyike kupitia barua pepe rasmi: <a href="mailto:support@nelitv.online" className="text-amber-400 underline">support@nelitv.online</a>.
+            </p>
+          </section>
         </div>
 
         {/* Footer */}
-        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500">
-          NeliTv Legal · Ilisasishwa: Oktoba 2026
+        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
+          <div>NeliTv Legal · Makao Makuu Mombasa, Kenya (Inafanya kazi Tanzania pekee)</div>
+          <div>Mawasiliano: <a href="mailto:support@nelitv.online" className="text-amber-400 hover:underline">support@nelitv.online</a> · {new Date().getFullYear()}</div>
         </div>
       </div>
     </div>

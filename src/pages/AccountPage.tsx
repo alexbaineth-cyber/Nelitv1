@@ -741,7 +741,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   </div>
                   <h4 className="text-sm font-bold text-white">Wasiliana Nasi (Contact & Support)</h4>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Una tatizo la kifurushi, swali au pendekezo? Tuma ujumbe sasa hivi au barua pepe kwa alexbaineth@gmail.com.
+                    Una tatizo la kifurushi, swali au pendekezo? Tuma ujumbe sasa hivi au barua pepe kwa <span className="text-cyan-400 font-semibold">support@nelitv.online</span> (Makao Makuu: Mombasa, Kenya · Inafanya kazi Tanzania pekee).
                   </p>
                 </div>
                 <button

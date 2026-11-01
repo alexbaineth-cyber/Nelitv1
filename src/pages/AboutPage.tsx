@@ -49,7 +49,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
             Tazama Vituo Unavyovipenda popote ulipo kwa Ubora wa Juu (HD & 4K)
           </h2>
           <p className="text-sm sm:text-base text-neutral-300 leading-relaxed">
-            <strong>NeliTv</strong> ni jukwaa la kidijitali lililobuniwa kuleta matangazo ya moja kwa moja ya televisheni (Live TV), mechi za soka la ndani na kimataifa (NBC Premier League, CAF, EPL, UEFA), habari, sinema na vipindi vya burudani kwa watazamaji wote nchini Tanzania na kote ulimwenguni.
+            <strong>NeliTv</strong> ni jukwaa la kidijitali lenye makao makuu Mombasa, Kenya, lililobuniwa mahususi kuleta matangazo ya moja kwa moja ya televisheni (Live TV), mechi za soka la ndani na kimataifa (NBC Premier League, CAF, EPL, UEFA), habari, sinema na vipindi vya burudani kwa watazamaji nchini Tanzania pekee.
           </p>
         </div>
 
@@ -117,7 +117,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
             <p className="text-xs text-neutral-400">Timu yetu ya usaidizi ipo tayari kukuhudumia saa 24/7.</p>
           </div>
           <a
-            href="mailto:alexbaineth@gmail.com"
+            href="mailto:support@nelitv.online"
             className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition"
           >
             Wasiliana Nasi
@@ -125,8 +125,9 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
         </div>
 
         {/* Footer */}
-        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500">
-          NeliTv Inc. · Haki zote zimehifadhiwa · {new Date().getFullYear()}
+        <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
+          <div>NeliTv Media · Makao Makuu Mombasa, Kenya (Inafanya kazi Tanzania pekee)</div>
+          <div>Haki zote zimehifadhiwa · {new Date().getFullYear()}</div>
         </div>
       </div>
     </div>

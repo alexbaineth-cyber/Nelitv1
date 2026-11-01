@@ -526,10 +526,10 @@ function MainApp() {
           {/* 6. TV & PC CLEAN FOOTER (Blogger-style accessible links for AdSense & Users) */}
           <footer className="border-t border-neutral-900 bg-[#070A0F] py-8 px-4 text-center text-xs text-neutral-500 space-y-3">
             <p className="font-bold text-neutral-300 tracking-wide">
-              NeliTv © {new Date().getFullYear()} · Tanzania Live TV Streaming
+              NeliTv © {new Date().getFullYear()} · Makao Makuu Mombasa, Kenya · Works in Tanzania Only
             </p>
-            <p className="text-neutral-500 max-w-sm mx-auto text-[11px]">
-              Tazama mechi za ligi kuu ya NBC, sinema na vipindi vya moja kwa moja Tanzania kwa ubora wa 4K na HD kwenye TV, PC na Simu.
+            <p className="text-neutral-500 max-w-md mx-auto text-[11px]">
+              Jukwaa la kidijitali lenye makao makuu Mombasa, Kenya linalotoa mechi za ligi kuu ya NBC, sinema na vipindi vya moja kwa moja kwa watazamaji nchini Tanzania pekee.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-[11px] text-neutral-400 pt-2">
               <button
