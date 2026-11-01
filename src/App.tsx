@@ -568,20 +568,6 @@ function MainApp() {
               </button>
               <span>•</span>
               <button
-                onClick={() => handleTabChange('api')}
-                className="text-cyan-400 hover:text-cyan-300 font-bold transition cursor-pointer flex items-center gap-1"
-              >
-                <span>&lt;/&gt; API ya Watengenezaji</span>
-              </button>
-              <span>•</span>
-              <button
-                onClick={() => handleTabChange('embed')}
-                className="text-pink-400 hover:text-pink-300 font-bold transition cursor-pointer"
-              >
-                Embed Player Studio
-              </button>
-              <span>•</span>
-              <button
                 onClick={() => setIsMobileLanding(true)}
                 className="hover:text-cyan-400 transition cursor-pointer"
               >
