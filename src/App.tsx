@@ -111,29 +111,81 @@ function MainApp() {
     detectBrowserAndDevice();
   }, []);
 
-  // Mobile APK Landing: Urges mobile visitors to download the native app first,
-  // with a prominent option at the bottom to continue in Web View.
-  // (Direct channel links bypass landing so users can watch immediately)
+  // Device & Browser Capabilities
+  const isIOS = (() => {
+    try {
+      const ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    } catch {
+      return false;
+    }
+  })();
+
+  const isSafari = (() => {
+    try {
+      const ua = navigator.userAgent || '';
+      return /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/i.test(ua);
+    } catch {
+      return false;
+    }
+  })();
+
+  const isAndroid = (() => {
+    try {
+      return /Android/i.test(navigator.userAgent || '');
+    } catch {
+      return false;
+    }
+  })();
+
+  const isInIframe = (() => {
+    try {
+      return window.self !== window.top;
+    } catch {
+      return false;
+    }
+  })();
+
+  const isAdSensePreview = (() => {
+    try {
+      const url = window.location.href;
+      const ref = document.referrer || '';
+      const ua = navigator.userAgent || '';
+      return (
+        isInIframe ||
+        url.includes('google') ||
+        url.includes('preview') ||
+        ref.includes('google') ||
+        ref.includes('adsense') ||
+        /Googlebot|Mediapartners-Google|AdsBot-Google/i.test(ua)
+      );
+    } catch {
+      return false;
+    }
+  })();
+
+  // Mobile APK Landing:
+  // - iPhone / iPad / iOS Safari: NEVER show APK landing. Open directly in web player with all channels.
+  // - Inside iframes / AdSense Preview: NEVER show APK landing. Open directly with full channel interactivity.
+  // - Android users only see this when specifically navigating to /download or ?view=apk.
   const [isMobileLanding, setIsMobileLanding] = useState<boolean>(() => {
-    if (initialSharedChannel) {
-      return false; // Direct channel link: go straight to watch player
+    if (initialSharedChannel || isIOS || isSafari || isInIframe || isAdSensePreview) {
+      return false;
     }
     try {
       const search = window.location.search;
       if (search.includes('view=apk') || window.location.pathname === '/download') {
         return true;
       }
-      const forcedWeb = sessionStorage.getItem('nelitv_force_web_mode');
-      if (forcedWeb === 'true') {
-        return false;
-      }
-      // If user is already logged in, do not block with APK landing
-      if (localStorage.getItem('nelitv_user_profile')) {
-        return false;
-      }
-      const isMobileUA = /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isSmallScreen = window.innerWidth <= 768;
-      return isMobileUA || isSmallScreen;
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [dismissAndroidPrompt, setDismissAndroidPrompt] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('nelitv_dismiss_android_prompt') === 'true';
     } catch {
       return false;
     }
@@ -141,8 +193,23 @@ function MainApp() {
 
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState<boolean>(false);
 
-  // Cinematic Intro Splash state - bypassed if directly opening a shared channel link
-  const [showSplash, setShowSplash] = useState<boolean>(!initialSharedChannel);
+  // Cinematic Intro Splash state:
+  // - Bypassed in iframes, AdSense preview, iOS, Safari, or if already shown in this session
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    if (initialSharedChannel || isInIframe || isAdSensePreview) {
+      return false;
+    }
+    try {
+      const shown = sessionStorage.getItem('nelitv_splash_shown');
+      if (shown === 'true') {
+        return false;
+      }
+      sessionStorage.setItem('nelitv_splash_shown', 'true');
+      return true;
+    } catch {
+      return false;
+    }
+  });
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
   const [downloadModalTab, setDownloadModalTab] = useState<'direct' | 'qr'>('direct');
 
@@ -385,6 +452,42 @@ function MainApp() {
             }}
           />
 
+          {/* Android App Optional Install Banner (shown ONLY for Android devices, never for iPhone/Safari/AdSense) */}
+          {isAndroid && !dismissAndroidPrompt && !isInIframe && !isAdSensePreview && activeTab === 'home' && (
+            <div className="bg-gradient-to-r from-neutral-950 via-[#0B1020] to-neutral-950 border-b border-cyan-500/20 px-4 py-2 flex items-center justify-between text-xs text-neutral-200 shadow-md">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <Smartphone className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-[11px] sm:text-xs truncate">
+                  Unatumia Android? Pakua App yetu ya TV (.apk) kwa utazamaji wa haraka na laini zaidi.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    setDownloadModalTab('direct');
+                    setIsDownloadModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-black text-[10px] sm:text-xs transition active:scale-95 cursor-pointer shadow"
+                >
+                  Pakua APK
+                </button>
+                <button
+                  onClick={() => {
+                    setDismissAndroidPrompt(true);
+                    try {
+                      sessionStorage.setItem('nelitv_dismiss_android_prompt', 'true');
+                    } catch {}
+                  }}
+                  className="p-1 text-neutral-400 hover:text-white rounded transition cursor-pointer"
+                  title="Funga"
+                  aria-label="Funga tangazo la APK"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Global Smart TV Dial HUD when typing numbers in Watch page or elsewhere */}
           {globalDialedNumber && activeTab !== 'home' && (
             <div className="fixed top-20 right-4 sm:right-8 z-50 animate-bounce-short pointer-events-none">
@@ -568,10 +671,13 @@ function MainApp() {
               </button>
               <span>•</span>
               <button
-                onClick={() => setIsMobileLanding(true)}
+                onClick={() => {
+                  setDownloadModalTab('direct');
+                  setIsDownloadModalOpen(true);
+                }}
                 className="hover:text-cyan-400 transition cursor-pointer"
               >
-                Pakua APK
+                Pakua App
               </button>
             </div>
           </footer>

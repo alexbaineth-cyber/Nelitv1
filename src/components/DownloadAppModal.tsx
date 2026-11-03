@@ -242,7 +242,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
           <div className="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/80 text-[11px] text-neutral-400 space-y-1.5 leading-relaxed">
             <div className="font-semibold text-neutral-300 text-xs flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Jinsi ya Kusakinisha (Installation Guide):</span>
+              <span>Jinsi ya Kusakinisha kwenye Android:</span>
             </div>
             <ol className="list-decimal list-inside space-y-1 pl-1">
               <li>Pakua faili la <strong>Nelitv.apk</strong> kwa kubonyeza kitufe hapo juu.</li>
@@ -250,6 +250,15 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
               <li>Kama simu ikiuliza, wezesha <em>"Allow from this source"</em>.</li>
               <li>Fungua app na ufurahie mechi na chaneli zote mubashara!</li>
             </ol>
+          </div>
+
+          {/* iPhone / Safari Note */}
+          <div className="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-800/30 text-[10px] text-neutral-300 flex items-start gap-2">
+            <Smartphone className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-white">Kwa watumiaji wa iPhone na iPad: </span>
+              Huna haja ya kupakua APK! NeliTv inafunguka moja kwa moja kwenye kivinjari chako cha Safari. Unaweza kubonyeza kitufe cha Share kwenye Safari kisha chagua <strong>"Add to Home Screen"</strong> ili kuitumia kama App bila kupakua chochote.
+            </div>
           </div>
         </div>
       </div>

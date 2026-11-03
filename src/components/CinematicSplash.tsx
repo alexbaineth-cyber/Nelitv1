@@ -116,7 +116,8 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black select-none overflow-hidden transition-opacity duration-700 ${
+      onClick={onComplete}
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black select-none overflow-hidden transition-opacity duration-700 cursor-pointer ${
         phase === 'outro' ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >

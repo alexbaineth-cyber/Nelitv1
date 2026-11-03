@@ -2,10 +2,11 @@ import React, { useEffect, useRef } from 'react';
 
 /**
  * Global toggle for AdSense display.
- * Kept FALSE until the user notifies that the AdSense account is approved.
- * When false, zero DOM elements, zero margins, and zero layout spaces are rendered.
+ * The ad units are mounted into the DOM with zero-height collapsible containers.
+ * When no ad is delivered by Google, they take 0 height and 0 margin (no empty boxes).
+ * As soon as AdSense approves and serves ads, they automatically expand and render.
  */
-export const ADS_ENABLED = false;
+export const ADS_ENABLED = true;
 
 interface AdBannerProps {
   className?: string;
@@ -14,19 +15,12 @@ interface AdBannerProps {
 
 /**
  * Google AdSense Ad Unit Component
- * Auto-activates once ADS_ENABLED is turned on after account approval.
- * Currently completely hidden without taking any screen space.
+ * Automatically detects approval & delivers responsive banners without blocking the video player or navigation.
  */
 export const AdBanner: React.FC<AdBannerProps> = ({
   className = '',
   slotId
 }) => {
-  // If ads are disabled pending approval, return null with zero layout space
-  if (!ADS_ENABLED) {
-    return null;
-  }
-
-  const adRef = useRef<HTMLModElement>(null);
   const pushedRef = useRef<boolean>(false);
 
   // Suppress ads completely on API portal and Embed pages
@@ -45,8 +39,8 @@ export const AdBanner: React.FC<AdBannerProps> = ({
         win.adsbygoogle.push({});
         pushedRef.current = true;
       }
-    } catch (e) {
-      // Ignored: AdSense will populate automatically once approved
+    } catch {
+      // Graceful fallback handled by AdSense SDK
     }
   }, [isEmbedOrApi]);
 
@@ -55,11 +49,12 @@ export const AdBanner: React.FC<AdBannerProps> = ({
   }
 
   return (
-    <div className={`w-full flex justify-center items-center my-2 overflow-hidden transition-all duration-300 ${className}`}>
+    <div
+      className={`w-full flex justify-center items-center overflow-hidden transition-all duration-300 min-h-0 [&:not(:has(iframe))]:h-0 [&:not(:has(iframe))]:my-0 [&:not(:has(iframe))]:py-0 ${className}`}
+    >
       <ins
-        ref={adRef}
         className="adsbygoogle"
-        style={{ display: 'block', width: '100%', textAlign: 'center' }}
+        style={{ display: 'block', width: '100%', minHeight: 0 }}
         data-ad-client="ca-pub-7483821694512350"
         {...(slotId ? { 'data-ad-slot': slotId } : {})}
         data-ad-format="auto"

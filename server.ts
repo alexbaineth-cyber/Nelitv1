@@ -42,16 +42,15 @@ app.use(express.json());
 // Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Allow framing for /embed and embed assets so external blogs (Blogger, WordPress, etc.) can embed our player
-  if (req.path.startsWith('/embed') || req.path.includes('/embed') || req.path.startsWith('/api/developer/player-sdk.js')) {
-    res.removeHeader('X-Frame-Options');
-    res.setHeader('Content-Security-Policy', "frame-ancestors *;");
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-  } else {
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  }
+  // Allow framing for Google AdSense site preview, /embed, and blogger/external embeds
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors * 'self' https://*.google.com https://adsense.google.com https://*.googlesyndication.com https://*.googleadservices.com;"
+  );
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
@@ -2174,10 +2173,15 @@ ${channelUrls}
   res.send(sitemapXml);
 });
 
-// 12. Robots.txt
+// 12. Robots.txt & Ads.txt (Google AdSense crawler compliance)
 app.get('/robots.txt', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/plain');
   res.send(`User-agent: *\nAllow: /\n\nSitemap: https://nelitv.online/sitemap.xml\n`);
+});
+
+app.get('/ads.txt', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(`google.com, pub-7483821694512350, DIRECT, f08c47fec0942fa0\n`);
 });
 
 // -------------------------------------------------------------

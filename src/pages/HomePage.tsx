@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Play, Eye, Flame, Tv, Check, Radio, Sparkles } from 'lucide-react';
 import { AdBanner, ADS_ENABLED } from '../components/AdBanner';
+import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -275,12 +276,10 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 2. AD BANNER (JUU YA CHANNELS) - Hidden until approval */}
-      {ADS_ENABLED && (
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4">
-          <AdBanner />
-        </div>
-      )}
+      {/* 2. AD BANNER (JUU YA CHANNELS) */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-3">
+        <AdBanner />
+      </div>
 
       {/* 3. MAIN CHANNELS GRID (Azam Max OTT Theme) */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 pt-4">
@@ -309,17 +308,29 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-5">
           {currentDisplayChannels.map((channel, idx) => {
             const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
+            const isMidpoint = idx === 5 && currentDisplayChannels.length > 6;
             return (
-              <ChannelCard
-                key={channel.id}
-                domId={`channel-card-${idx}`}
-                channel={channel}
-                channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
-                isFocused={focusedChannelIndex === idx}
-                onSelectChannel={onSelectChannel}
-              />
+              <React.Fragment key={channel.id}>
+                <ChannelCard
+                  domId={`channel-card-${idx}`}
+                  channel={channel}
+                  channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
+                  isFocused={focusedChannelIndex === idx}
+                  onSelectChannel={onSelectChannel}
+                />
+                {isMidpoint && (
+                  <div className="col-span-full py-2">
+                    <AdBanner />
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
+        </div>
+
+        {/* 4. AD BANNER (CHINI YA CHANNELS) */}
+        <div className="pt-6 pb-2">
+          <AdBanner />
         </div>
       </div>
     </div>
@@ -341,26 +352,36 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
   isFocused,
   onSelectChannel
 }) => {
+  const channelSlug = getChannelRouteSlug(channel);
+
   return (
-    <div
+    <a
+      href={`/${channelSlug}`}
       id={domId}
       tabIndex={0}
       role="button"
-      onClick={() => onSelectChannel(channel)}
+      aria-label={`Tazama kituo cha ${channel.name}`}
+      onClick={(e) => {
+        // Prevent full page reload unless cmd/ctrl clicked
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          e.preventDefault();
+          onSelectChannel(channel);
+        }
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSelectChannel(channel);
         }
       }}
-      className={`group relative rounded-2xl bg-[#0B1020] border overflow-hidden cursor-pointer transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-600/25 focus:scale-105 focus:ring-4 focus:ring-pink-500 ${
+      className={`group relative block rounded-2xl bg-[#0B1020] border overflow-hidden cursor-pointer transition-all duration-200 outline-none hover:-translate-y-1 hover:shadow-xl hover:shadow-pink-600/25 focus:scale-105 focus:ring-4 focus:ring-pink-500 touch-manipulation select-none active:scale-95 ${
         isFocused
           ? 'ring-4 ring-pink-500 scale-105 border-transparent shadow-2xl shadow-pink-600/40 z-10'
           : 'border-white/10 hover:border-pink-500/50'
       }`}
     >
       {/* 16:9 Thumbnail Container */}
-      <div className="aspect-video w-full bg-black relative overflow-hidden">
+      <div className="aspect-video w-full bg-black relative overflow-hidden pointer-events-none">
         <img
           src={channel.thumbnailUrl}
           alt={channel.name}
@@ -403,7 +424,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
       </div>
 
       {/* Info Block */}
-      <div className="p-3 sm:p-3.5">
+      <div className="p-3 sm:p-3.5 pointer-events-none">
         <div className="flex items-center justify-between gap-2">
           <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-pink-400 transition line-clamp-1">
             {channel.name}
@@ -416,6 +437,6 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
           {channel.currentProgram || channel.description}
         </p>
       </div>
-    </div>
+    </a>
   );
 };

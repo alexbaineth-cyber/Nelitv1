@@ -171,8 +171,8 @@ export const WatchPage: React.FC<WatchPageProps> = ({
         <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
-            {/* Ad Banner juu ya Player - Hidden until approval */}
-            {!isFullViewport && ADS_ENABLED && (
+            {/* Ad Banner juu ya Player */}
+            {!isFullViewport && (
               <AdBanner className="my-0 mb-2" />
             )}
 
@@ -249,7 +249,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={toggleFavorite}
-                      className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 ${
+                      className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation ${
                         isFavorite
                           ? 'bg-pink-600/30 border-pink-500 text-pink-400'
                           : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white'
@@ -262,7 +262,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
 
                     <button
                       onClick={handleShare}
-                      className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
+                      className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation"
                       title="Sambaza link ya chaneli"
                     >
                       <Share2 className="w-4 h-4" />
@@ -278,11 +278,19 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                 )}
               </div>
             )}
+
+            {/* Ad Banner chini ya Player */}
+            {!isFullViewport && (
+              <AdBanner className="my-2" />
+            )}
           </div>
 
           {/* Right Column: Other Side Channels (Visible in Normal non-fullscreen view) */}
           {!isFullViewport && (
-            <div className="lg:col-span-4">
+            <div className="lg:col-span-4 space-y-4">
+              {/* Ad Banner pembeni ya app */}
+              <AdBanner className="my-0" />
+
               <div className="p-4 rounded-2xl bg-[#070A10]/95 border border-white/10 shadow-xl">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
                   <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
