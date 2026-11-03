@@ -44,7 +44,7 @@ function hexToBase64Url(hexString: string): string {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export type QualityOption = 'auto' | '1080' | '720' | '480' | '360';
+export type QualityOption = 'auto' | '1080' | '720' | '480' | '360' | '240' | 'saver';
 
 interface VideoPlayerProps {
   channel: Channel;
@@ -462,18 +462,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 4,          // 4s buffer reservoir for instant live start (was 30s!)
-              rebufferingGoal: 0.5,      // Quick resume in 0.5s (was 1.5s!)
-              bufferBehind: 15,          // Keeps 15s behind in memory
-              safeSeekOffset: 3,         // 3s delay from live encoder edge
+              bufferingGoal: 4,          // 4s buffer reservoir for instant live start without delay
+              rebufferingGoal: 0.5,      // Quick resume in 0.5s after pause or network dip
+              bufferBehind: 10,          // Keeps 10s behind in memory (saves RAM & mobile battery)
+              safeSeekOffset: 2.5,       // Fast 2.5s delay from live encoder edge
               gapDetectionThreshold: 0.5, // Silently skips timestamp micro-gaps
               stallEnabled: true,        // Detects browser decoder stalls
-              stallThreshold: 1.0,
+              stallThreshold: 0.8,
               stallSkip: 0.2,
               segmentPrefetchLimit: 2,   // Pre-fetches next 2 segments ahead of time
               ignoreTextStreamFailures: true,
               retryParameters: {
-                maxAttempts: 4,
+                maxAttempts: 5,
                 baseDelay: 150,
                 backoffFactor: 1.2
               }
@@ -487,17 +487,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 clockSyncUri: ''
               },
               retryParameters: {
-                maxAttempts: 4,
+                maxAttempts: 5,
                 baseDelay: 150,
                 backoffFactor: 1.2
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 500000,   // Start on lightweight 360p/480p for instant startup
-              switchInterval: 8,                  // Quick 8s observation window
-              bandwidthDowngradeTarget: 0.95,     // Instant downshift on network dip
-              bandwidthUpgradeTarget: 0.50
+              defaultBandwidthEstimate: 350000,   // Low-bandwidth initial estimate (350kbps) for instant startup in Tanzania
+              switchInterval: 5,                  // Responsive 5s observation window
+              bandwidthDowngradeTarget: 0.95,     // Instant downshift on mobile network dip
+              bandwidthUpgradeTarget: 0.65        // Conservative upgrade target to prevent buffering
             }
           });
 
@@ -728,17 +728,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
-            maxBufferLength: 10,
-            maxMaxBufferLength: 20,
+            maxBufferLength: 8,
+            maxMaxBufferLength: 16,
             liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 6,
+            liveMaxLatencyDurationCount: 5,
             lowLatencyMode: true,
-            backBufferLength: 15,
+            backBufferLength: 10,
             startLevel: 0, // Starts on lowest/fastest bandwidth level for instant startup without loading
             autoStartLoad: true,
-            capLevelToPlayerSize: true,
-            abrBandWidthFactor: 0.7,
-            abrBandWidthUpFactor: 0.5,
+            capLevelToPlayerSize: true, // Caps bitrate to phone screen resolution to save data
+            abrBandWidthFactor: 0.70,
+            abrBandWidthUpFactor: 0.50,
           });
           hlsPlayerRef.current = hls;
 
@@ -839,7 +839,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [isPaywallTriggered]);
 
-  // Quality Switcher with Automatic Internet Adaptation
+  // Quality Switcher with Automatic Internet Adaptation (Optimized for Tanzania Networks)
   const handleSelectQuality = (q: QualityOption) => {
     setSelectedQuality(q);
     setShowQualityMenu(false);
@@ -850,15 +850,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         player.configure({
           abr: {
             enabled: true,
-            defaultBandwidthEstimate: 850000,
-            switchInterval: 4,
+            defaultBandwidthEstimate: 350000,
+            switchInterval: 5,
             bandwidthDowngradeTarget: 0.95,
-            bandwidthUpgradeTarget: 0.70
+            bandwidthUpgradeTarget: 0.65
           }
         });
         setCurrentResolution('Auto');
+      } else if (q === 'saver') {
+        // Data Saver Mode: Lock to lowest available track to save data
+        player.configure({ abr: { enabled: false } });
+        try {
+          const tracks = player.getVariantTracks();
+          const sorted = [...tracks].sort((a: any, b: any) => (a.bandwidth || 0) - (b.bandwidth || 0));
+          const lowest = sorted[0];
+          if (lowest) {
+            player.selectVariantTrack(lowest, /* clearBuffer */ false);
+            setCurrentResolution(`${lowest.height || 240}p Saver`);
+          }
+        } catch (err) {
+          console.warn('Saver track selection note:', err);
+        }
       } else {
-        // Disable ABR and select specific variant track
+        // Disable ABR and select specific variant track (240p, 360p, 480p, 720p, 1080p)
         player.configure({ abr: { enabled: false } });
         const targetHeight = parseInt(q, 10);
         try {
@@ -882,6 +896,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (q === 'auto') {
         hls.currentLevel = -1; // Auto ABR in HLS.js
         setCurrentResolution('Auto');
+      } else if (q === 'saver') {
+        // Data Saver in HLS: lock to level 0 (lowest bitrate)
+        hls.currentLevel = 0;
+        const levels = hls.levels || [];
+        setCurrentResolution(`${levels[0]?.height || 240}p Saver`);
       } else {
         const targetHeight = parseInt(q, 10);
         const levels = hls.levels || [];
@@ -1633,15 +1652,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       setShowQualityMenu((prev) => !prev);
                       resetControlsTimeout();
                     }}
-                    className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
-                    title="Badili Ubora wa Video"
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border cursor-pointer ${
+                      selectedQuality === 'saver'
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/80 shadow-sm shadow-emerald-500/20'
+                        : 'bg-neutral-900/90 hover:bg-neutral-800 text-white border-white/10'
+                    }`}
+                    title="Badili Ubora wa Video / Okoa Bando"
                   >
-                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    <Sliders className={`w-3.5 h-3.5 ${selectedQuality === 'saver' ? 'text-emerald-400' : 'text-cyan-400'}`} />
                     <span className="hidden xs:inline sm:inline">
-                      {selectedQuality === 'auto' ? `Auto (${currentResolution})` : `${selectedQuality}p`}
+                      {selectedQuality === 'auto'
+                        ? `Auto (${currentResolution})`
+                        : selectedQuality === 'saver'
+                        ? 'Okoa Bando'
+                        : `${selectedQuality}p`}
                     </span>
                     <span className="xs:hidden sm:hidden">
-                      {selectedQuality === 'auto' ? currentResolution : `${selectedQuality}p`}
+                      {selectedQuality === 'auto'
+                        ? currentResolution
+                        : selectedQuality === 'saver'
+                        ? 'Saver'
+                        : `${selectedQuality}p`}
                     </span>
                   </button>
 
@@ -1649,11 +1680,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {showQualityMenu && (
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute bottom-full right-0 mb-2 w-52 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
+                      className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
                     >
                       <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
                         <span>Ubora wa Video</span>
-                        <span className="text-cyan-400 text-[9px] font-normal">Kulingana na mtandao</span>
+                        <span className="text-cyan-400 text-[9px] font-normal">Kasi ya Mtandao TZ</span>
                       </div>
 
                       <button
@@ -1662,7 +1693,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       >
                         <div>
                           <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
-                          <div className="text-[10px] text-neutral-400">Inabadilika na kasi ya intaneti</div>
+                          <div className="text-[10px] text-neutral-400">Inabadilika kulingana na kasi ya simu</div>
                         </div>
                         {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                       </button>
@@ -1670,10 +1701,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       <div className="my-1 border-t border-neutral-800" />
 
                       {[
-                        { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu' },
-                        { id: '720', label: '720p HD', desc: 'Imependekezwa' },
-                        { id: '480', label: '480p SD', desc: 'Kawaida' },
-                        { id: '360', label: '360p Data Saver', desc: 'Inaokoa Bando' }
+                        { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu (Wi-Fi / 4G)' },
+                        { id: '720', label: '720p HD', desc: 'Ubora Mzuri' },
+                        { id: '480', label: '480p SD', desc: 'Kawaida (3G / 4G)' },
+                        { id: '360', label: '360p Data Saver', desc: 'Bando Nafuu (Inaokoa MB)' },
+                        { id: '240', label: '240p Okoa Bando Sana', desc: 'Chini Sana (Mtandao hafifu)' },
+                        { id: 'saver', label: 'Hali ya Okoa Bando', desc: 'Inabana matumizi ya data hadi 75%' }
                       ].map((item) => (
                         <button
                           key={item.id}
@@ -1681,7 +1714,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                           className="w-full px-3 py-1.5 text-left hover:bg-white/10 flex items-center justify-between transition cursor-pointer"
                         >
                           <div>
-                            <div className="text-white font-medium">{item.label}</div>
+                            <div className={`font-medium ${item.id === 'saver' ? 'text-emerald-400 font-bold' : 'text-white'}`}>
+                              {item.label}
+                            </div>
                             <div className="text-[10px] text-neutral-500">{item.desc}</div>
                           </div>
                           {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
