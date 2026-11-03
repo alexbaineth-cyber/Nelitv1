@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldAlert, Mail, AlertTriangle, CheckCircle, ArrowLeft, ExternalLink } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface DmcaPageProps {
   onBack?: () => void;
@@ -37,6 +38,9 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
             DMCA Compliant
           </span>
         </div>
+
+        {/* Top In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
 
         {/* Notice Card */}
         <div className="p-5 sm:p-6 rounded-2xl bg-neutral-900/60 border border-neutral-800 space-y-4">
@@ -113,6 +117,9 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
             </p>
           </section>
         </div>
+
+        {/* Bottom In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
 
         {/* Footer info */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

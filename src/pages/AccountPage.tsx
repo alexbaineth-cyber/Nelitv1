@@ -12,6 +12,7 @@ import { DmcaPage } from './DmcaPage.tsx';
 import { AboutPage } from './AboutPage.tsx';
 import { TermsPage } from './TermsPage.tsx';
 import { ContactPage } from './ContactPage.tsx';
+import { AdBanner } from '../components/AdBanner';
 
 interface AccountPageProps {
   onNavigateToPremium: () => void;
@@ -255,6 +256,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
         {selectedSubpage === 'contact' && (
           <ContactPage onBack={() => setSelectedSubpage(null)} />
         )}
+
+        {/* In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
 
         {/* TAB 1: PROFILE & LIVE COUNTDOWN */}
         {!selectedSubpage && activeTab === 'profile' && (
@@ -927,6 +931,11 @@ export const AccountPage: React.FC<AccountPageProps> = ({
             </div>
           </div>
         )}
+
+        {/* Bottom In-page Automatic Ad Unit */}
+        <div className="pt-2">
+          <AdBanner className="my-2" />
+        </div>
       </div>
     </div>
   );

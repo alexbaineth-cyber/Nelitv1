@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tv, Sparkles, Zap, ShieldCheck, Heart, Users, Globe, ArrowLeft, Trophy } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface AboutPageProps {
   onBack?: () => void;
@@ -38,6 +39,9 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
             Official
           </span>
         </div>
+
+        {/* Top In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
 
         {/* Hero Section */}
         <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-[#0c1322] border border-white/10 shadow-xl space-y-4">
@@ -123,6 +127,9 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
             Wasiliana Nasi
           </a>
         </div>
+
+        {/* Bottom In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

@@ -217,6 +217,18 @@ function MainApp() {
     setShowSplash(false);
   };
 
+  // Allow and trigger automatic in-page ads on all SPA page navigation
+  useEffect(() => {
+    if (activeTab === 'api' || activeTab === 'embed') return;
+    try {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.adsbygoogle = win.adsbygoogle || [];
+        win.adsbygoogle.push({});
+      }
+    } catch {}
+  }, [activeTab]);
+
   // Anti-inspection and stream protection (do not block touch on mobile)
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {

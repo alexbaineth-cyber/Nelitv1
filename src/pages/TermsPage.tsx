@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileText, CheckCircle2, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface TermsPageProps {
   onBack?: () => void;
@@ -37,6 +38,9 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
             Legal Terms
           </span>
         </div>
+
+        {/* Top In-Page Ad Banner (Auto collapses when unfilled) */}
+        <AdBanner className="my-2" />
 
         {/* Introduction */}
         <div className="p-6 rounded-2xl bg-neutral-900/60 border border-neutral-800 space-y-3 text-xs sm:text-sm text-neutral-300 leading-relaxed">
@@ -103,6 +107,9 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
             </p>
           </section>
         </div>
+
+        {/* Bottom In-Page Ad Banner */}
+        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

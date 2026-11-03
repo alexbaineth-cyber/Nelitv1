@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Search, X, Tv, Eye, ShieldCheck, Play, Radio, Filter } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface SearchPageProps {
   channels?: Channel[];
@@ -135,6 +136,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         </div>
 
+        {/* In-page Automatic Ad Unit */}
+        <AdBanner className="my-2" />
+
         {/* Results Counter */}
         <div className="text-xs text-neutral-400 font-medium">
           Zimepatikana chaneli <strong className="text-amber-400">{filteredChannels.length}</strong>
@@ -221,6 +225,11 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             ))}
           </div>
         )}
+
+        {/* Bottom In-page Automatic Ad Unit */}
+        <div className="pt-4">
+          <AdBanner className="my-2" />
+        </div>
       </div>
     </div>
   );

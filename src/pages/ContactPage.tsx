@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Phone, MessageSquare, Send, CheckCircle2, ArrowLeft, Clock, MapPin } from 'lucide-react';
+import { AdBanner } from '../components/AdBanner';
 
 interface ContactPageProps {
   onBack?: () => void;
@@ -54,6 +55,9 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
             Support 24/7
           </span>
         </div>
+
+        {/* Top In-Page Ad Banner (Auto collapses when unfilled) */}
+        <AdBanner className="my-2" />
 
         {/* Contact Info Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -162,6 +166,9 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
             </form>
           )}
         </div>
+
+        {/* Bottom In-Page Ad Banner */}
+        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
