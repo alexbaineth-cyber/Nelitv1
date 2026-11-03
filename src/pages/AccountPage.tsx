@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext.tsx';
 import {
   User, Smartphone, Mail, Crown, LogOut, CheckCircle2,
   AlertTriangle, RefreshCw, Clock, ShieldCheck, Zap, Sparkles,
-  BookOpen, FileText, Info, Shield, ChevronRight, ShieldAlert
+  BookOpen, FileText, Info, Shield, ChevronRight, ShieldAlert,
+  Receipt, CheckCircle, XCircle
 } from 'lucide-react';
 import { fetchCustomerSubscriptionFromSupabase, normalizePhoneNumber, isSubscriptionActive } from '../lib/supabase.ts';
 import { isFreeAccountEmail } from '../data/freeAccounts.ts';
@@ -35,12 +36,14 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     trialCompleted,
     logout,
     refreshProfile,
+    refreshPaymentHistory,
     linkPhoneToAccount
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'payments' | 'pages'>('profile');
   const [selectedSubpage, setSelectedSubpage] = useState<'about' | 'dmca' | 'privacy' | 'terms' | 'contact' | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isLoadingPayments, setIsLoadingPayments] = useState<boolean>(false);
   const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
 
@@ -86,6 +89,16 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-fetch payments history when payments tab is activated
+  useEffect(() => {
+    if (activeTab === 'payments') {
+      setIsLoadingPayments(true);
+      refreshPaymentHistory()
+        .catch((err) => console.warn('Payment history refresh error:', err))
+        .finally(() => setIsLoadingPayments(false));
+    }
+  }, [activeTab, refreshPaymentHistory]);
+
   const isFreeVip = isFreeAccountEmail(user?.email);
 
   // Calculate live countdown breakdown
@@ -126,9 +139,13 @@ export const AccountPage: React.FC<AccountPageProps> = ({
         }
       }
 
-      await refreshProfile();
+      await Promise.allSettled([
+        refreshProfile(),
+        refreshPaymentHistory()
+      ]);
+
       if (foundActive) {
-        setSyncStatusMessage('✓ Kifurushi hai kimepatikana na kusawazishwa!');
+        setSyncStatusMessage('✓ Kifurushi na historia ya malipo vimesawazishwa!');
       } else {
         setSyncStatusMessage('✓ Usawazishaji umekamilika.');
       }
@@ -554,59 +571,214 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
         {/* TAB 2: PAYMENTS HISTORY */}
         {!selectedSubpage && activeTab === 'payments' && (
-          <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">Miamala ya Malipo</h3>
-                <p className="text-xs text-neutral-400">Historia ya malipo kutoka Supabase na HarakaPay</p>
+          <div className="p-5 sm:p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-5 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Miamala ya Malipo
+                    {user?.payments && user.payments.length > 0 && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/50">
+                        {user.payments.length}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-neutral-400">Historia ya miamala yako kutoka Supabase na HarakaPay</p>
+                </div>
               </div>
               <button
-                onClick={handleDirectSyncWithSupabase}
-                className="p-2 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition cursor-pointer"
-                title="Sawazisha Upya"
+                onClick={async () => {
+                  setIsLoadingPayments(true);
+                  try {
+                    await refreshPaymentHistory();
+                  } finally {
+                    setIsLoadingPayments(false);
+                  }
+                }}
+                disabled={isLoadingPayments}
+                className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-neutral-800/90 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-700/60 text-xs font-semibold flex items-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                title="Sawazisha Miamala"
               >
-                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isLoadingPayments ? 'animate-spin' : ''}`} />
+                <span>{isLoadingPayments ? 'Inapakia...' : 'Sasisha Miamala'}</span>
               </button>
             </div>
 
-            {(!user?.payments || user.payments.length === 0) ? (
-              <div className="text-center py-12 text-neutral-500 text-xs sm:text-sm">
-                Hakuna muamala uliorekodiwa hapa bado. Ukilipia kifurushi utaona rekodi yake hapa.
+            {isLoadingPayments && (!user?.payments || user.payments.length === 0) ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                <RefreshCw className="w-7 h-7 text-cyan-400 animate-spin" />
+                <p className="text-xs text-neutral-400">Inatafuta miamala yako kutoka kwenye hifadhidata...</p>
+              </div>
+            ) : (!user?.payments || user.payments.length === 0) ? (
+              <div className="text-center py-12 px-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto text-neutral-500">
+                  <Receipt className="w-6 h-6" />
+                </div>
+                <div className="max-w-md mx-auto space-y-1.5">
+                  <p className="text-sm font-semibold text-neutral-300">Hakuna muamala uliopatikana bado</p>
+                  <p className="text-xs text-neutral-500 leading-relaxed">
+                    Ukilipia kifurushi chochote kupitia Lipa Na M-Pesa, TigoPesa, Airtel Money au HaloPesa, rekodi ya muamala wako itatokea hapa papo hapo.
+                  </p>
+                </div>
+                {!hasActiveSubscription && (
+                  <button
+                    onClick={onNavigateToPremium}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white text-xs font-bold transition shadow-lg shadow-pink-500/20 active:scale-95 cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Nunua Kifurushi Sasa</span>
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-neutral-800 text-neutral-400 uppercase font-mono">
-                      <th className="py-2.5 px-3">Kifurushi</th>
-                      <th className="py-2.5 px-3">Kiasi</th>
-                      <th className="py-2.5 px-3">Hali</th>
-                      <th className="py-2.5 px-3">Tarehe</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-800/80">
-                    {user.payments.map((p, idx) => (
-                      <tr key={idx} className="hover:bg-neutral-950/40 transition">
-                        <td className="py-3 px-3 text-white font-medium">{p.planName}</td>
-                        <td className="py-3 px-3 font-mono text-cyan-400 font-bold">
-                          TZS {p.amount.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            p.status === 'completed'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}>
-                            {p.status === 'completed' ? 'Imekamilika' : 'Inasubiri'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-neutral-400 font-mono">
-                          {new Date(p.createdAt).toLocaleDateString('sw-TZ')}
-                        </td>
+              <div className="space-y-3">
+                {/* Desktop table */}
+                <div className="hidden sm:block overflow-x-auto rounded-2xl border border-neutral-800/80 bg-neutral-950/40">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-neutral-800 bg-neutral-950 text-neutral-400 uppercase font-mono text-[10px]">
+                        <th className="py-3 px-4">Kifurushi</th>
+                        <th className="py-3 px-4">Kiasi</th>
+                        <th className="py-3 px-4">Namba ya Muamala (Order ID)</th>
+                        <th className="py-3 px-4">Hali</th>
+                        <th className="py-3 px-4 text-right">Tarehe</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800/60">
+                      {user.payments.map((p, idx) => (
+                        <tr key={idx} className="hover:bg-neutral-900/60 transition">
+                          <td className="py-3.5 px-4 font-semibold text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                              <span>{p.planName || 'Kifurushi cha NeliTv'}</span>
+                            </div>
+                            {p.durationDays > 0 && (
+                              <span className="text-[10px] text-neutral-400 pl-4 block">
+                                Muda: siku {p.durationDays}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-cyan-300 font-bold">
+                            TZS {Number(p.amount || 0).toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-[11px] text-neutral-300">
+                            <span className="bg-neutral-900 px-2 py-1 rounded border border-neutral-800">
+                              {p.orderId || 'N/A'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                              p.status === 'completed'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : p.status === 'pending'
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                            }`}>
+                              {p.status === 'completed' ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3" />
+                                  <span>Imekamilika</span>
+                                </>
+                              ) : p.status === 'pending' ? (
+                                <>
+                                  <Clock className="w-3 h-3" />
+                                  <span>Inasubiri</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3 h-3" />
+                                  <span>Imeshindikana</span>
+                                </>
+                              )}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-neutral-400 font-mono text-right text-[11px]">
+                            {p.createdAt ? new Date(p.createdAt).toLocaleString('sw-TZ', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) : 'Hivi karibuni'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View */}
+                <div className="sm:hidden space-y-2.5">
+                  {user.payments.map((p, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-2xl bg-neutral-950/70 border border-neutral-800/90 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-white text-xs">
+                            {p.planName || 'Kifurushi cha NeliTv'}
+                          </div>
+                          {p.durationDays > 0 && (
+                            <div className="text-[10px] text-neutral-400">
+                              Muda: siku {p.durationDays}
+                            </div>
+                          )}
+                        </div>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          p.status === 'completed'
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            : p.status === 'pending'
+                            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                            : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                        }`}>
+                          {p.status === 'completed' ? 'Imekamilika' : p.status === 'pending' ? 'Inasubiri' : 'Imeshindikana'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-2 border-t border-neutral-800/60 font-mono">
+                        <span className="text-neutral-400 text-[11px]">Kiasi:</span>
+                        <span className="text-cyan-300 font-bold text-sm">
+                          TZS {Number(p.amount || 0).toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+                        <span>Order ID:</span>
+                        <span className="text-neutral-200 bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800 text-[10px]">
+                          {p.orderId || 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-neutral-500 font-mono pt-1">
+                        <span>Tarehe:</span>
+                        <span>
+                          {p.createdAt ? new Date(p.createdAt).toLocaleString('sw-TZ', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'Hivi karibuni'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Helpful phone link footer if user is using email without phone */}
+                {!phone && (
+                  <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-800/30 flex items-start gap-3 text-xs text-neutral-300">
+                    <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-white font-medium">Ulipia kwa kutumia namba ya simu? </span>
+                      Unganisha namba yako kwenye kichupo cha <button onClick={() => setActiveTab('profile')} className="text-cyan-400 underline font-semibold hover:text-cyan-300 cursor-pointer">Akaunti Yangu</button> ili miamala na vifurushi vyako vyote visawazishwe hapa moja kwa moja.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

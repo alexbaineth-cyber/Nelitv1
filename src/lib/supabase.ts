@@ -186,3 +186,41 @@ export async function syncSubscriptionToSupabaseClientSide(
     return false;
   }
 }
+
+export interface CustomerPaymentRecord {
+  orderId: string;
+  phone: string;
+  amount: number;
+  planId: string;
+  planName: string;
+  durationDays: number;
+  status: 'pending' | 'completed' | 'failed';
+  createdAt: string;
+  completedAt?: string;
+  paymentMethod?: string;
+}
+
+/**
+ * Query customer payment history from Supabase and server store.
+ */
+export async function fetchCustomerPaymentsHistory(
+  identifier: string
+): Promise<CustomerPaymentRecord[]> {
+  const clean = identifier.trim();
+  if (!clean) return [];
+  const isEmail = clean.includes('@');
+
+  try {
+    const param = isEmail ? `email=${encodeURIComponent(clean)}` : `phone=${encodeURIComponent(clean)}`;
+    const res = await fetch(`/api/payments/history?${param}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.payments)) {
+        return data.payments;
+      }
+    }
+  } catch (err) {
+    console.warn('[Payments History Fetch Notice]', err);
+  }
+  return [];
+}

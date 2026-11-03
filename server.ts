@@ -439,10 +439,31 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
     }
   }
 
-  // Determine plan label
+  // Determine plan label & duration
   let planName = 'Kifurushi cha Siku 2';
-  if (amount >= 10000) planName = 'Kifurushi cha Mwezi 1';
-  else if (amount >= 3000) planName = 'Kifurushi cha Wiki 1';
+  let durationDays = 2;
+  if (amount >= 10000) {
+    planName = 'Kifurushi cha Mwezi 1';
+    durationDays = 30;
+  } else if (amount >= 3000) {
+    planName = 'Kifurushi cha Wiki 1';
+    durationDays = 7;
+  }
+
+  // Update payment record in local paymentsStore
+  const recordedOrderId = orderId || `HP-${Date.now()}`;
+  paymentsStore[recordedOrderId] = {
+    orderId: recordedOrderId,
+    phone: clean0,
+    amount,
+    planId,
+    planName,
+    durationDays,
+    status: 'completed',
+    createdAt: now.toISOString(),
+    completedAt: now.toISOString(),
+    network: 'HarakaPay'
+  };
 
   // Update local memory & file-backed store
   let user = usersStore[clean0];
@@ -473,6 +494,117 @@ async function saveOrExtendSupabaseSubscription(phone: string, amount: number, e
     expiresAt: expiryIso,
     planName
   };
+}
+
+/**
+ * Fetch unified payment transactions from local store and Supabase (nelitv_payments & subscriptions)
+ */
+async function fetchUserPayments(identifier: string): Promise<PaymentRecord[]> {
+  if (!identifier) return [];
+  const cleanPhone = normalizePhone(identifier);
+  const isEmail = identifier.includes('@');
+  const paymentsMap: Record<string, PaymentRecord> = {};
+
+  // 1. Gather from local memory paymentsStore
+  Object.values(paymentsStore).forEach(p => {
+    const matchesPhone = p.phone && (normalizePhone(p.phone) === cleanPhone || p.phone === identifier);
+    if (matchesPhone) {
+      paymentsMap[p.orderId] = p;
+    }
+  });
+
+  // 2. Query Supabase nelitv_payments table
+  if (supabase) {
+    try {
+      const phoneVariants = isEmail ? [] : getPhoneVariants(identifier);
+      let query = supabase.from('nelitv_payments').select('*');
+      if (!isEmail && phoneVariants.length > 0) {
+        query = query.in('phone_number', phoneVariants);
+      }
+      const { data, error } = await query.order('completed_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        data.forEach((row: any) => {
+          const oid = row.order_id || `HP-${row.id}`;
+          if (!paymentsMap[oid]) {
+            let planName = 'Kifurushi cha Siku 2';
+            let durationDays = 2;
+            const amt = Number(row.amount) || 1000;
+            if (amt >= 10000 || (row.plan_id && row.plan_id.includes('30'))) {
+              planName = 'Kifurushi cha Mwezi 1';
+              durationDays = 30;
+            } else if (amt >= 3000 || (row.plan_id && row.plan_id.includes('7'))) {
+              planName = 'Kifurushi cha Wiki 1';
+              durationDays = 7;
+            }
+            paymentsMap[oid] = {
+              orderId: oid,
+              phone: row.phone_number || cleanPhone,
+              amount: amt,
+              planId: row.plan_id || (durationDays === 30 ? 'plan_30days' : durationDays === 7 ? 'plan_7days' : 'plan_2days'),
+              planName,
+              durationDays,
+              status: row.status === 'failed' ? 'failed' : (row.status === 'pending' ? 'pending' : 'completed'),
+              createdAt: row.created_at || row.completed_at || new Date().toISOString(),
+              completedAt: row.completed_at || row.created_at || new Date().toISOString(),
+              network: row.payment_method || 'HarakaPay'
+            };
+            paymentsStore[oid] = paymentsMap[oid];
+          }
+        });
+      }
+    } catch (e: any) {
+      console.warn('[Supabase payments query exception]', e?.message);
+    }
+
+    // 3. Fallback check: Supabase nelitv_subscriptions
+    try {
+      const phoneVariants = isEmail ? [] : getPhoneVariants(identifier);
+      let query = supabase.from('nelitv_subscriptions').select('*');
+      if (isEmail) {
+        query = query.ilike('user_email', identifier.trim());
+      } else if (phoneVariants.length > 0) {
+        query = query.in('phone_number', phoneVariants);
+      }
+      const { data, error } = await query;
+      if (!error && Array.isArray(data)) {
+        data.forEach((sub: any) => {
+          const subOrderId = `SUB-${sub.id || sub.phone_number}`;
+          const hasExisting = Object.values(paymentsMap).some(p => 
+            p.phone === normalizePhone(sub.phone_number)
+          );
+          if (!hasExisting && !paymentsMap[subOrderId]) {
+            const amt = Number(sub.amount_paid) || 1000;
+            let planName = 'Kifurushi cha Siku 2';
+            let durationDays = 2;
+            if (amt >= 10000 || (sub.plan_id && sub.plan_id.includes('30'))) {
+              planName = 'Kifurushi cha Mwezi 1';
+              durationDays = 30;
+            } else if (amt >= 3000 || (sub.plan_id && sub.plan_id.includes('7'))) {
+              planName = 'Kifurushi cha Wiki 1';
+              durationDays = 7;
+            }
+            paymentsMap[subOrderId] = {
+              orderId: subOrderId,
+              phone: sub.phone_number || cleanPhone,
+              amount: amt,
+              planId: sub.plan_id || (durationDays === 30 ? 'plan_30days' : durationDays === 7 ? 'plan_7days' : 'plan_2days'),
+              planName,
+              durationDays,
+              status: 'completed',
+              createdAt: sub.activated_at || sub.created_at || sub.updated_at || new Date().toISOString(),
+              completedAt: sub.activated_at || sub.created_at || sub.updated_at || new Date().toISOString(),
+              network: 'HarakaPay'
+            };
+            paymentsStore[subOrderId] = paymentsMap[subOrderId];
+          }
+        });
+      }
+    } catch {}
+  }
+
+  return Object.values(paymentsMap).sort((a, b) => 
+    new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime()
+  );
 }
 
 // -------------------------------------------------------------
@@ -796,6 +928,28 @@ app.post('/api/subscription/save', async (req: Request, res: Response) => {
   }
 });
 
+// 2.7 Payments History for User (Retrieves unified payments from Supabase and local store)
+app.get('/api/payments/history', async (req: Request, res: Response) => {
+  const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
+  const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
+  const identifier = phone || email;
+
+  if (!identifier) {
+    return res.json({ success: true, payments: [] });
+  }
+
+  try {
+    const payments = await fetchUserPayments(identifier);
+    return res.json({
+      success: true,
+      payments
+    });
+  } catch (err: any) {
+    console.warn('[Payments History Error]', err.message);
+    return res.json({ success: false, payments: [], error: err.message });
+  }
+});
+
 // 3. User Authentication / Profile with Supabase Cross-Device Sync
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const { phone, deviceInfo } = req.body;
@@ -841,9 +995,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     persistData();
   }
 
-  const userPayments = Object.values(paymentsStore)
-    .filter(p => p.phone === cleanPhone)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const userPayments = await fetchUserPayments(cleanPhone);
 
   res.json({
     success: true,

@@ -10,6 +10,7 @@ import {
 import {
   calculateSubscriptionExpiration,
   fetchCustomerSubscriptionFromSupabase,
+  fetchCustomerPaymentsHistory,
   normalizePhoneNumber,
   isSubscriptionActive
 } from '../lib/supabase.ts';
@@ -21,7 +22,10 @@ import {
 } from '../data/freeAccounts.ts';
 import {
   saveAccountSubscriptionCache,
-  getAccountSubscriptionCache
+  getAccountSubscriptionCache,
+  saveAccountPaymentsCache,
+  getAccountPaymentsCache,
+  appendAccountPaymentToCache
 } from '../lib/accountStorage.ts';
 
 export interface UserPayment {
@@ -76,6 +80,7 @@ interface AuthContextType {
   registerWithEmailAndPassword: (email: string, pass: string, name?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  refreshPaymentHistory: () => Promise<UserPayment[]>;
   recordTrialSecondWatched: () => Promise<void>;
   updateUserSubscriptionLocally: (planName: string, days: number, orderId?: string, paidPhone?: string) => void;
   linkPhoneToAccount: (phone: string) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -106,6 +111,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           parsed.hasActiveSubscription = true;
           parsed.subscriptionPlan = cached.subscriptionPlan;
           parsed.subscriptionExpiresAt = cached.subscriptionExpiresAt;
+        }
+        const cachedPayments = getAccountPaymentsCache(identifier);
+        if (cachedPayments && cachedPayments.length > 0) {
+          parsed.payments = cachedPayments;
+        } else if (parsed.hasActiveSubscription && (!parsed.payments || parsed.payments.length === 0)) {
+          const amt = parsed.subscriptionPlan?.includes('30') || parsed.subscriptionPlan?.includes('Mwezi') ? 10000 : (parsed.subscriptionPlan?.includes('7') || parsed.subscriptionPlan?.includes('Wiki') ? 3000 : 1000);
+          const days = amt >= 10000 ? 30 : (amt >= 3000 ? 7 : 2);
+          const synth: UserPayment = {
+            orderId: `SUB-${identifier.replace(/\D/g, '').slice(-6) || 'ACTIVE'}`,
+            phone: parsed.phone || identifier,
+            amount: amt,
+            planId: days === 30 ? 'plan_30days' : (days === 7 ? 'plan_7days' : 'plan_2days'),
+            planName: parsed.subscriptionPlan || 'Kifurushi cha Siku 2',
+            durationDays: days,
+            status: 'completed',
+            createdAt: new Date().toISOString(),
+            completedAt: new Date().toISOString()
+          };
+          parsed.payments = [synth];
         }
       }
       return parsed;
@@ -251,7 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           expiresAt: sub.expires_at
         });
 
-        return {
+        currentUserData = {
           ...currentUserData,
           isSubscribed: true,
           hasActiveSubscription: true,
@@ -264,6 +288,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('Supabase profile sync note:', e);
     }
+
+    // 3. Fetch payment history from Supabase and cache
+    try {
+      const history = await fetchCustomerPaymentsHistory(identifier);
+      if (history && history.length > 0) {
+        saveAccountPaymentsCache(identifier, history);
+        currentUserData = {
+          ...currentUserData,
+          payments: history
+        };
+      } else {
+        const cachedPay = getAccountPaymentsCache(identifier);
+        if (cachedPay && cachedPay.length > 0) {
+          currentUserData = {
+            ...currentUserData,
+            payments: cachedPay
+          };
+        }
+      }
+    } catch {}
+
+    // 4. If user has active subscription but no payments listed, synthesize payment record
+    if (currentUserData.hasActiveSubscription && (!currentUserData.payments || currentUserData.payments.length === 0)) {
+      const amt = currentUserData.subscriptionPlan?.includes('30') || currentUserData.subscriptionPlan?.includes('Mwezi') ? 10000 : (currentUserData.subscriptionPlan?.includes('7') || currentUserData.subscriptionPlan?.includes('Wiki') ? 3000 : 1000);
+      const days = amt >= 10000 ? 30 : (amt >= 3000 ? 7 : 2);
+      const synth: UserPayment = {
+        orderId: `SUB-${identifier.replace(/\D/g, '').slice(-6) || 'ACTIVE'}`,
+        phone: currentUserData.phone || identifier,
+        amount: amt,
+        planId: days === 30 ? 'plan_30days' : (days === 7 ? 'plan_7days' : 'plan_2days'),
+        planName: currentUserData.subscriptionPlan || 'Kifurushi cha Siku 2',
+        durationDays: days,
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString()
+      };
+      currentUserData.payments = [synth];
+      saveAccountPaymentsCache(identifier, [synth]);
+    }
+
     return currentUserData;
   };
 
@@ -540,6 +604,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshPaymentHistory = async (): Promise<UserPayment[]> => {
+    const target = phone || user?.phone || user?.email;
+    if (!target) {
+      return user?.payments || [];
+    }
+
+    try {
+      const remote = await fetchCustomerPaymentsHistory(target);
+      if (remote && remote.length > 0) {
+        saveAccountPaymentsCache(target, remote);
+        if (user) {
+          const updated = { ...user, payments: remote };
+          syncUserData(updated);
+        }
+        return remote;
+      }
+    } catch (err) {
+      console.warn('refreshPaymentHistory fetch note:', err);
+    }
+
+    const cached = getAccountPaymentsCache(target);
+    if (cached && cached.length > 0) {
+      if (user && (!user.payments || user.payments.length === 0)) {
+        const updated = { ...user, payments: cached };
+        syncUserData(updated);
+      }
+      return cached;
+    }
+
+    if (user?.hasActiveSubscription) {
+      const amt = user.subscriptionPlan?.includes('30') || user.subscriptionPlan?.includes('Mwezi') ? 10000 : (user.subscriptionPlan?.includes('7') || user.subscriptionPlan?.includes('Wiki') ? 3000 : 1000);
+      const days = amt >= 10000 ? 30 : (amt >= 3000 ? 7 : 2);
+      const synth: UserPayment = {
+        orderId: `SUB-${target.replace(/\D/g, '').slice(-6) || 'ACTIVE'}`,
+        phone: user.phone || target,
+        amount: amt,
+        planId: days === 30 ? 'plan_30days' : (days === 7 ? 'plan_7days' : 'plan_2days'),
+        planName: user.subscriptionPlan || 'Kifurushi cha Siku 2',
+        durationDays: days,
+        status: 'completed',
+        createdAt: user.subscriptionExpiresAt || new Date().toISOString(),
+        completedAt: user.subscriptionExpiresAt || new Date().toISOString()
+      };
+      saveAccountPaymentsCache(target, [synth]);
+      const updated = { ...user, payments: [synth] };
+      syncUserData(updated);
+      return [synth];
+    }
+
+    return user?.payments || [];
+  };
+
   const recordTrialSecondWatched = async () => {
     if (user?.hasActiveSubscription) return;
     if (trialCompleted) return;
@@ -659,6 +775,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         orderId: newPayment.orderId,
         amount
       });
+      appendAccountPaymentToCache(currentPhone, newPayment);
     }
     if (updatedUser.email) {
       saveAccountSubscriptionCache(updatedUser.email, {
@@ -667,6 +784,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         orderId: newPayment.orderId,
         amount
       });
+      appendAccountPaymentToCache(updatedUser.email, newPayment);
     }
 
     syncUserData(updatedUser);
@@ -800,6 +918,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerWithEmailAndPassword,
         logout,
         refreshProfile,
+        refreshPaymentHistory,
         recordTrialSecondWatched,
         updateUserSubscriptionLocally,
         linkPhoneToAccount

@@ -97,6 +97,61 @@ export function getAccountSubscriptionCache(identifier?: string | null): Account
   }
 }
 
+const ACCOUNT_PAYMENTS_CACHE_PREFIX = 'nelitv_acc_pay_';
+
+export interface CachedPaymentItem {
+  orderId: string;
+  phone: string;
+  amount: number;
+  planId: string;
+  planName: string;
+  durationDays: number;
+  status: 'pending' | 'completed' | 'failed';
+  createdAt: string;
+  completedAt?: string;
+  paymentMethod?: string;
+}
+
+/**
+ * Save payments list to account-isolated browser localStorage cache
+ */
+export function saveAccountPaymentsCache(identifier: string, payments: CachedPaymentItem[]): void {
+  const key = normalizeAccountKey(identifier);
+  if (!key) return;
+  try {
+    localStorage.setItem(`${ACCOUNT_PAYMENTS_CACHE_PREFIX}${key}`, JSON.stringify(payments));
+  } catch (err) {
+    console.warn('[AccountCache] save payments error:', err);
+  }
+}
+
+/**
+ * Append or update a single payment in the account cache
+ */
+export function appendAccountPaymentToCache(identifier: string, payment: CachedPaymentItem): void {
+  const existing = getAccountPaymentsCache(identifier);
+  const filtered = existing.filter(p => p.orderId !== payment.orderId);
+  const updated = [payment, ...filtered];
+  saveAccountPaymentsCache(identifier, updated);
+}
+
+/**
+ * Retrieve cached payments for this specific account
+ */
+export function getAccountPaymentsCache(identifier?: string | null): CachedPaymentItem[] {
+  const key = normalizeAccountKey(identifier);
+  if (!key) return [];
+
+  try {
+    const raw = localStorage.getItem(`${ACCOUNT_PAYMENTS_CACHE_PREFIX}${key}`);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Clear cached subscription for a specific account (e.g. if revoked or expired)
  */
@@ -105,5 +160,6 @@ export function removeAccountSubscriptionCache(identifier: string): void {
   if (!key) return;
   try {
     localStorage.removeItem(`${ACCOUNT_SUB_CACHE_PREFIX}${key}`);
+    localStorage.removeItem(`${ACCOUNT_PAYMENTS_CACHE_PREFIX}${key}`);
   } catch {}
 }
