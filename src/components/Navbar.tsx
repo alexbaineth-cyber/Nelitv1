@@ -80,18 +80,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenD
               <span>Tafuta</span>
             </button>
 
-            {/* VIFURUSHI */}
-            <button
-              onClick={() => setActiveTab('premium')}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTab === 'premium'
-                  ? 'bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 text-white shadow-lg shadow-pink-600/30 border border-pink-400'
-                  : 'bg-[#0B1020] hover:bg-white/10 text-neutral-200 border border-white/10'
-              }`}
-            >
-              <Crown className="w-3.5 h-3.5 text-amber-400" />
-              <span>Vifurushi</span>
-            </button>
+            {/* 100% FREE BADGE */}
+            <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>100% Bure</span>
+            </div>
 
             {/* ACCOUNT OR LOGIN */}
             {isLoggedIn ? (

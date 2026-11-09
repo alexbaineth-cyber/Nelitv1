@@ -362,11 +362,8 @@ function MainApp() {
     window.scrollTo(0, 0);
   };
 
-  const handleNavigateToPremiumWithPlan = (planId?: string) => {
-    if (planId) {
-      setInitialPlanForPremium(planId);
-    }
-    setActiveTab('premium');
+  const handleNavigateToPremiumWithPlan = (_planId?: string) => {
+    setActiveTab('home');
     window.scrollTo(0, 0);
   };
 
@@ -570,14 +567,10 @@ function MainApp() {
             )}
 
             {activeTab === 'premium' && (
-              <PremiumPage
-                initialPlanId={initialPlanForPremium}
-                onPaymentInitiated={handlePaymentInitiated}
-                onOpenLoginModal={() => setLoginModalOpen(true)}
-                onSuccessRedirect={() => {
-                  setActiveTab('watch');
-                  window.scrollTo(0, 0);
-                }}
+              <HomePage
+                channels={channels}
+                onSelectChannel={handleSelectChannel}
+                onNavigateToPremium={() => handleTabChange('home')}
               />
             )}
 
@@ -721,17 +714,6 @@ function MainApp() {
                 <span className="text-[10px] mt-0.5">Tafuta</span>
               </button>
 
-              <button
-                onClick={() => handleTabChange('premium')}
-                className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
-                  activeTab === 'premium'
-                    ? 'text-amber-400 font-bold'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <Crown className="w-5 h-5" />
-                <span className="text-[10px] mt-0.5">Vifurushi</span>
-              </button>
 
               <button
                 onClick={() => handleTabChange('account')}

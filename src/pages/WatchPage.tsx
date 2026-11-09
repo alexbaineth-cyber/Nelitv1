@@ -158,12 +158,10 @@ export const WatchPage: React.FC<WatchPageProps> = ({
             </button>
 
             <div className="flex items-center gap-2">
-              {showTrialBadge && (
-                <div className="px-2.5 py-1 rounded-full bg-black/80 border border-amber-500/50 text-[11px] font-semibold text-neutral-100 flex items-center gap-1.5 shadow-sm">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-amber-300 font-mono font-black">{formatSeconds(trialRemainingSeconds)}</span>
-                </div>
-              )}
+              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>100% Bure (Free Live TV)</span>
+              </div>
             </div>
           </div>
         )}

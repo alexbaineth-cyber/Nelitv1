@@ -301,122 +301,42 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 </div>
 
                 <div>
-                  {hasActiveSubscription && !isSubscriptionExpired ? (
-                    <span className="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>Kifurushi Kipo Hai</span>
-                    </span>
-                  ) : (
-                    <span className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                      <AlertTriangle className="w-4 h-4 text-amber-400" />
-                      <span>{isSubscriptionExpired ? 'Kimeisha Muda Wake' : 'Hakuna Kifurushi Hai'}</span>
-                    </span>
-                  )}
+                  <span className="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>100% Bure Milele</span>
+                  </span>
                 </div>
               </div>
 
-              {/* REAL-TIME SUBSCRIPTION COUNTDOWN TICKER (Siku, Masaa, Dakika, Sekunde) */}
-              <div className="p-5 rounded-2xl bg-neutral-950 border border-cyan-500/20 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-cyan-400 animate-spin-slow" />
-                    <span className="text-xs sm:text-sm font-bold text-white">
-                      Muda Uliobaki wa Kifurushi (Live Countdown):
-                    </span>
+              {/* FREE FOREVER ANNOUNCEMENT & BADGE */}
+              <div className="p-5 rounded-2xl bg-neutral-950 border border-emerald-500/30 space-y-4">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-cyan-500/15 to-blue-500/15 border border-emerald-500/40 text-center space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black uppercase tracking-wider">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span>Uanachama wa Kudumu wa Bure (Free Forever)</span>
                   </div>
-                  <span className="text-[11px] font-mono font-bold text-cyan-400">
-                    {user?.subscriptionPlan || 'Kifurushi cha NeliTv'}
-                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Hakuna Malipo Yanayohitajika!
+                  </h3>
+                  <p className="text-xs text-neutral-300 leading-relaxed max-w-lg mx-auto">
+                    Programu ya NeliTv sasa inapatikana <strong className="text-emerald-400">bure kabisa bila malipo</strong>. Unaweza kutazama chaneli zote za Azam Sports, ligi kuu, sinema na vibonzo vya watoto bila kikomo chochote cha muda wala vikwazo vya malipo.
+                  </p>
                 </div>
 
-                {isFreeVip ? (
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-pink-500/15 to-cyan-500/15 border border-amber-500/30 text-center space-y-2">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black uppercase tracking-wider">
-                      <Crown className="w-4 h-4 text-amber-400" />
-                      <span>Uanachama wa Kudumu wa Bure (VIP Lifetime)</span>
-                    </div>
-                    <p className="text-xs text-neutral-300">
-                      Akaunti yako imeunganishwa na <strong className="text-white">VIP Lifetime Pass</strong>. Una uwezo wa kutazama mechi na vituo vyote vya NeliTv moja kwa moja bila kikomo chochote cha muda.
-                    </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                  <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800">
+                    <div className="text-sm font-black text-emerald-400">Bila Malipo</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5">Chaneli zote 100% Bure</div>
                   </div>
-                ) : hasActiveSubscription && !isSubscriptionExpired ? (
-                  <div>
-                    {/* 4 Neon Countdown Cards */}
-                    <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center">
-                      {/* Siku */}
-                      <div className="p-3 rounded-xl bg-gradient-to-b from-neutral-900 to-neutral-950 border border-neutral-800 shadow-md">
-                        <div className="text-2xl sm:text-3xl font-black font-mono text-cyan-400">
-                          {String(daysLeft).padStart(2, '0')}
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
-                          Siku
-                        </div>
-                      </div>
-
-                      {/* Masaa */}
-                      <div className="p-3 rounded-xl bg-gradient-to-b from-neutral-900 to-neutral-950 border border-neutral-800 shadow-md">
-                        <div className="text-2xl sm:text-3xl font-black font-mono text-pink-400">
-                          {String(hoursLeft).padStart(2, '0')}
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
-                          Masaa
-                        </div>
-                      </div>
-
-                      {/* Dakika */}
-                      <div className="p-3 rounded-xl bg-gradient-to-b from-neutral-900 to-neutral-950 border border-neutral-800 shadow-md">
-                        <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400">
-                          {String(minutesLeft).padStart(2, '0')}
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
-                          Dakika
-                        </div>
-                      </div>
-
-                      {/* Sekunde (Live ticking) */}
-                      <div className="p-3 rounded-xl bg-gradient-to-b from-neutral-900 to-neutral-950 border border-pink-500/30 shadow-md shadow-pink-500/10">
-                        <div className="text-2xl sm:text-3xl font-black font-mono text-white animate-pulse">
-                          {String(secondsLeft).padStart(2, '0')}
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-pink-400 font-bold uppercase tracking-wider mt-0.5">
-                          Sekunde
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right text-[11px] text-neutral-400 font-mono mt-2">
-                      Muda utaisha: {new Date(user!.subscriptionExpiresAt!).toLocaleString('sw-TZ')}
-                    </div>
+                  <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800">
+                    <div className="text-sm font-black text-cyan-400">Bila Kikomo</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5">Muda usio na ukomo</div>
                   </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-neutral-900/80 border border-neutral-800 text-center space-y-2">
-                    <p className="text-xs text-neutral-300">
-                      {isSubscriptionExpired
-                        ? 'Kifurushi chako kimemalizika muda wake. Lipia kifurushi kipya ili uendelee kutazama chaneli zote bila kikomo.'
-                        : 'Bado hujaanza kifurushi rasmi au unatumia dakika 1 ya majaribio ya bure.'}
-                    </p>
-                    {!hasActiveSubscription && (
-                      <div className="text-xs font-mono text-cyan-400">
-                        {trialCompleted
-                          ? 'Majaribio ya bure: Yamekwisha (Sekunde 0)'
-                          : `Majaribio ya bure: ${trialRemainingSeconds} sekunde zimebaki`}
-                      </div>
-                    )}
+                  <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800">
+                    <div className="text-sm font-black text-pink-400">Kuingia Si Lazima</div>
+                    <div className="text-[11px] text-neutral-400 mt-0.5">Tazama moja kwa moja</div>
                   </div>
-                )}
-
-                {/* Primary CTA button */}
-                <button
-                  onClick={onNavigateToPremium}
-                  className="w-full py-3.5 px-5 rounded-xl bg-gradient-to-r from-amber-500 via-pink-600 to-cyan-500 hover:from-amber-400 hover:via-pink-500 hover:to-cyan-400 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-600/30 transition active:scale-95 cursor-pointer"
-                >
-                  <Crown className="w-4 h-4 text-amber-300" />
-                  <span>
-                    {hasActiveSubscription && !isSubscriptionExpired
-                      ? 'Ongeza / Sasisha Kifurushi Chako'
-                      : 'Nunua Kifurushi Sasa (Kuanzia TZS 1,000)'}
-                  </span>
-                </button>
+                </div>
               </div>
 
               {/* UNGANISHA NAMBA YA SIMU ULIYOLIPIA (Cross-Account Linking for Google / Email or Changing Phone) */}

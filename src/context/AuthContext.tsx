@@ -138,48 +138,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  // Persistent trial tracking: prevents timer from restarting upon reload/refresh!
-  const [trialRemainingSeconds, setTrialRemainingSeconds] = useState<number>(() => {
-    try {
-      if (localStorage.getItem(LOCAL_STORAGE_TRIAL_DONE) === 'true') {
-        return 0;
-      }
-      const saved = localStorage.getItem(LOCAL_STORAGE_TRIAL_SECONDS);
-      if (saved !== null) {
-        const val = parseInt(saved, 10);
-        return isNaN(val) ? 60 : Math.max(0, Math.min(60, val));
-      }
-      const userStored = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-      if (userStored) {
-        const u = JSON.parse(userStored);
-        if (u.trialCompleted) return 0;
-        if (typeof u.trialSecondsUsed === 'number') {
-          return Math.max(0, 60 - u.trialSecondsUsed);
-        }
-      }
-    } catch {}
-    return 60;
-  });
+  // App is 100% Free Forever for all visitors: no trial expiration and no payment limits
+  const [trialRemainingSeconds, setTrialRemainingSeconds] = useState<number>(999999);
+  const [trialCompleted, setTrialCompleted] = useState<boolean>(false);
 
-  const [trialCompleted, setTrialCompleted] = useState<boolean>(() => {
+  useEffect(() => {
     try {
-      if (localStorage.getItem(LOCAL_STORAGE_TRIAL_DONE) === 'true') {
-        return true;
-      }
-      const saved = localStorage.getItem(LOCAL_STORAGE_TRIAL_SECONDS);
-      if (saved !== null && parseInt(saved, 10) <= 0) {
-        return true;
-      }
-      const userStored = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-      if (userStored) {
-        const u = JSON.parse(userStored);
-        if (u.trialCompleted || (typeof u.trialSecondsUsed === 'number' && u.trialSecondsUsed >= 60)) {
-          return true;
-        }
-      }
+      localStorage.removeItem(LOCAL_STORAGE_TRIAL_DONE);
+      localStorage.removeItem(LOCAL_STORAGE_TRIAL_SECONDS);
     } catch {}
-    return false;
-  });
+  }, []);
 
   const [lowBandwidthMode, setLowBandwidthModeState] = useState<boolean>(() => {
     return localStorage.getItem(LOCAL_STORAGE_DATA_SAVER) === 'true';
@@ -657,67 +625,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const recordTrialSecondWatched = async () => {
-    if (user?.hasActiveSubscription) return;
-    if (trialCompleted) return;
-
-    setTrialRemainingSeconds((prev) => {
-      const newRemaining = Math.max(0, prev - 1);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, String(newRemaining));
-        if (newRemaining <= 0) {
-          localStorage.setItem(LOCAL_STORAGE_TRIAL_DONE, 'true');
-          setTrialCompleted(true);
-        }
-      } catch {}
-      return newRemaining;
-    });
-
-    if (user) {
-      user.trialSecondsUsed = Math.min(60, (user.trialSecondsUsed || 0) + 1);
-      if (user.trialSecondsUsed >= 60) {
-        user.trialCompleted = true;
-        setTrialCompleted(true);
-      }
-      try {
-        localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(user));
-      } catch {}
-    }
-
-    if (phone) {
-      try {
-        const res = await fetch('/api/auth/update-trial', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, secondsWatched: 1 })
-        });
-        const data = await res.json();
-        if (data.success) {
-          if (data.hasActiveSubscription && user) {
-            user.isSubscribed = true;
-            user.hasActiveSubscription = true;
-            syncUserData(user);
-          } else {
-            setTrialRemainingSeconds(data.trialRemainingSeconds);
-            setTrialCompleted(data.trialCompleted);
-            try {
-              localStorage.setItem(LOCAL_STORAGE_TRIAL_SECONDS, String(data.trialRemainingSeconds));
-              if (data.trialCompleted) {
-                localStorage.setItem(LOCAL_STORAGE_TRIAL_DONE, 'true');
-              }
-            } catch {}
-            if (user) {
-              user.trialSecondsUsed = data.trialSecondsUsed;
-              user.trialCompleted = data.trialCompleted;
-              try {
-                localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(user));
-              } catch {}
-            }
-          }
-        }
-      } catch {
-        // Fallback already saved locally
-      }
-    }
+    // App is 100% free forever, no trial ticking or paywalls
   };
 
   const updateUserSubscriptionLocally = (planName: string, days: number, orderId?: string, paidPhone?: string) => {
@@ -887,13 +795,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isLoggedIn = Boolean(user && (user.phone || user.email || user.uid));
-  const hasActiveSubscription = Boolean(
-    isLoggedIn &&
-    user &&
-    user.isSubscribed &&
-    user.subscriptionExpiresAt &&
-    new Date(user.subscriptionExpiresAt).getTime() > Date.now()
-  );
+  // App is 100% free forever for all visitors: no payments, no paywalls, signin/signup is optional
+  const hasActiveSubscription = true;
 
   return (
     <AuthContext.Provider

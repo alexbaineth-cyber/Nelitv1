@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
 import { Channel, ALL_KNOWN_CLEAR_KEYS } from '../data/channels.ts';
-import { useAuth } from '../context/AuthContext.tsx';
 import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.ts';
 import {
   Volume2, Volume1, VolumeX, Maximize2, Minimize2,
@@ -65,19 +64,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onPaymentInitiated,
   onToggleFullscreen
 }) => {
-  const {
-    phone,
-    hasActiveSubscription,
-    trialRemainingSeconds,
-    trialCompleted,
-    recordTrialSecondWatched
-  } = useAuth();
-
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
+  const hlsAudioPlayerRef = useRef<any>(null);
   const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==');
   const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
 
@@ -97,7 +90,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
-  const [isPaywallTriggered, setIsPaywallTriggered] = useState<boolean>(false);
+  const isPaywallTriggered = false; // Free forever: no paywall
   const [selectedLanguage, setSelectedLanguage] = useState<'sw' | 'en'>('sw');
   const [availableLanguages, setAvailableLanguages] = useState<string[]>(['sw', 'en']);
   const [stallCount, setStallCount] = useState<number>(0);
@@ -153,59 +146,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Direct Pay popup state for mobile quick payment
-  const [showDirectPayModal, setShowDirectPayModal] = useState<boolean>(false);
-  const [directPayPhone, setDirectPayPhone] = useState<string>(phone || '');
-  const [isDirectPayLoading, setIsDirectPayLoading] = useState<boolean>(false);
-  const [directPayError, setDirectPayError] = useState<string | null>(null);
-
-  const handleDirectPaySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setDirectPayError(null);
-    const targetPhone = directPayPhone.trim() || phone;
-    if (!targetPhone) {
-      setDirectPayError('Tafadhali andika namba ya simu');
-      return;
-    }
-    const clean = targetPhone.replace(/\D/g, '');
-    if (clean.length < 9) {
-      setDirectPayError('Weka namba sahihi ya simu (mfano: 0712345678)');
-      return;
-    }
-
-    setIsDirectPayLoading(true);
-    try {
-      const res = await fetch('/api/harakapay/collect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: clean,
-          planId: 'plan_2days'
-        })
-      });
-      const data = await res.json();
-      if (data.success && data.orderId) {
-        setShowDirectPayModal(false);
-        if (onPaymentInitiated) {
-          onPaymentInitiated(data.orderId, data.amount || 1000, clean, 'Kifurushi cha Siku 2');
-        } else {
-          onSelectPlanClick?.('plan_2days');
-        }
-      } else {
-        const rawErr = data.error || '';
-        if (/on\s*going\s*ussd|ongoing\s*ussd|another\s*on\s*going|rejecting/i.test(rawErr)) {
-          setDirectPayError('Kuna ombi la USSD ambalo tayari lipo wazi kwenye simu yako! Angalia skrini ya simu yako na uweke PIN, au subiri sekunde 30 kabla ya kujaribu tena.');
-        } else {
-          setDirectPayError(rawErr || 'Imeshindikana kutuma ombi la malipo. Hakikisha namba ina salio.');
-        }
-      }
-    } catch (err: any) {
-      setDirectPayError('Hitilafu ya mtandao: ' + (err.message || 'Jaribu tena.'));
-    } finally {
-      setIsDirectPayLoading(false);
-    }
-  };
-
   const resetControlsTimeout = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) {
@@ -217,9 +157,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
-    if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
-      return;
-    }
     if ((e.target as HTMLElement).closest('button, input, select, a, form')) {
       return;
     }
@@ -228,6 +165,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       try {
         videoRef.current.muted = false;
         setIsMuted(false);
+      } catch {}
+    }
+    if (audioRef.current && isMuted) {
+      try {
+        audioRef.current.muted = false;
       } catch {}
     }
     if (showControls) {
@@ -250,79 +192,56 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     shaka.polyfill.installAll();
   }, []);
 
-  // Check trial expiration & explicitly pause or destroy video source (audio stream)
-  // when subscription overlay is visible, preventing audio leaks
+  // Dual-Stream Real-Time Synchronization for ESPN 7 (video + audio sync)
   useEffect(() => {
-    const isLocked = !hasActiveSubscription && trialCompleted;
-    setIsPaywallTriggered(isLocked);
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!video || !audio || !channel.audioUrl) return;
 
-    if (isLocked) {
-      // Exit HTML5 fullscreen immediately so input fields & payment modals work seamlessly!
-      if (typeof document !== 'undefined' && document.fullscreenElement) {
-        try {
-          exitFullscreenAndUnlock();
-        } catch {}
-      }
-      setIsPlaying(false);
-      setIsBuffering(false);
+    const handlePlay = () => {
+      audio.muted = video.muted;
+      audio.volume = video.muted ? 0 : video.volume;
+      audio.play().catch(() => {});
+    };
 
-      const video = videoRef.current;
-      if (video) {
-        try {
-          video.pause();
-          video.muted = true;
-          video.volume = 0;
-          video.removeAttribute('src');
-          video.load();
-        } catch (e) {
-          console.warn('Audio leak teardown note:', e);
+    const handlePause = () => {
+      audio.pause();
+    };
+
+    const handleVolume = () => {
+      audio.muted = video.muted;
+      audio.volume = video.muted ? 0 : video.volume;
+    };
+
+    const handleSeeking = () => {
+      audio.currentTime = video.currentTime;
+    };
+
+    const handleTimeUpdate = () => {
+      if (!audio.paused && !video.paused) {
+        const drift = Math.abs(audio.currentTime - video.currentTime);
+        if (drift > 0.35) {
+          audio.currentTime = video.currentTime;
         }
       }
+    };
 
-      if (shakaPlayerRef.current) {
-        try {
-          shakaPlayerRef.current.unload().catch(() => {});
-        } catch {}
-      }
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('volumechange', handleVolume);
+    video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('timeupdate', handleTimeUpdate);
 
-      if (hlsPlayerRef.current) {
-        try {
-          hlsPlayerRef.current.stopLoad();
-          hlsPlayerRef.current.detachMedia();
-        } catch {}
-      }
-    } else {
-      // Audio Restore: When user pays or logs in, cleanly unmute and restore user volume!
-      const video = videoRef.current;
-      if (video) {
-        try {
-          video.muted = false;
-          video.volume = volume || 1;
-        } catch {}
-      }
-      setIsMuted(false);
-    }
-  }, [hasActiveSubscription, trialCompleted, volume]);
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('volumechange', handleVolume);
+      video.removeEventListener('seeking', handleSeeking);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+    };
+  }, [channel.audioUrl]);
 
   const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
-  const isPaidChannel = Boolean(channel.requiredPackages?.includes('PAID') || channel.isAzam || channel.requiredPackages?.length);
-  const showTrialBadge = !hasActiveSubscription && !isPaidChannel;
-
-  // Embedded channels now open inline with the sidepanel just like standard channels
-
-  // Timer to record trial usage while playing or watching embedded channel
-  useEffect(() => {
-    let interval: any = null;
-    const shouldTick = !hasActiveSubscription && !trialCompleted && !isPaywallTriggered && (isEmbedded || isPlaying);
-    if (shouldTick) {
-      interval = setInterval(() => {
-        recordTrialSecondWatched();
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isPlaying, isEmbedded, hasActiveSubscription, trialCompleted, isPaywallTriggered, recordTrialSecondWatched]);
 
   // Main Stream Loader - fast startup, auto ABR, live sync
   useEffect(() => {
@@ -346,6 +265,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           hlsPlayerRef.current.destroy();
         } catch {}
         hlsPlayerRef.current = null;
+      }
+      if (hlsAudioPlayerRef.current) {
+        try {
+          hlsAudioPlayerRef.current.destroy();
+        } catch {}
+        hlsAudioPlayerRef.current = null;
+      }
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.removeAttribute('src');
+          audioRef.current.load();
+        } catch {}
       }
       try {
         video.pause();
@@ -380,23 +312,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             console.warn('AutoPlay muted fallback note:', pErr);
           }
         }
-      };
 
-      // Never initialize or load video/audio stream if subscription paywall is active
-      if (!hasActiveSubscription && trialCompleted) {
-        if (videoRef.current) {
+        // Auto-play synced audio stream for ESPN 7 if present
+        if (channel.audioUrl && audioRef.current) {
           try {
-            videoRef.current.pause();
-            videoRef.current.muted = true;
-            videoRef.current.volume = 0;
-            videoRef.current.removeAttribute('src');
-            videoRef.current.load();
-          } catch {}
+            audioRef.current.muted = vid.muted;
+            audioRef.current.volume = vid.muted ? 0 : (volume || 1);
+            await audioRef.current.play();
+          } catch (aErr) {
+            console.warn('Audio auto play fallback note:', aErr);
+          }
         }
-        setIsBuffering(false);
-        setIsPlaying(false);
-        return;
-      }
+      };
 
       const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
       let targetUrl = channel.streamUrl;
@@ -764,8 +691,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               hls.startLoad();
             }
           });
+
+          // ESPN 7 & Dual-stream audio player loader
+          if (channel.audioUrl && audioRef.current) {
+            try {
+              const audioHls = new Hls({
+                maxBufferLength: 8,
+                lowLatencyMode: true,
+                autoStartLoad: true
+              });
+              hlsAudioPlayerRef.current = audioHls;
+              audioHls.loadSource(channel.audioUrl);
+              audioHls.attachMedia(audioRef.current);
+            } catch (aErr) {
+              console.warn('Audio Hls attach note:', aErr);
+            }
+          }
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = targetUrl;
+          if (channel.audioUrl && audioRef.current) {
+            audioRef.current.src = channel.audioUrl;
+          }
           video.addEventListener('loadedmetadata', async () => {
             if (isMounted) {
               await attemptAutoPlay();
@@ -795,7 +741,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isMounted = false;
       cleanup();
     };
-  }, [channel.id, retryCount, hasActiveSubscription, trialCompleted]);
+  }, [channel.id, retryCount]);
 
   // Video listeners
   useEffect(() => {
@@ -803,17 +749,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!video) return;
 
     const handlePlay = () => {
-      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
-        if (videoRef.current) {
-          try {
-            videoRef.current.pause();
-            videoRef.current.muted = true;
-            videoRef.current.volume = 0;
-          } catch {}
-        }
-        setIsPlaying(false);
-        return;
-      }
       setIsPlaying(true);
     };
 
@@ -1041,11 +976,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // YouTube-style keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input or if subscription paywall is active
+      // Don't trigger if user is typing in an input
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
-        return;
-      }
-      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) {
         return;
       }
 
@@ -1099,7 +1031,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPaywallTriggered, hasActiveSubscription, trialCompleted]);
+  }, []);
 
   // Automatic Reconnect & Auto-Play Watchdog:
   // When internet reconnects after being offline, automatically resume and start playback
@@ -1108,7 +1040,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const attemptAutoPlay = async () => {
       const video = videoRef.current;
       if (!video) return;
-      if (isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) return;
 
       try {
         await video.play();
@@ -1160,7 +1091,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // Watchdog: If online and stream paused unexpectedly, auto-resume
     const watchdog = setInterval(() => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      if (isOffline || isPaywallTriggered || (!hasActiveSubscription && trialCompleted)) return;
+      if (isOffline) return;
       const video = videoRef.current;
       if (video && video.paused && !channel.streamFormat?.includes('embed') && !channel.embedUrl) {
         attemptAutoPlay();
@@ -1171,14 +1102,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       window.removeEventListener('online', handleWindowOnline);
       clearInterval(watchdog);
     };
-  }, [hasActiveSubscription, trialCompleted, isPaywallTriggered, isOffline, channel]);
-
-  const formatSeconds = (sec: number) => {
-    const s = Math.max(0, sec);
-    const mins = Math.floor(s / 60);
-    const remainingSecs = s % 60;
-    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
-  };
+  }, [isOffline, channel]);
 
   return (
     <div
@@ -1211,24 +1135,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           : undefined
       }
     >
-      {/* HTML5 Video Element or Embedded Iframe (Baynith Sports 1 & 2) */}
+      {/* HTML5 Video Element or Embedded Iframe (Super Sport, EPL League Tv, etc.) */}
       {isEmbedded ? (
-        (!isPaywallTriggered && (hasActiveSubscription || !trialCompleted)) ? (
-          <iframe
-            src={channel.embedUrl || channel.streamUrl}
-            className="w-full h-full border-0 object-contain bg-black pointer-events-auto"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-            allowFullScreen
-            title={channel.name}
-          />
-        ) : null
-      ) : (
-        <video
-          ref={videoRef}
-          playsInline
-          autoPlay
-          className="w-full h-full object-contain bg-black"
+        <iframe
+          src={channel.embedUrl || channel.streamUrl}
+          className="w-full h-full border-0 object-contain bg-black pointer-events-auto"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+          allowFullScreen
+          title={channel.name}
         />
+      ) : (
+        <>
+          <video
+            ref={videoRef}
+            playsInline
+            autoPlay
+            className="w-full h-full object-contain bg-black"
+          />
+          {channel.audioUrl && (
+            <audio
+              ref={audioRef}
+              playsInline
+              className="hidden"
+            />
+          )}
+        </>
       )}
 
       {/* Buffering Indicator - only for native video, NOT for embedded iframes */}
@@ -1323,251 +1254,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* 1-MINUTE TRIAL PAYWALL OVERLAY */}
-      {isPaywallTriggered && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-40 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#070A14] text-center animate-fade-in cursor-default"
-        >
-          {/* MOBILE VIEW (<sm): Clean paywall with direct phone input and quick 1,000 TSH payment */}
-          <div className="block sm:hidden w-full max-w-[260px] space-y-3">
-            <div className="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
-              <Lock className="w-5 h-5" />
-            </div>
-
-            <div>
-              <h3 className="text-sm font-black text-white">Muda wa Majaribio Umekwisha</h3>
-              <p className="text-[11px] text-neutral-400 mt-0.5">
-                Lipia kifurushi uendelee kutazama mubashara
-              </p>
-            </div>
-
-            <form onSubmit={handleDirectPaySubmit} className="space-y-2.5 pt-1">
-              <input
-                type="tel"
-                value={directPayPhone}
-                onChange={(e) => setDirectPayPhone(e.target.value)}
-                placeholder="07XXXXXXXX au 06XXXXXXXX"
-                className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/20 text-white placeholder-neutral-500 font-mono text-xs focus:outline-none focus:border-blue-500 text-center"
-              />
-
-              {directPayError && (
-                <div className="p-2 rounded-lg bg-red-950/60 border border-red-800/80 text-[10px] text-red-300">
-                  {directPayError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isDirectPayLoading}
-                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 hover:opacity-95 active:scale-95 text-white font-black text-xs shadow-lg shadow-pink-600/30 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                {isDirectPayLoading ? (
-                  <>
-                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Inatuma USSD...</span>
-                  </>
-                ) : (
-                  <span>Lipa 1,000 TSH (Siku 2)</span>
-                )}
-              </button>
-            </form>
-
-            <div className="flex items-center justify-center gap-3 pt-1 text-[11px]">
-              <button
-                onClick={async () => {
-                  if (document.fullscreenElement) {
-                    try { await exitFullscreenAndUnlock(); } catch {}
-                  }
-                  onSelectPlanClick?.('plan_7days');
-                }}
-                className="text-neutral-400 hover:text-white transition underline cursor-pointer"
-              >
-                Vifurushi Vingine
-              </button>
-
-              {onOpenLoginModal && (
-                <>
-                  <span className="text-neutral-600">•</span>
-                  <button
-                    onClick={async () => {
-                      if (document.fullscreenElement) {
-                        try { await exitFullscreenAndUnlock(); } catch {}
-                      }
-                      onOpenLoginModal();
-                    }}
-                    className="text-neutral-400 hover:text-white transition underline cursor-pointer"
-                  >
-                    Ulishalipia? Ingia
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* DESKTOP & TABLET VIEW (>=sm): 3-Card Grid */}
-          <div className="hidden sm:flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 via-pink-500/20 to-cyan-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 mb-3">
-              <Lock className="w-7 h-7" />
-            </div>
-
-            <h3 className="text-xl sm:text-2xl font-black text-white mb-1.5 tracking-tight">
-              Muda Wako wa Majaribio Umekwisha
-            </h3>
-
-            <p className="text-xs sm:text-sm text-neutral-300 max-w-md mb-5 leading-relaxed">
-              Umetumia dakika 1 ya majaribio ya bure. Chagua kifurushi uendelee kutazama chaneli zote mubashara:
-            </p>
-
-            <div className="grid grid-cols-3 gap-3 w-full max-w-lg mb-5">
-              <button
-                onClick={async () => {
-                  if (document.fullscreenElement) {
-                    try { await exitFullscreenAndUnlock(); } catch {}
-                  }
-                  onSelectPlanClick?.('plan_2days');
-                }}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-pink-500 text-left transition group cursor-pointer"
-              >
-                <span className="text-[10px] text-neutral-400 block uppercase font-medium">Siku 2</span>
-                <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 1,000</div>
-              </button>
-
-              <button
-                onClick={async () => {
-                  if (document.fullscreenElement) {
-                    try { await exitFullscreenAndUnlock(); } catch {}
-                  }
-                  onSelectPlanClick?.('plan_7days');
-                }}
-                className="p-3 rounded-xl bg-gradient-to-br from-pink-950/40 to-cyan-950/40 border-2 border-pink-500 text-left transition relative cursor-pointer"
-              >
-                <span className="absolute -top-2 right-2 px-1.5 py-0.2 rounded bg-gradient-to-r from-amber-500 to-pink-500 text-white text-[9px] font-black uppercase">
-                  BORA
-                </span>
-                <span className="text-[10px] text-pink-300 block uppercase font-medium">Wiki 1 (Siku 7)</span>
-                <div className="text-base font-bold text-white">TZS 3,000</div>
-              </button>
-
-              <button
-                onClick={async () => {
-                  if (document.fullscreenElement) {
-                    try { await exitFullscreenAndUnlock(); } catch {}
-                  }
-                  onSelectPlanClick?.('plan_30days');
-                }}
-                className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-cyan-500 text-left transition group cursor-pointer"
-              >
-                <span className="text-[10px] text-neutral-400 block uppercase font-medium">Mwezi 1 (Siku 30)</span>
-                <div className="text-base font-bold text-white group-hover:text-cyan-400">TZS 10,000</div>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                onClick={async () => {
-                  if (document.fullscreenElement) {
-                    try { await exitFullscreenAndUnlock(); } catch {}
-                  }
-                  onSelectPlanClick?.('plan_7days');
-                }}
-                className="py-3 px-6 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-cyan-500 hover:opacity-95 text-white font-black text-xs sm:text-sm shadow-xl shadow-pink-600/30 flex items-center gap-2 transition cursor-pointer active:scale-95"
-              >
-                <span>Lipia kwa Simu Sasa</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              {onOpenLoginModal && (
-                <button
-                  onClick={async () => {
-                    if (document.fullscreenElement) {
-                      try { await exitFullscreenAndUnlock(); } catch {}
-                    }
-                    onOpenLoginModal();
-                  }}
-                  className="py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold border border-neutral-700 transition cursor-pointer"
-                >
-                  Ulishalipia? Ingia
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DIRECT PAY POPUP MODAL */}
-      {showDirectPayModal && (
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowDirectPayModal(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xs rounded-2xl bg-[#0B1020] border border-blue-500/40 p-5 shadow-2xl relative space-y-4"
-          >
-            <button
-              onClick={() => setShowDirectPayModal(false)}
-              className="absolute top-3.5 right-3.5 p-1 text-neutral-400 hover:text-white rounded-lg transition"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
-                Lipa Papo Hapo
-              </div>
-              <h3 className="text-base font-black text-white mt-0.5">
-                1,000 TSH (Siku 2)
-              </h3>
-              <p className="text-xs text-neutral-400 mt-1">
-                Weka namba yako ya simu kwa ajili ya USSD push
-              </p>
-            </div>
-
-            <form onSubmit={handleDirectPaySubmit} className="space-y-3.5">
-              <div>
-                <input
-                  type="tel"
-                  value={directPayPhone}
-                  onChange={(e) => setDirectPayPhone(e.target.value)}
-                  placeholder="07XXXXXXXX au 06XXXXXXXX"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-neutral-700 text-white placeholder-neutral-500 font-mono text-sm focus:outline-none focus:border-blue-500 transition"
-                  autoFocus
-                />
-              </div>
-
-              {directPayError && (
-                <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-800/80 text-[11px] text-red-300">
-                  {directPayError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isDirectPayLoading}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition disabled:opacity-50"
-              >
-                {isDirectPayLoading ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Inatuma Ombi...</span>
-                  </>
-                ) : (
-                  <span>Lipa 1,000 TSH</span>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* YouTube-Style Bottom Overlay Controls (Unified for both Native & Embedded Streams) */}
       <div
         className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-all duration-300 ease-in-out ${
-          showControls && !isPaywallTriggered
+          showControls
             ? 'opacity-100 pointer-events-auto translate-y-0'
             : 'opacity-0 pointer-events-none translate-y-full'
         }`}
