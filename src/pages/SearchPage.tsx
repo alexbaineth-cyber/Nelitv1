@@ -154,66 +154,68 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
             {filteredChannels.map(channel => (
               <div
                 key={channel.id}
                 onClick={() => onSelectChannel(channel)}
-                className="group relative rounded-2xl bg-neutral-900/60 border border-neutral-800 hover:border-amber-500/60 overflow-hidden cursor-pointer transition duration-300 hover:shadow-xl hover:shadow-amber-500/5 hover:-translate-y-0.5 flex flex-col"
+                className="group relative flex flex-col rounded-2xl bg-[#0c1120] border border-white/10 hover:border-cyan-400/50 overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/10 hover:-translate-y-1.5 focus:scale-[1.03]"
               >
-                {/* Thumbnail */}
-                <div className="aspect-video w-full bg-neutral-950 relative flex items-center justify-center p-3 overflow-hidden">
-                  {channel.thumbnailUrl ? (
-                    <img
-                      src={channel.thumbnailUrl}
-                      alt={channel.name}
-                      className="max-h-16 max-w-full object-contain filter drop-shadow group-hover:scale-105 transition duration-300"
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <Radio className="w-8 h-8 text-neutral-700" />
-                  )}
+                {/* Media Canvas with Compact Logo */}
+                <div className="aspect-[16/10] sm:aspect-video w-full bg-gradient-to-br from-[#12192e] via-[#0d1424] to-[#070b16] relative flex items-center justify-center p-4 sm:p-5 overflow-hidden border-b border-white/5">
+                  <div className="absolute inset-0 bg-radial from-cyan-500/10 via-transparent to-transparent opacity-60 group-hover:opacity-100 transition-opacity" />
 
-                  <div className="absolute top-2 left-2 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-live-dot" />
-                    <span className="text-[10px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                      LIVE
-                    </span>
+                  <div className="w-16 h-12 sm:w-20 sm:h-14 flex items-center justify-center z-10 transition-transform duration-300 group-hover:scale-105">
+                    {channel.thumbnailUrl ? (
+                      <img
+                        src={channel.thumbnailUrl}
+                        alt={channel.name}
+                        className="max-h-10 sm:max-h-12 max-w-[100px] sm:max-w-[110px] object-contain filter drop-shadow-[0_4px_16px_rgba(0,0,0,0.85)]"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <Radio className="w-7 h-7 text-neutral-600" />
+                    )}
+                  </div>
+
+                  <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-600/90 backdrop-blur-md text-white shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    <span>LIVE</span>
                   </div>
 
                   {channel.isAzam && (
-                    <div className="absolute top-2 right-2">
-                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-blue-500 text-white shadow-sm">
-                        AZAM
+                    <div className="absolute top-2.5 left-2.5 z-20">
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-cyan-950/80 border border-cyan-800/60 text-cyan-300">
+                        AZAM HD
                       </span>
                     </div>
                   )}
 
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                    <div className="w-10 h-10 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center shadow-md">
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                  <div className="absolute inset-0 z-20 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center shadow-lg shadow-cyan-400/50 transform scale-90 group-hover:scale-100 transition-transform">
+                      <Play className="w-4 h-4 fill-slate-950 ml-0.5" />
                     </div>
                   </div>
                 </div>
 
                 {/* Details */}
-                <div className="p-3.5 flex-1 flex flex-col justify-between">
+                <div className="p-3.5 sm:p-4 bg-[#0a0f1d] flex-1 flex flex-col justify-between">
                   <div>
-                    <h4 className="font-bold text-sm text-white group-hover:text-amber-400 transition truncate mb-1">
+                    <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-cyan-400 transition truncate mb-1">
                       {channel.name}
                     </h4>
-                    <p className="text-xs text-neutral-400 line-clamp-1 mb-2">
+                    <p className="text-[11px] text-neutral-400 line-clamp-1 mb-2">
                       {channel.currentProgram || channel.description || 'Matangazo ya moja kwa moja'}
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-2 border-t border-neutral-800/80">
+                  <div className="flex items-center justify-between text-[10px] text-neutral-400 pt-2 border-t border-white/5">
                     <span className="flex items-center gap-1">
-                      <Eye className="w-3 h-3 text-neutral-400" />
-                      {channel.viewerCount}
+                      <Eye className="w-3 h-3 text-cyan-400/80" />
+                      {(channel.viewerCount || 650).toLocaleString()}
                     </span>
 
                     <span className="text-[10px] uppercase font-semibold text-neutral-400">
