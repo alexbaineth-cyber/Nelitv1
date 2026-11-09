@@ -572,9 +572,8 @@ export const CHANNELS_DATA: Channel[] = [
   {
     id: "espn-7",
     name: "ESPN 7",
-    description: "Michezo ya ESPN moja kwa moja ikiwa na sauti na picha zilizosawazishwa kwa wakati mmoja",
-    streamUrl: "https://barinaslive1.boldmss.com/ESPN_7/ESPN_7.isml/ESPN_7-video=2400000.m3u8",
-    audioUrl: "https://barinaslive1.boldmss.com/ESPN_7/ESPN_7.isml/ESPN_7-audio_spa=128000.m3u8",
+    description: "Michezo ya ESPN moja kwa moja (720p / 1080p) ikiwa na sauti na picha zilizosawazishwa kikamilifu",
+    streamUrl: "https://barinaslive1.boldmss.com/ESPN_7/ESPN_7.isml/ESPN_7.m3u8",
     streamFormat: "hls",
     thumbnailUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/ESPN_7_logo.svg/960px-ESPN_7_logo.svg.png",
     category: ["sport", "entertainment"],

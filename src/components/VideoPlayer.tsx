@@ -655,17 +655,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
-            maxBufferLength: 8,
-            maxMaxBufferLength: 16,
+            enableWorker: true,
+            maxBufferLength: 12,
+            maxMaxBufferLength: 24,
             liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 5,
-            lowLatencyMode: true,
+            liveMaxLatencyDurationCount: 6,
+            lowLatencyMode: false,
             backBufferLength: 10,
-            startLevel: 0, // Starts on lowest/fastest bandwidth level for instant startup without loading
             autoStartLoad: true,
-            capLevelToPlayerSize: true, // Caps bitrate to phone screen resolution to save data
-            abrBandWidthFactor: 0.70,
-            abrBandWidthUpFactor: 0.50,
+            capLevelToPlayerSize: false,
+            abrBandWidthFactor: 0.75,
+            abrBandWidthUpFactor: 0.60,
           });
           hlsPlayerRef.current = hls;
 
@@ -674,6 +674,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           hls.on(Hls.Events.MANIFEST_PARSED, async () => {
             if (!isMounted) return;
+            setErrorMessage(null);
             await attemptAutoPlay();
           });
 
@@ -688,7 +689,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
             if (data.fatal) {
-              hls.startLoad();
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.warn('HLS Network error, reloading...', data);
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.warn('HLS Media decode error, recovering...', data);
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  console.warn('HLS Fatal error:', data);
+                  try {
+                    hls.destroy();
+                  } catch {}
+                  break;
+              }
             }
           });
 
