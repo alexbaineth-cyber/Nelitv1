@@ -1,5 +1,5 @@
 // Service worker for NeliTv Progressive Web App & Offline Playback Support
-const CACHE_NAME = 'nelitv-pwa-v3';
+const CACHE_NAME = 'nelitv-pwa-v4';
 const OFFLINE_URL = '/';
 
 const PRECACHE_ASSETS = [
@@ -49,12 +49,28 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Bypass live video stream chunks & real-time payment webhooks
+  // Only handle same-origin GET requests
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+    return;
+  }
+
+  // CRITICAL: Never cache Vite dev modules, pre-bundled deps (?v=), or source TypeScript files
+  // Caching them causes mismatched ?v= hashes and duplicate React instances ("Invalid hook call").
   if (
-    url.pathname.startsWith('/api/harakapay') ||
-    url.hostname.includes('azamtvltd') ||
-    url.hostname.includes('amagi.tv') ||
-    url.hostname.includes('base44.app') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.endsWith('.ts') ||
+    url.pathname.endsWith('.tsx') ||
+    url.searchParams.has('v') ||
+    url.searchParams.has('t')
+  ) {
+    return;
+  }
+
+  // Bypass live video stream chunks & external streams
+  if (
     url.pathname.endsWith('.mpd') ||
     url.pathname.endsWith('.m3u8') ||
     url.pathname.endsWith('.ts') ||
@@ -71,7 +87,7 @@ self.addEventListener('fetch', (event) => {
         const cache = await caches.open(CACHE_NAME);
         const cached = await cache.match(OFFLINE_URL);
         return cached || (await cache.match('/index.html')) || new Response(
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>NeliTv Offline</title></head><body style="background:#070A0F;color:#fff;text-align:center;padding:50px;font-family:sans-serif;"><h2>NeliTv Iko Nje ya Mtandao</h2><p>Tafadhali washa intaneti yako kutazama mechi na vipindi moja kwa moja.</p></body></html>',
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>NeliTv Offline</title></head><body style="background:#070A0F;color:#fff;text-align:center;padding:50px;font-family:sans-serif;"><h2>NeliTv Iko Nje ya Mtandao</h2><p>Tafadhali washa intaneti yako kutazama NeliTv.</p></body></html>',
           { headers: { 'Content-Type': 'text/html' } }
         );
       })
@@ -79,13 +95,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: Stale-While-Revalidate caching strategy
-  if (
-    event.request.destination === 'style' ||
-    event.request.destination === 'script' ||
+  // Only cache built production /assets/* and static public icons/images
+  const isBuiltAsset = url.pathname.startsWith('/assets/');
+  const isStaticMedia =
     event.request.destination === 'image' ||
-    event.request.destination === 'font'
-  ) {
+    event.request.destination === 'font';
+
+  if (isBuiltAsset || isStaticMedia) {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         const fetchPromise = fetch(event.request).then((networkResponse) => {

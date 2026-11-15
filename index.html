@@ -55,6 +55,33 @@
   </head>
   <body class="bg-black text-neutral-100 antialiased selection:bg-red-600 selection:text-white">
     <div id="root"></div>
+    <script>
+      (function () {
+        try {
+          if ('caches' in window && sessionStorage.getItem('nelitv_sw_purged_v4') !== '1') {
+            caches.keys().then(function (keys) {
+              var legacy = keys.filter(function (k) {
+                return k === 'nelitv-pwa-v1' || k === 'nelitv-pwa-v2' || k === 'nelitv-pwa-v3';
+              });
+              if (legacy.length > 0) {
+                sessionStorage.setItem('nelitv_sw_purged_v4', '1');
+                Promise.all(legacy.map(function (k) { return caches.delete(k); })).then(function () {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function (regs) {
+                      Promise.all(regs.map(function (r) { return r.update(); })).finally(function () {
+                        window.location.reload();
+                      });
+                    });
+                  } else {
+                    window.location.reload();
+                  }
+                });
+              }
+            });
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

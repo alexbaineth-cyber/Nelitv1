@@ -9,9 +9,12 @@ setupStreamProtection();
 // Register PWA service worker for app installation
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.warn('PWA service worker registration notice:', err);
-    });
+    navigator.serviceWorker
+      .register('/sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update().catch(() => {}))
+      .catch((err) => {
+        console.warn('PWA service worker registration notice:', err);
+      });
   });
 }
 
