@@ -8,8 +8,10 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import { CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './src/utils/channelRoute.ts';
-import { requireChannelAuth } from './src/server/authMiddleware.ts';
+import { requireChannelAuth, signClientToken, verifyClientToken } from './src/server/authMiddleware.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
+
+const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
 
 dotenv.config();
 
@@ -738,21 +740,21 @@ app.all([
   return res.status(404).send('Not Found');
 });
 
-// 0. Root API endpoint for /baynithalex/api and /baynithalex/api/
-app.get(['/baynithalex/api', '/baynithalex/api/'], (_req: Request, res: Response) => {
+// 0. Internal index blocked from public scraping; direct callers to Free Content & Player API
+app.get(['/baynithalex/api', '/baynithalex/api/'], requireChannelAuth, (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     success: true,
-    name: 'NeliTv Live Stream API',
+    name: 'NeliTv Content & Player API',
     status: 'online',
-    version: '2.5.0',
-    description: 'NeliTv high-performance live TV and DRM stream delivery API',
+    pricing: 'free',
+    baseUrl: PUBLIC_SITE_URL,
     endpoints: {
-      channels: '/baynithalex/api/channels',
-      cdnToken: '/baynithalex/api/cdn-token',
-      pricingPlans: '/api/vifurushi',
-      subscriptionCheck: '/api/subscription/check'
+      apiIndex: `${PUBLIC_SITE_URL}/api/v1`,
+      contentApi: `${PUBLIC_SITE_URL}/api/v1/content`,
+      playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd`,
+      playerSdk: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`
     },
     totalChannels: CHANNELS_DATA.length,
     timestamp: new Date().toISOString()
@@ -805,7 +807,7 @@ app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, r
   });
 });
 
-// 1.5 Low-Latency Streaming Proxy for DRM DASH/HLS segments and manifests
+// 1.5 Protected Streaming Proxy (Strictly restricted to NeliTv Own Player / signed player ticket)
 app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -814,6 +816,35 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
+  }
+
+  // Block direct browser navigation or external downloading outside NeliTv Player
+  const isDirectNavigation =
+    req.get('sec-fetch-mode') === 'navigate' ||
+    req.get('sec-fetch-dest') === 'document' ||
+    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
+
+  const secFetchSite = req.get('sec-fetch-site') || '';
+  const referer = req.get('referer') || req.get('origin') || '';
+  const host = req.get('host') || '';
+  const pt = typeof req.query.pt === 'string' ? req.query.pt : '';
+  const validTicket = pt ? verifyClientToken(pt) : null;
+
+  const isTrustedPlayerContext =
+    Boolean(validTicket && validTicket.scope === 'player-proxy') ||
+    secFetchSite === 'same-origin' ||
+    secFetchSite === 'same-site' ||
+    referer.includes('nelitv.online') ||
+    referer.includes('.run.app') ||
+    referer.includes('localhost') ||
+    (host && referer.includes(host));
+
+  if (isDirectNavigation || !isTrustedPlayerContext) {
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied. Media streams are only accessible inside the official NeliTv Player.',
+      playerUrl: `${PUBLIC_SITE_URL}/api`
+    });
   }
 
   const targetUrl = req.query.url as string;
@@ -1179,56 +1210,482 @@ app.post('/api/auth/update-trial', (req: Request, res: Response) => {
 
 
 // ==========================================
-// 5. DEVELOPER API PLATFORM & EMBED SYSTEM
+// 5. FREE NELITV CONTENT API & PLAYER API (v1 + Developer Portal)
+// All endpoints anchored to PUBLIC_SITE_URL (https://nelitv.online)
+// Raw streams & DRM keys are strictly NOT accessible outside NeliTv Player/API.
 // ==========================================
 
 export const DEVELOPER_API_PLANS = [
   {
-    id: 'plan_api_monthly',
-    name: 'Developer API Pro (Mwezi 1)',
-    priceTsh: 50000,
-    durationDays: 30,
-    bonusAppDays: 90,
-    description: 'Player API + Stream API, API Key binafsi, na Miezi 3 Bure ya VIP kwenye NeliTv App'
-  },
-  {
-    id: 'plan_api_yearly',
-    name: 'Developer API Enterprise (Mwaka 1)',
-    priceTsh: 1000000,
-    durationDays: 365,
-    bonusAppDays: 365,
-    description: 'Player API + Stream API, API Key bila kikomo, na Mwaka 1 Mzima Bure wa VIP kwenye NeliTv App'
+    id: 'plan_api_free',
+    name: 'NeliTv Free Content & Player API',
+    priceTsh: 0,
+    durationDays: 36500,
+    bonusAppDays: 36500,
+    description: '100% Bure: Content API + Official NeliTv Player API & SDK (zote zikicheza kupitia NeliTv Player pekee)'
   }
 ];
 
 function generateDeveloperApiKey(): string {
-  return 'neli_live_sk_' + nodeCrypto.randomBytes(16).toString('hex');
+  return 'neli_free_' + nodeCrypto.randomBytes(16).toString('hex');
 }
 
 function getDeveloperByApiKey(apiKey?: string): DeveloperUser | null {
   if (!apiKey) return null;
   const cleanKey = apiKey.trim();
-  if (cleanKey === 'neli_live_sk_admin_api_vip_001') {
-    return developerUsersStore['adminapi@login.com'] || null;
+  if (cleanKey === 'neli_live_sk_admin_api_vip_001' || cleanKey === 'neli_free_public_demo') {
+    return developerUsersStore['adminapi@login.com'] || {
+      id: 'dev_free_public',
+      email: 'free@nelitv.online',
+      name: 'NeliTv Free API Developer',
+      apiKey: cleanKey,
+      isSubscribed: true,
+      subscriptionPlan: 'plan_api_free',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    };
   }
   const found = Object.values(developerUsersStore).find(u => u.apiKey === cleanKey);
   if (found) {
-    const isNotExpired = Boolean(
-      found.isSubscribed &&
-      found.subscriptionExpiresAt &&
-      new Date(found.subscriptionExpiresAt).getTime() > Date.now()
-    );
-    if (isNotExpired) return found;
+    // API is 100% FREE now: every valid key stays active without payment
+    found.isSubscribed = true;
+    if (!found.subscriptionPlan) found.subscriptionPlan = 'plan_api_free';
+    if (!found.subscriptionExpiresAt) found.subscriptionExpiresAt = '2099-12-31T23:59:59.000Z';
+    return found;
   }
   return null;
 }
 
-// 5.1 Developer Plans
-app.get('/api/developer/plans', (_req: Request, res: Response) => {
-  res.json({ success: true, plans: DEVELOPER_API_PLANS });
+function extractApiKeyFromReq(req: Request): string {
+  const auth = req.headers['authorization'];
+  const bearer = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  return String(
+    req.headers['x-neli-api-key'] ||
+    req.headers['x-api-key'] ||
+    bearer ||
+    req.query.api_key ||
+    ''
+  ).trim();
+}
+
+/**
+ * Formats a channel for the public Content API.
+ * STRICTLY omits raw streamUrl, tokenizedUrl, audioUrl, clearKeys, and upstream embedUrl
+ * so streams are NEVER accessible outside NeliTv's own Player.
+ */
+function toSafeContentItem(ch: typeof CHANNELS_DATA[number], apiKey?: string) {
+  const slug = getChannelRouteSlug(ch);
+  const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
+  const embedParams = new URLSearchParams({ autoplay: '1' });
+  if (apiKey) embedParams.set('api_key', apiKey);
+
+  return {
+    id: ch.id,
+    slug,
+    name: ch.name,
+    description: ch.description,
+    category: ch.category,
+    language: ch.language,
+    thumbnailUrl: ch.thumbnailUrl,
+    viewerCount: ch.viewerCount,
+    totalViews: ch.totalViews,
+    currentProgram: ch.currentProgram || 'Matangazo ya Moja kwa Moja',
+    nextProgram: ch.nextProgram || 'Kipindi Kinachofuata',
+    isLive: true,
+    playbackEngine: 'nelitv-player-only',
+    endpoints: {
+      self: `${PUBLIC_SITE_URL}/api/v1/content/${slug}${keyParam}`,
+      playerApi: `${PUBLIC_SITE_URL}/api/v1/player/${slug}${keyParam}`,
+      playerEmbed: `${PUBLIC_SITE_URL}/embed/${slug}?${embedParams.toString()}`,
+      watchPage: `${PUBLIC_SITE_URL}/${slug}`
+    }
+  };
+}
+
+function buildPlayerApiPayload(ch: typeof CHANNELS_DATA[number], opts: { autoplay: boolean; muted: boolean; width: string; height: string; apiKey?: string }) {
+  const slug = getChannelRouteSlug(ch);
+  const embedQuery = new URLSearchParams({
+    autoplay: opts.autoplay ? '1' : '0'
+  });
+  if (opts.muted) embedQuery.set('muted', '1');
+  if (opts.apiKey) embedQuery.set('api_key', opts.apiKey);
+
+  const embedUrl = `${PUBLIC_SITE_URL}/embed/${slug}?${embedQuery.toString()}`;
+  const sdkUrl = `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`;
+
+  // Short-lived opaque ticket proving caller obtained playback config via Player API (contains zero raw stream data)
+  const playerTicket = signClientToken({
+    scope: 'nelitv-player-embed',
+    channelId: ch.id,
+    slug,
+    apiKey: opts.apiKey || 'free'
+  }, 4 * 3600);
+
+  const iframeHtml = `<iframe src="${embedUrl}" width="${opts.width}" height="${opts.height}" frameborder="0" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen title="${ch.name} | NeliTv Player"></iframe>`;
+
+  const sdkCode = `<script src="${sdkUrl}"></script>\n<div id="nelitv-player"></div>\n<script>\n  new NeliTvPlayer('#nelitv-player', {\n    channel: '${slug}',\n    width: '${opts.width}',\n    height: '${opts.height}',\n    autoplay: ${opts.autoplay}${opts.apiKey ? `,\n    apiKey: '${opts.apiKey}'` : ''}\n  });\n</script>`;
+
+  return {
+    success: true,
+    pricing: 'free',
+    provider: 'NeliTv',
+    baseUrl: PUBLIC_SITE_URL,
+    playbackRestriction: 'Streams play exclusively inside NeliTv Official Player and are not accessible outside the Player/API.',
+    channel: {
+      id: ch.id,
+      slug,
+      name: ch.name,
+      description: ch.description,
+      thumbnailUrl: ch.thumbnailUrl,
+      category: ch.category,
+      language: ch.language,
+      currentProgram: ch.currentProgram || 'Matangazo ya Moja kwa Moja',
+      nextProgram: ch.nextProgram || 'Kipindi Kinachofuata',
+      isLive: true
+    },
+    player: {
+      type: 'nelitv-official-player',
+      embedUrl,
+      sdkUrl,
+      contentUrl: `${PUBLIC_SITE_URL}/api/v1/content/${slug}`,
+      playerApiUrl: `${PUBLIC_SITE_URL}/api/v1/player/${slug}`,
+      playerTicket,
+      width: opts.width,
+      height: opts.height,
+      autoplay: opts.autoplay,
+      iframeHtml,
+      sdkCode
+    }
+  };
+}
+
+// 5.0 Public v1 API Discovery Index (https://nelitv.online/api/v1)
+app.get(['/api/v1', '/api/v1/'], (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({
+    success: true,
+    name: 'NeliTv Free Content & Player API',
+    version: '1.0.0',
+    pricing: '100% Free',
+    baseUrl: PUBLIC_SITE_URL,
+    securityPolicy: 'Raw stream URLs and DRM keys are strictly locked inside the NeliTv Player and cannot be accessed outside the Player/API.',
+    endpoints: {
+      root: `${PUBLIC_SITE_URL}/api/v1`,
+      freeApiKey: `${PUBLIC_SITE_URL}/api/v1/keys/free`,
+      contentList: `${PUBLIC_SITE_URL}/api/v1/content`,
+      contentCategories: `${PUBLIC_SITE_URL}/api/v1/content/categories`,
+      contentByChannel: `${PUBLIC_SITE_URL}/api/v1/content/{slug}`,
+      playerIndex: `${PUBLIC_SITE_URL}/api/v1/player`,
+      playerByChannel: `${PUBLIC_SITE_URL}/api/v1/player/{slug}`,
+      playerSdkJs: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`,
+      playerEmbedIframe: `${PUBLIC_SITE_URL}/embed/{slug}`
+    },
+    totalChannels: CHANNELS_DATA.length
+  });
 });
 
-// 5.2 Developer Auth / Sign-in (Email & Password or Google Account)
+// 5.0b Instant Free API Key Issuance (POST /api/v1/keys/free)
+app.post('/api/v1/keys/free', (req: Request, res: Response) => {
+  const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const cleanEmail = rawEmail || `dev_${Date.now()}@nelitv.online`;
+
+  let devUser = developerUsersStore[cleanEmail];
+  if (!devUser) {
+    devUser = {
+      id: `dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      email: cleanEmail,
+      name: rawName || cleanEmail.split('@')[0],
+      apiKey: generateDeveloperApiKey(),
+      isSubscribed: true,
+      subscriptionPlan: 'plan_api_free',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
+      createdAt: new Date().toISOString()
+    };
+    developerUsersStore[cleanEmail] = devUser;
+  } else {
+    devUser.isSubscribed = true;
+    devUser.subscriptionPlan = 'plan_api_free';
+    devUser.subscriptionExpiresAt = '2099-12-31T23:59:59.000Z';
+    if (!devUser.apiKey || req.body?.regenerate) {
+      devUser.apiKey = generateDeveloperApiKey();
+    }
+  }
+  persistData();
+
+  res.json({
+    success: true,
+    pricing: 'free',
+    message: 'API Key yako ya bure iko tayari kutumika!',
+    apiKey: devUser.apiKey,
+    user: devUser,
+    endpoints: {
+      contentApi: `${PUBLIC_SITE_URL}/api/v1/content?api_key=${devUser.apiKey}`,
+      playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd?api_key=${devUser.apiKey}`,
+      playerSdk: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`
+    }
+  });
+});
+
+// 5.0c CONTENT API: List Categories
+app.get('/api/v1/content/categories', (_req: Request, res: Response) => {
+  const counts: Record<string, number> = {};
+  CHANNELS_DATA.forEach((ch) => {
+    ch.category.forEach((cat) => {
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+  });
+
+  const categories = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, count]) => ({
+      id,
+      count,
+      url: `${PUBLIC_SITE_URL}/api/v1/content?category=${encodeURIComponent(id)}`
+    }));
+
+  res.json({
+    success: true,
+    pricing: 'free',
+    baseUrl: PUBLIC_SITE_URL,
+    totalCategories: categories.length,
+    categories
+  });
+});
+
+// 5.0d CONTENT API: List Channels (Safe metadata + NeliTv Player/API links ONLY)
+app.get(['/api/v1/content', '/api/v1/content/channels'], (req: Request, res: Response) => {
+  const apiKey = extractApiKeyFromReq(req);
+  const category = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
+  const language = typeof req.query.language === 'string' ? req.query.language.trim().toLowerCase() : '';
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  const limit = req.query.limit ? Math.max(1, Math.min(200, Number(req.query.limit) || 200)) : 200;
+
+  let filtered = CHANNELS_DATA.filter((ch) => ch.isActive !== false);
+
+  if (category && category !== 'all') {
+    filtered = filtered.filter((ch) =>
+      category === 'azam'
+        ? Boolean(ch.isAzam || ch.name.toLowerCase().includes('azam'))
+        : ch.category.some((c) => c.toLowerCase() === category)
+    );
+  }
+  if (language && language !== 'all') {
+    filtered = filtered.filter((ch) => ch.language.toLowerCase() === language);
+  }
+  if (q) {
+    filtered = filtered.filter(
+      (ch) =>
+        ch.name.toLowerCase().includes(q) ||
+        ch.description.toLowerCase().includes(q) ||
+        (ch.currentProgram && ch.currentProgram.toLowerCase().includes(q))
+    );
+  }
+
+  const items = filtered.slice(0, limit).map((ch) => toSafeContentItem(ch, apiKey || undefined));
+
+  res.json({
+    success: true,
+    pricing: 'free',
+    provider: 'NeliTv',
+    baseUrl: PUBLIC_SITE_URL,
+    playbackPolicy: 'nelitv-player-only',
+    total: items.length,
+    endpoints: {
+      sdk: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`,
+      categories: `${PUBLIC_SITE_URL}/api/v1/content/categories`
+    },
+    channels: items
+  });
+});
+
+// 5.0e CONTENT API: Single Channel Detail + Player Links
+app.get('/api/v1/content/:slug', (req: Request, res: Response) => {
+  const apiKey = extractApiKeyFromReq(req);
+  const channel = findChannelFromRoute(req.params.slug, CHANNELS_DATA);
+  if (!channel) {
+    return res.status(404).json({
+      success: false,
+      error: 'Kituo hakijapatikana',
+      contentApi: `${PUBLIC_SITE_URL}/api/v1/content`
+    });
+  }
+
+  const item = toSafeContentItem(channel, apiKey || undefined);
+  const playerPayload = buildPlayerApiPayload(channel, {
+    autoplay: true,
+    muted: false,
+    width: '100%',
+    height: '480px',
+    apiKey: apiKey || undefined
+  });
+
+  res.json({
+    success: true,
+    pricing: 'free',
+    baseUrl: PUBLIC_SITE_URL,
+    playbackPolicy: 'nelitv-player-only',
+    channel: item,
+    player: playerPayload.player
+  });
+});
+
+// 5.0f PLAYER API SDK Distribution (Registered BEFORE /api/v1/player/:slug!)
+function servePlayerSdk(req: Request, res: Response) {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=1800');
+
+  const sdkCode = `/**
+ * NeliTv Official Player SDK v2.0 (100% Free)
+ * Streams play exclusively inside NeliTv Player.
+ * ${PUBLIC_SITE_URL}/api
+ */
+(function(window, document) {
+  var DEFAULT_BASE_URL = "${PUBLIC_SITE_URL}";
+
+  function resolveBaseUrl(options) {
+    if (options && options.baseUrl) {
+      return String(options.baseUrl).replace(/\\/+$/, "");
+    }
+    return DEFAULT_BASE_URL;
+  }
+
+  function NeliTvPlayer(target, options) {
+    options = options || {};
+    var baseUrl = resolveBaseUrl(options);
+    var channel = options.channel || options.slug || "azam-sports-1-hd";
+    var width = options.width || "100%";
+    var height = options.height || "480px";
+    var autoplay = options.autoplay !== false;
+    var muted = options.muted === true;
+    var apiKey = options.apiKey || "";
+
+    var el = typeof target === "string" ? document.querySelector(target) : target;
+    if (!el) {
+      console.error("[NeliTvPlayer] Target element not found:", target);
+      return;
+    }
+
+    function buildEmbedSrc(chSlug) {
+      var url = baseUrl + "/embed/" + encodeURIComponent(chSlug) + "?autoplay=" + (autoplay ? "1" : "0");
+      if (muted) url += "&muted=1";
+      if (apiKey) url += "&api_key=" + encodeURIComponent(apiKey);
+      return url;
+    }
+
+    var iframe = document.createElement("iframe");
+    iframe.src = buildEmbedSrc(channel);
+    iframe.style.width = width;
+    iframe.style.height = height;
+    iframe.style.border = "none";
+    iframe.style.display = "block";
+    iframe.style.borderRadius = options.borderRadius || "16px";
+    iframe.style.backgroundColor = "#050611";
+    iframe.setAttribute("allowfullscreen", "true");
+    iframe.setAttribute("allow", "autoplay; encrypted-media; fullscreen; picture-in-picture");
+    iframe.setAttribute("title", "NeliTv Player - " + channel);
+
+    el.innerHTML = "";
+    el.appendChild(iframe);
+
+    this.iframe = iframe;
+    this.channel = channel;
+    this.baseUrl = baseUrl;
+    this.reload = function() {
+      iframe.src = iframe.src;
+    };
+    this.changeChannel = function(newChannel) {
+      channel = newChannel;
+      this.channel = newChannel;
+      iframe.src = buildEmbedSrc(newChannel);
+    };
+    this.destroy = function() {
+      if (iframe && iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    };
+  }
+
+  window.NeliTvPlayer = NeliTvPlayer;
+})(window, document);
+`;
+  res.send(sdkCode);
+}
+
+app.get('/api/v1/player/sdk.js', servePlayerSdk);
+app.get('/api/developer/player-sdk.js', servePlayerSdk);
+
+// 5.0g PLAYER API Index
+app.get(['/api/v1/player', '/api/v1/player/'], (req: Request, res: Response) => {
+  const apiKey = extractApiKeyFromReq(req);
+  const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
+
+  res.json({
+    success: true,
+    pricing: 'free',
+    provider: 'NeliTv',
+    baseUrl: PUBLIC_SITE_URL,
+    sdkUrl: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`,
+    playbackRestriction: 'Direct raw stream URLs are disabled. All playback must run through the NeliTv Player API / Embed.',
+    exampleUsage: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd${keyParam}`,
+    players: CHANNELS_DATA.slice(0, 20).map((ch) => {
+      const slug = getChannelRouteSlug(ch);
+      return {
+        id: ch.id,
+        slug,
+        name: ch.name,
+        playerApiUrl: `${PUBLIC_SITE_URL}/api/v1/player/${slug}${keyParam}`,
+        embedUrl: `${PUBLIC_SITE_URL}/embed/${slug}${keyParam}`
+      };
+    })
+  });
+});
+
+// 5.0h PLAYER API Single Channel Embed & Player Config
+app.get('/api/v1/player/:slug', (req: Request, res: Response) => {
+  const apiKey = extractApiKeyFromReq(req);
+  const channel = findChannelFromRoute(req.params.slug, CHANNELS_DATA);
+  if (!channel) {
+    return res.status(404).json({
+      success: false,
+      error: 'Kituo hakijapatikana kwenye Player API',
+      playerIndex: `${PUBLIC_SITE_URL}/api/v1/player`
+    });
+  }
+
+  const autoplay = req.query.autoplay !== '0' && req.query.autoplay !== 'false';
+  const muted = req.query.muted === '1' || req.query.muted === 'true';
+  const width = typeof req.query.width === 'string' ? req.query.width : '100%';
+  const height = typeof req.query.height === 'string' ? req.query.height : '480px';
+
+  res.json(
+    buildPlayerApiPayload(channel, {
+      autoplay,
+      muted,
+      width,
+      height,
+      apiKey: apiKey || undefined
+    })
+  );
+});
+
+// Block any attempt to access raw streams outside NeliTv Player / API
+app.all(['/api/v1/stream', '/api/v1/stream/*', '/api/stream', '/api/stream/*'], (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: 'Streams are not accessible outside the official NeliTv Player & API.',
+    playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd`,
+    contentApi: `${PUBLIC_SITE_URL}/api/v1/content`
+  });
+});
+
+// 5.1 Developer Plans (100% Free Now)
+app.get('/api/developer/plans', (_req: Request, res: Response) => {
+  res.json({ success: true, pricing: 'free', plans: DEVELOPER_API_PLANS });
+});
+
+// 5.2 Developer Auth / Sign-in (Free Unlimited API Access automatically)
 app.post('/api/developer/auth/login', (req: Request, res: Response) => {
   const { email, password, googleUser } = req.body;
   if (!email || typeof email !== 'string') {
@@ -1237,7 +1694,6 @@ app.post('/api/developer/auth/login', (req: Request, res: Response) => {
 
   const cleanEmail = email.trim().toLowerCase();
 
-  // Test Account VIP Auto-Login: adminapi@login.com / 123Free
   if (cleanEmail === 'adminapi@login.com') {
     if (password && password !== '123Free') {
       return res.status(401).json({ success: false, error: 'Nenosiri la akaunti ya adminapi si sahihi. Tumia: 123Free' });
@@ -1245,21 +1701,22 @@ app.post('/api/developer/auth/login', (req: Request, res: Response) => {
     const adminDev = developerUsersStore['adminapi@login.com'];
     return res.json({
       success: true,
-      message: 'Umeingia kama Admin API Developer (Lifetime VIP)!',
+      message: 'Umeingia kama Admin API Developer (Free Unlimited)!',
       user: adminDev
     });
   }
 
   let devUser = developerUsersStore[cleanEmail];
   if (!devUser) {
-    // Auto-create new developer account
     devUser = {
       id: `dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       email: cleanEmail,
       password: password || 'oauth_google',
       name: googleUser?.displayName || cleanEmail.split('@')[0],
       apiKey: generateDeveloperApiKey(),
-      isSubscribed: false,
+      isSubscribed: true,
+      subscriptionPlan: 'plan_api_free',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
       createdAt: new Date().toISOString()
     };
     developerUsersStore[cleanEmail] = devUser;
@@ -1268,11 +1725,16 @@ app.post('/api/developer/auth/login', (req: Request, res: Response) => {
     if (password && devUser.password && devUser.password !== 'oauth_google' && devUser.password !== password) {
       return res.status(401).json({ success: false, error: 'Nenosiri si sahihi' });
     }
+    devUser.isSubscribed = true;
+    devUser.subscriptionPlan = 'plan_api_free';
+    devUser.subscriptionExpiresAt = '2099-12-31T23:59:59.000Z';
+    if (!devUser.apiKey) devUser.apiKey = generateDeveloperApiKey();
+    persistData();
   }
 
   res.json({
     success: true,
-    message: 'Umeingia kikamilifu kwenye NeliTv Developer Portal',
+    message: 'Umeingia kikamilifu — API ni 100% Bure!',
     user: devUser
   });
 });
@@ -1293,443 +1755,91 @@ app.get('/api/developer/profile', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: 'Mtumiaji wa API hajapatikana' });
   }
 
-  const now = Date.now();
-  const isActive = Boolean(
-    (devUser.email === 'adminapi@login.com') ||
-    (devUser.isSubscribed && devUser.subscriptionExpiresAt && new Date(devUser.subscriptionExpiresAt).getTime() > now)
-  );
-
+  devUser.isSubscribed = true;
   res.json({
     success: true,
     user: devUser,
-    isActive,
-    remainingSeconds: devUser.subscriptionExpiresAt ? Math.max(0, Math.floor((new Date(devUser.subscriptionExpiresAt).getTime() - now) / 1000)) : 0
+    isActive: true,
+    pricing: 'free'
   });
 });
 
-// 5.4 Generate or Regenerate API Key
+// 5.4 Generate or Regenerate Free API Key (No payment required!)
 app.post('/api/developer/keys/generate', (req: Request, res: Response) => {
-  const { email } = req.body;
-  if (!email || !developerUsersStore[email.trim().toLowerCase()]) {
-    return res.status(400).json({ success: false, error: 'Tafadhali ingia kwanza kwenye akaunti ya API' });
+  const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const cleanEmail = rawEmail || `dev_${Date.now()}@nelitv.online`;
+
+  let devUser = developerUsersStore[cleanEmail];
+  if (!devUser) {
+    devUser = {
+      id: `dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      email: cleanEmail,
+      name: cleanEmail.split('@')[0],
+      apiKey: generateDeveloperApiKey(),
+      isSubscribed: true,
+      subscriptionPlan: 'plan_api_free',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
+      createdAt: new Date().toISOString()
+    };
+    developerUsersStore[cleanEmail] = devUser;
+  } else {
+    devUser.isSubscribed = true;
+    devUser.subscriptionPlan = 'plan_api_free';
+    devUser.subscriptionExpiresAt = '2099-12-31T23:59:59.000Z';
+    devUser.apiKey = generateDeveloperApiKey();
   }
-
-  const cleanEmail = email.trim().toLowerCase();
-  const devUser = developerUsersStore[cleanEmail];
-
-  const now = Date.now();
-  const isPaid = Boolean(
-    cleanEmail === 'adminapi@login.com' ||
-    (devUser.isSubscribed && devUser.subscriptionExpiresAt && new Date(devUser.subscriptionExpiresAt).getTime() > now)
-  );
-
-  if (!isPaid) {
-    return res.status(402).json({
-      success: false,
-      requirePayment: true,
-      error: 'Unahitaji kulipia kifurushi cha API (50,000 Tsh/Mwezi au 1,000,000 Tsh/Mwaka) ili kuzalisha API Key inayofanya kazi.',
-      plans: DEVELOPER_API_PLANS
-    });
-  }
-
-  devUser.apiKey = generateDeveloperApiKey();
   persistData();
 
   res.json({
     success: true,
-    message: 'API Key mpya imezalishwa kikamilifu!',
+    pricing: 'free',
+    message: 'API Key mpya ya bure imezalishwa kikamilifu!',
     apiKey: devUser.apiKey,
     user: devUser
   });
 });
 
-// 5.5 Developer API Payment Initiation (50k / month or 1M / year)
-app.post('/api/developer/payment/collect', async (req: Request, res: Response) => {
-  try {
-    const { email, phone, planId } = req.body;
-    if (!email || !phone) {
-      return res.status(400).json({ success: false, error: 'Email na Namba ya simu zinahitajika' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = normalizePhone(phone);
-    const plan = DEVELOPER_API_PLANS.find(p => p.id === planId) || DEVELOPER_API_PLANS[0];
-
-    const host = req.get('host') || 'localhost:3000';
-    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const webhookUrl = `${protocol}://${host}/api/harakapay/webhook`;
-
-    console.log(`[Developer API Collect] Email=${cleanEmail}, Phone=${cleanPhone}, Amount=${plan.priceTsh}`);
-
-    const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/collect`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': HARAKAPAY_API_KEY
-      },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        amount: plan.priceTsh,
-        description: `NeliTv API License: ${plan.name} (${cleanEmail})`,
-        webhook_url: webhookUrl
-      })
-    });
-
-    const data: any = await response.json();
-    console.log('[Developer API HarakaPay Response]', data);
-
-    if (data.success && data.order_id) {
-      const record: PaymentRecord = {
-        orderId: data.order_id,
-        phone: cleanPhone,
-        amount: data.amount || plan.priceTsh,
-        planId: plan.id,
-        planName: plan.name,
-        durationDays: plan.durationDays,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        rawResponse: { ...data, isDeveloperApi: true, developerEmail: cleanEmail, bonusAppDays: plan.bonusAppDays }
-      };
-
-      paymentsStore[data.order_id] = record;
-      persistData();
-
-      // Log into Supabase nelitv_payments if available
-      if (supabase) {
-        try {
-          await supabase.from('nelitv_payments').upsert({
-            order_id: data.order_id,
-            phone_number: cleanPhone,
-            amount: plan.priceTsh,
-            plan_id: plan.id,
-            status: 'pending',
-            payment_method: 'harakapay_api_license',
-            created_at: new Date().toISOString()
-          }, { onConflict: 'order_id' });
-        } catch {}
-      }
-
-      return res.json({
-        success: true,
-        orderId: data.order_id,
-        amount: plan.priceTsh,
-        message: 'Ombi la USSD limetumwa kwenye simu yako! Tafadhali weka PIN ya malipo sasa.',
-        plan
-      });
-    }
-
-    return res.status(400).json({
-      success: false,
-      error: data.message || 'Haikuweza kuanzisha malipo. Hakikisha simu iko hewani na ina salio la kutosha.'
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 5.6 Developer API Payment Verification & Bonus App VIP Activation
-app.post('/api/developer/payment/verify', async (req: Request, res: Response) => {
-  const { orderId, email, phone, planId } = req.body;
-  if (!orderId || !email) {
-    return res.status(400).json({ success: false, error: 'OrderId na Email zinahitajika' });
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanPhone = normalizePhone(phone || '');
-  const plan = DEVELOPER_API_PLANS.find(p => p.id === planId) || DEVELOPER_API_PLANS[0];
-
-  try {
-    const localRecord = paymentsStore[orderId];
-    let isCompleted = Boolean(localRecord && localRecord.status === 'completed');
-
-    try {
-      const response = await fetch(`${HARAKAPAY_BASE_URL}/api/v1/status/${orderId}`, {
-        headers: { 'X-API-Key': HARAKAPAY_API_KEY }
-      });
-      const data: any = await response.json();
-      console.log(`[Developer API Verify] orderId=${orderId}, status=${data?.payment?.status || data?.status}`);
-      if ((data && data.success && data.payment && data.payment.status === 'completed') || (data && data.status === 'completed')) {
-        isCompleted = true;
-      }
-    } catch (netErr: any) {
-      console.warn('[Developer Verify Net Error]', netErr.message);
-    }
-
-    if (isCompleted) {
-      const now = Date.now();
-      const devDays = plan.durationDays;
-      const bonusDays = plan.bonusAppDays;
-
-      // 1. Activate Developer Subscription
-      let devUser = developerUsersStore[cleanEmail];
-      if (!devUser) {
-        devUser = {
-          id: `dev_${Date.now()}`,
-          email: cleanEmail,
-          apiKey: generateDeveloperApiKey(),
-          isSubscribed: true,
-          createdAt: new Date().toISOString()
-        };
-        developerUsersStore[cleanEmail] = devUser;
-      }
-
-      devUser.isSubscribed = true;
-      devUser.subscriptionPlan = plan.id;
-      devUser.phone = cleanPhone || devUser.phone;
-      devUser.subscriptionExpiresAt = new Date(now + devDays * 24 * 60 * 60 * 1000).toISOString();
-      if (!devUser.apiKey) {
-        devUser.apiKey = generateDeveloperApiKey();
-      }
-
-      // 2. Grant Bonus App VIP Pass (90 days for 50k, 365 days for 1M)
-      if (cleanPhone) {
-        let appUser = usersStore[cleanPhone];
-        if (!appUser) {
-          appUser = {
-            phone: cleanPhone,
-            createdDate: new Date().toISOString(),
-            lastActive: new Date().toISOString(),
-            trialSecondsUsed: 60,
-            trialCompleted: true,
-            isSubscribed: true
-          };
-          usersStore[cleanPhone] = appUser;
-        }
-
-        const bonusExpiry = new Date(now + bonusDays * 24 * 60 * 60 * 1000).toISOString();
-        appUser.isSubscribed = true;
-        appUser.subscriptionPlan = plan.id === 'plan_api_yearly' ? 'VIP Pass (Mwaka 1 Bure - API Subscriber)' : 'VIP Pass (Miezi 3 Bure - API Subscriber)';
-        appUser.subscriptionExpiresAt = bonusExpiry;
-
-        // Also sync into Supabase nelitv_subscriptions
-        if (supabase) {
-          try {
-            await supabase.from('nelitv_subscriptions').upsert({
-              phone_number: cleanPhone,
-              user_email: cleanEmail,
-              plan_id: plan.id === 'plan_api_yearly' ? 'api_bonus_1year' : 'api_bonus_3months',
-              plan_name: appUser.subscriptionPlan,
-              premium_status: 'active',
-              expires_at: bonusExpiry,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'phone_number' });
-          } catch (e: any) {
-            console.warn('[Supabase API bonus sync err]', e.message);
-          }
-        }
-      }
-
-      if (paymentsStore[orderId]) {
-        paymentsStore[orderId].status = 'completed';
-        paymentsStore[orderId].completedAt = new Date().toISOString();
-      }
-      persistData();
-
-      return res.json({
-        success: true,
-        verified: true,
-        message: `Malipo ya API yamethibitishwa! Umepewa API Key na ziada ya ${plan.bonusAppDays === 365 ? 'Mwaka 1 Mzima' : 'Miezi 3'} Bure kwenye NeliTv App!`,
-        developer: devUser,
-        bonusAppDays: plan.bonusAppDays,
-        phone: cleanPhone
-      });
-    }
-
-    return res.json({
-      success: true,
-      verified: false,
-      message: 'Malipo bado hayajakamilika. Tafadhali ingiza PIN kwenye simu yako kisha bonyeza Nimelipa tena.'
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 5.7 Developer Live Stream API (JSON of live channels with tokenized stream URLs)
-app.get('/api/developer/channels', async (req: Request, res: Response) => {
+// 5.7 Developer Content API Alias (Safe metadata + NeliTv Player URLs ONLY — no raw stream leaks!)
+app.get('/api/developer/channels', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
 
-  const apiKey = (
-    req.headers['x-neli-api-key'] ||
-    req.headers['authorization']?.replace('Bearer ', '') ||
-    req.query.api_key
-  ) as string;
+  const apiKey = extractApiKeyFromReq(req);
+  const devUser = apiKey ? getDeveloperByApiKey(apiKey) : null;
 
-  const devUser = getDeveloperByApiKey(apiKey);
-  if (!devUser) {
-    return res.status(401).json({
-      success: false,
-      error: 'API Key haijathibitishwa, haipo, au muda wake umekwisha. Tafadhali pata API Key halali kwenye /api',
-      portalUrl: '/api'
-    });
-  }
-
-  const tokenData = await getOrFetchCdnToken();
-  const host = tokenData.cdnHost.replace(/\/+$/, '');
-
-  const liveChannels = CHANNELS_DATA.map(ch => {
-    const isAzam = ch.isAzam || ch.streamUrl.includes('azamtvltd.co.tz');
-    if (!isAzam) return ch;
-
-    let p = ch.streamUrl;
-    try {
-      const u = new URL(ch.streamUrl);
-      p = u.pathname.replace(/^\/tok_[^/]+/, '');
-    } catch {}
-    if (!p.startsWith('/')) p = `/${p}`;
-
-    const freshUrl = `${host}/tok_${tokenData.token}${p}?cdntoken=${encodeURIComponent(tokenData.token)}`;
-    return {
-      id: ch.id,
-      name: ch.name,
-      category: ch.category,
-      streamUrl: freshUrl,
-      streamFormat: ch.streamFormat,
-      thumbnailUrl: ch.thumbnailUrl,
-      viewerCount: ch.viewerCount,
-      currentProgram: ch.currentProgram,
-      nextProgram: ch.nextProgram,
-      embedUrl: `/embed/${ch.id}`
-    };
-  });
+  const safeChannels = CHANNELS_DATA.map((ch) => toSafeContentItem(ch, apiKey || undefined));
 
   res.json({
     success: true,
     status: 'online',
-    developer: {
-      email: devUser.email,
-      plan: devUser.subscriptionPlan,
-      expiresAt: devUser.subscriptionExpiresAt
+    pricing: 'free',
+    baseUrl: PUBLIC_SITE_URL,
+    playbackPolicy: 'nelitv-player-only',
+    developer: devUser
+      ? {
+          email: devUser.email,
+          plan: 'NeliTv Free API'
+        }
+      : { plan: 'NeliTv Free Public API' },
+    totalChannels: safeChannels.length,
+    endpoints: {
+      contentApi: `${PUBLIC_SITE_URL}/api/v1/content`,
+      playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd`,
+      playerSdk: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`
     },
-    totalChannels: liveChannels.length,
-    cdnTokenExpiresIn: tokenData.exp,
-    channels: liveChannels
+    channels: safeChannels
   });
 });
 
-// 5.8 Developer CDN Token Provider
-app.get('/api/developer/cdn-token', async (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  const apiKey = (
-    req.headers['x-neli-api-key'] ||
-    req.headers['authorization']?.replace('Bearer ', '') ||
-    req.query.api_key
-  ) as string;
-
-  const devUser = getDeveloperByApiKey(apiKey);
-  if (!devUser) {
-    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or expired API Key' });
-  }
-
-  const tokenData = await getOrFetchCdnToken();
-  res.json({
-    success: true,
-    token: tokenData.token,
-    cdnHost: tokenData.cdnHost,
-    exp: tokenData.exp,
-    source: tokenData.source
+// 5.8 Block Raw CDN Token Endpoint outside NeliTv Player
+app.get('/api/developer/cdn-token', (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: 'Raw CDN tokens are restricted and not accessible outside NeliTv Player. Use NeliTv Player API or SDK instead.',
+    playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd`,
+    playerSdk: `${PUBLIC_SITE_URL}/api/v1/player/sdk.js`
   });
-});
-
-// 5.9 Player SDK JavaScript Distribution for Third-Party Websites
-app.get('/api/developer/player-sdk.js', (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-
-  const host = req.get('host') || 'nelitv.online';
-  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  const baseUrl = `${protocol}://${host}`;
-
-  const sdkCode = `
-/**
- * NeliTv Player SDK v1.0
- * Embed NeliTv Live TV & Sports anywhere easily.
- * https://nelitv.online/api
- */
-(function(window, document) {
-  function NeliTvPlayer(target, options) {
-    options = options || {};
-    var channel = options.channel || 'azam-sports-1-hd';
-    var width = options.width || '100%';
-    var height = options.height || '480px';
-    var autoplay = options.autoplay !== false;
-
-    var el = typeof target === 'string' ? document.querySelector(target) : target;
-    if (!el) {
-      console.error('[NeliTvPlayer] Target element not found:', target);
-      return;
-    }
-
-    var iframe = document.createElement('iframe');
-    var embedUrl = "${baseUrl}/embed/" + encodeURIComponent(channel) + "?autoplay=" + (autoplay ? '1' : '0');
-    if (options.apiKey) embedUrl += '&api_key=' + encodeURIComponent(options.apiKey);
-
-    iframe.src = embedUrl;
-    iframe.style.width = width;
-    iframe.style.height = height;
-    iframe.style.border = 'none';
-    iframe.style.borderRadius = options.borderRadius || '16px';
-    iframe.style.backgroundColor = '#000';
-    iframe.setAttribute('allowfullscreen', 'true');
-    iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
-
-    el.innerHTML = '';
-    el.appendChild(iframe);
-
-    this.iframe = iframe;
-    this.reload = function() { iframe.src = iframe.src; };
-    this.changeChannel = function(newChannel) {
-      channel = newChannel;
-      iframe.src = "${baseUrl}/embed/" + encodeURIComponent(channel) + "?autoplay=1";
-    };
-  }
-
-  window.NeliTvPlayer = NeliTvPlayer;
-})(window, document);
-`;
-  res.send(sdkCode);
-});
-
-// 5.5 Stream Proxy Fallback (Bypasses any ISP / client blocking or CORS restrictions)
-app.get('/api/proxy-stream', async (req: Request, res: Response) => {
-  const targetUrl = req.query.url as string;
-  if (!targetUrl || !targetUrl.startsWith('http')) {
-    return res.status(400).send('Invalid url parameter');
-  }
-
-  try {
-    const upstreamRes = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        ...(req.headers.range ? { Range: req.headers.range as string } : {})
-      }
-    });
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Date');
-    const contentType = upstreamRes.headers.get('content-type') || 'application/dash+xml';
-    res.setHeader('Content-Type', contentType);
-    if (upstreamRes.headers.get('content-length')) {
-      res.setHeader('Content-Length', upstreamRes.headers.get('content-length')!);
-    }
-    if (upstreamRes.headers.get('accept-ranges')) {
-      res.setHeader('Accept-Ranges', upstreamRes.headers.get('accept-ranges')!);
-    }
-    if (upstreamRes.headers.get('content-range')) {
-      res.setHeader('Content-Range', upstreamRes.headers.get('content-range')!);
-    }
-
-    res.status(upstreamRes.status);
-    const arrayBuffer = await upstreamRes.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
-  } catch (err: any) {
-    res.status(502).send('Proxy error: ' + err.message);
-  }
 });
 
 // 6. HarakaPay Collect Payment (USSD Push)

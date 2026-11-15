@@ -1,21 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  Code, Key, Lock, ShieldCheck, Zap, Copy, Check, Terminal,
-  ExternalLink, ArrowLeft, RefreshCw, Smartphone, Mail, AlertTriangle,
-  Play, Sparkles, Layers, Globe, LogOut, CheckCircle2, Eye, EyeOff
+  Code, Key, ShieldCheck, Copy, Check, Terminal,
+  ArrowLeft, RefreshCw, AlertTriangle, Play, Layers,
+  LogOut, CheckCircle2, Eye, EyeOff, Tv, Sparkles
 } from 'lucide-react';
-import { Channel, CHANNELS_DATA } from '../data/channels.ts';
+import { CHANNELS_DATA } from '../data/channels.ts';
+import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 
 interface DeveloperSession {
   id: string;
   email: string;
   name?: string;
-  phone?: string;
   apiKey: string;
   isSubscribed: boolean;
   subscriptionPlan?: string;
-  subscriptionExpiresAt?: string;
   createdAt: string;
 }
 
@@ -24,13 +23,14 @@ interface ApiPortalPageProps {
   onNavigateToEmbed?: () => void;
 }
 
+const BASE_LINK = 'https://nelitv.online';
+
 export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   onBack,
   onNavigateToEmbed
 }) => {
   const { user: appUser, loginWithGoogle } = useAuth();
 
-  // Independent API Developer authentication state
   const [session, setSession] = useState<DeveloperSession | null>(() => {
     try {
       const saved = localStorage.getItem('nelitv_api_dev_session');
@@ -47,42 +47,23 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
 
-  // Key & Payment state
-  const [showKeySecret, setShowKeySecret] = useState<boolean>(false);
+  const [showKeySecret, setShowKeySecret] = useState<boolean>(true);
   const [copiedKey, setCopiedKey] = useState<boolean>(false);
   const [isGeneratingKey, setIsGeneratingKey] = useState<boolean>(false);
   const [keySuccessMsg, setKeySuccessMsg] = useState<string | null>(null);
 
-  // Payment modal state
-  const [showPayModal, setShowPayModal] = useState<boolean>(false);
-  const [selectedPlanId, setSelectedPlanId] = useState<'plan_api_monthly' | 'plan_api_yearly'>('plan_api_monthly');
-  const [paymentPhone, setPaymentPhone] = useState<string>(() => {
-    try {
-      return localStorage.getItem('nelitv_user_phone') || localStorage.getItem('nelitv_phone') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [isPaying, setIsPaying] = useState<boolean>(false);
-  const [isVerifyingNow, setIsVerifyingNow] = useState<boolean>(false);
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [payError, setPayError] = useState<string | null>(null);
-  const [paySuccessMsg, setPaySuccessMsg] = useState<string | null>(null);
-
-  // Live API Sandbox state
+  // Sandbox tester state
+  const [sandboxChannelSlug, setSandboxChannelSlug] = useState<string>(
+    getChannelRouteSlug(CHANNELS_DATA[0])
+  );
+  const [sandboxEndpoint, setSandboxEndpoint] = useState<'content' | 'player' | 'categories'>('content');
   const [sandboxResult, setSandboxResult] = useState<any | null>(null);
   const [isSandboxTesting, setIsSandboxTesting] = useState<boolean>(false);
   const [activeCodeTab, setActiveCodeTab] = useState<'curl' | 'js' | 'python' | 'php'>('curl');
+  const [showPlayerPreview, setShowPlayerPreview] = useState<boolean>(true);
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nelitv.online';
+  const activeApiKey = session?.apiKey || 'neli_free_public_demo';
 
-  const isFreeAdmin = session?.email === 'adminapi@login.com';
-  const hasActiveLicense = Boolean(
-    session &&
-    (isFreeAdmin || (session.isSubscribed && session.subscriptionExpiresAt && new Date(session.subscriptionExpiresAt).getTime() > Date.now()))
-  );
-
-  // Save session to localStorage
   const updateSession = (newSession: DeveloperSession | null) => {
     setSession(newSession);
     try {
@@ -94,7 +75,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     } catch {}
   };
 
-  // Login handler with email & password
+  // Sign in / Register developer (100% Free Unlimited)
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
@@ -128,12 +109,10 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     }
   };
 
-  // Google Sign-In Handler
   const handleGoogleSignIn = async () => {
     setIsAuthLoading(true);
     setAuthError(null);
     try {
-      // If already logged in to NeliTv with Google email
       if (appUser && appUser.email) {
         const res = await fetch('/api/developer/auth/login', {
           method: 'POST',
@@ -188,138 +167,47 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     }
   };
 
-  // Generate or Regenerate API Key
-  const handleGenerateKey = async () => {
-    if (!session) return;
-    if (!hasActiveLicense) {
-      setShowPayModal(true);
-      return;
-    }
-
+  // Instant Free API Key generator (works even without logging in first!)
+  const handleInstantFreeKey = async () => {
     setIsGeneratingKey(true);
     setKeySuccessMsg(null);
-
+    setAuthError(null);
     try {
-      const res = await fetch('/api/developer/keys/generate', {
+      const res = await fetch('/api/v1/keys/free', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: session.email })
+        body: JSON.stringify({
+          email: session?.email || appUser?.email || emailInput.trim() || undefined,
+          regenerate: Boolean(session)
+        })
       });
       const data = await res.json();
       if (data.success && data.user) {
         updateSession(data.user);
-        setKeySuccessMsg('✓ API Key mpya imezalishwa kikamilifu!');
+        setKeySuccessMsg('API Key mpya ya bure imetengenezwa kikamilifu!');
         setTimeout(() => setKeySuccessMsg(null), 4000);
-      } else if (data.requirePayment) {
-        setShowPayModal(true);
       }
     } catch {
-      alert('Hitilafu ya mtandao');
+      setAuthError('Hitilafu ya mtandao wakati wa kutengeneza API Key.');
     } finally {
       setIsGeneratingKey(false);
     }
   };
 
-  // Centralized Order Verification helper
-  const verifyOrder = async (orderIdToCheck: string) => {
-    if (!orderIdToCheck || !session) return false;
-    try {
-      const res = await fetch('/api/developer/payment/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: orderIdToCheck,
-          email: session.email,
-          phone: paymentPhone.trim(),
-          planId: selectedPlanId
-        })
-      });
-      const data = await res.json();
-      if (data.success && data.verified && data.developer) {
-        updateSession(data.developer);
-        setIsPaying(false);
-        setActiveOrderId(null);
-        setShowPayModal(false);
-        setKeySuccessMsg(`✓ Hongera! Malipo ya API yamethibitishwa! API Key yako imewashwa na pia umepewa ${data.bonusAppDays === 365 ? 'Mwaka 1 Mzima' : 'Miezi 3'} Bure ya VIP kwenye NeliTv App!`);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Status poll err', err);
-    }
-    return false;
-  };
-
-  // Manual Verify Button trigger
-  const handleManualVerify = async () => {
-    if (!activeOrderId) return;
-    setIsVerifyingNow(true);
-    setPayError(null);
-    const completed = await verifyOrder(activeOrderId);
-    if (!completed) {
-      setPayError('Malipo bado yanachakatwa. Hakikisha umeweka PIN kwenye simu yako kisha bonyeza tena.');
-    }
-    setIsVerifyingNow(false);
-  };
-
-  // Initiate HarakaPay API License Payment
-  const handleStartPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = paymentPhone.replace(/\D/g, '');
-    if (clean.length < 9 || !session) {
-      setPayError('Tafadhali weka namba sahihi ya simu (mfano: 0712345678)');
-      return;
-    }
-
-    try {
-      localStorage.setItem('nelitv_user_phone', paymentPhone.trim());
-    } catch {}
-
-    setIsPaying(true);
-    setPayError(null);
-    setPaySuccessMsg(null);
-
-    try {
-      const res = await fetch('/api/developer/payment/collect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: session.email,
-          phone: paymentPhone.trim(),
-          planId: selectedPlanId
-        })
-      });
-      const data = await res.json();
-      if (data.success && data.orderId) {
-        setActiveOrderId(data.orderId);
-        setPaySuccessMsg(data.message || 'Ombi la USSD limetumwa kwenye simu yako! Weka PIN sasa.');
-      } else {
-        setPayError(data.error || 'Imeshindikana kuanzisha malipo. Hakikisha simu ina salio na iko hewani.');
-        setIsPaying(false);
-      }
-    } catch {
-      setPayError('Hitilafu ya mtandao. Jaribu tena.');
-      setIsPaying(false);
-    }
-  };
-
-  // Poll status of payment order in background
-  useEffect(() => {
-    if (!activeOrderId || !session) return;
-
-    const interval = setInterval(async () => {
-      const done = await verifyOrder(activeOrderId);
-      if (done) clearInterval(interval);
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [activeOrderId, session, paymentPhone, selectedPlanId]);
-
-  // Test Live Sandbox
-  const handleTestSandbox = async () => {
-    if (!session?.apiKey) return;
+  const handleTestSandbox = async (mode: 'content' | 'player' | 'categories' = sandboxEndpoint) => {
+    setSandboxEndpoint(mode);
     setIsSandboxTesting(true);
     try {
-      const res = await fetch(`/api/developer/channels?api_key=${encodeURIComponent(session.apiKey)}`);
+      const targetPath =
+        mode === 'categories'
+          ? '/api/v1/content/categories'
+          : mode === 'player'
+          ? `/api/v1/player/${encodeURIComponent(sandboxChannelSlug)}?api_key=${encodeURIComponent(activeApiKey)}`
+          : `/api/v1/content/${encodeURIComponent(sandboxChannelSlug)}?api_key=${encodeURIComponent(activeApiKey)}`;
+
+      const res = await fetch(targetPath, {
+        headers: { 'X-Neli-Api-Key': activeApiKey }
+      });
       const data = await res.json();
       setSandboxResult(data);
     } catch (err: any) {
@@ -330,40 +218,39 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   };
 
   const copyKeyToClipboard = () => {
-    if (!session?.apiKey) return;
-    navigator.clipboard.writeText(session.apiKey);
+    navigator.clipboard.writeText(activeApiKey);
     setCopiedKey(true);
     setTimeout(() => setCopiedKey(false), 2500);
   };
 
-  // Expiry calculation
-  const expiryDate = session?.subscriptionExpiresAt ? new Date(session.subscriptionExpiresAt) : null;
-  const daysRemaining = expiryDate ? Math.max(0, Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
-
   return (
-    <div className="min-h-screen bg-[#070A0F] text-neutral-200 py-8 px-4 sm:px-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#050611] text-slate-200 py-8 px-4 sm:px-8 pb-24 md:pb-14">
+      <div className="max-w-6xl mx-auto space-y-7">
         {/* Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-purple-500/20">
           <div className="flex items-center gap-3">
             {onBack && (
               <button
                 onClick={onBack}
-                className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition cursor-pointer"
+                className="p-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/30 text-slate-200 hover:text-white transition cursor-pointer"
                 aria-label="Rudi Nyuma"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-5 h-5 text-cyan-400" />
               </button>
             )}
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <Terminal className="w-6 h-6 text-cyan-400" />
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  NeliTv Developer Platform (API & SDK)
+                  NeliTv <span className="neli-gradient-text">Content &amp; Player API</span>
                 </h1>
+                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[11px] font-extrabold">
+                  100% BURE
+                </span>
               </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                Player API, Live Stream JSON APIs na DRM Token Decryption kwa ajili ya tovuti na mifumo ya nje
+              <p className="text-xs text-slate-400 mt-1">
+                Content API, Official Player API &amp; SDK — endpoint zote zinatumia{' '}
+                <strong className="text-cyan-300">{BASE_LINK}</strong> na stream zinacheza kupitia NeliTv Player pekee.
               </p>
             </div>
           </div>
@@ -372,9 +259,9 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
             {onNavigateToEmbed && (
               <button
                 onClick={onNavigateToEmbed}
-                className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/35 hover:border-cyan-400/60 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer"
               >
-                <Code className="w-3.5 h-3.5 text-pink-400" />
+                <Code className="w-3.5 h-3.5 text-[#ffb020]" />
                 <span>Embed Studio →</span>
               </button>
             )}
@@ -382,7 +269,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
             {session && (
               <button
                 onClick={() => updateSession(null)}
-                className="px-3 py-2 rounded-xl bg-neutral-900 hover:bg-red-950/60 border border-neutral-800 text-neutral-400 hover:text-red-400 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                className="px-3.5 py-2.5 rounded-xl bg-[#0b0e24] hover:bg-rose-950/60 border border-purple-500/30 text-slate-300 hover:text-rose-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Toka</span>
@@ -391,656 +278,396 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
           </div>
         </div>
 
-        {/* 1. AUTHENTICATION SECTION (If not logged in) */}
-        {!session ? (
-          <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
-            {/* Hero Card */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-[#0A1020] border border-cyan-500/30 shadow-2xl text-center space-y-4">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-cyan-500 to-pink-500 p-0.5 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                <div className="w-full h-full rounded-[14px] bg-[#0A1020] flex items-center justify-center">
-                  <Key className="w-7 h-7 text-cyan-400" />
-                </div>
+        {/* Security & Protection Rule Highlight */}
+        <div className="relative overflow-hidden p-5 rounded-2xl neli-card-surface border border-purple-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="pointer-events-none absolute -top-16 -left-16 w-48 h-48 rounded-full bg-[#ff1e8a]/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-16 right-0 w-48 h-48 rounded-full bg-[#00d4ff]/15 blur-3xl" />
+
+          <div className="relative z-10 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-400 shrink-0">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-sm sm:text-base font-black text-white">
+                API ni Bure Sasa — Stream Zimefungwa Nje ya NeliTv Player
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                Unaweza kuchukua orodha yote ya vituo kupitia <strong>Content API</strong> na kupata{' '}
+                <strong>Player API / SDK</strong> bila malipo yoyote. Viungo halisi vya video (<code>.mpd</code>,{' '}
+                <code>.m3u8</code>, ClearKeys &amp; CDN tokens) havipo hadharani na havikubali kucheza nje ya NeliTv Player (<code>403 Forbidden</code>).
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleInstantFreeKey}
+            disabled={isGeneratingKey}
+            className="relative z-10 px-5 py-3 rounded-xl neli-gradient-bg text-white font-extrabold text-xs shadow-[0_0_24px_rgba(255,30,138,0.4)] hover:brightness-110 flex items-center justify-center gap-2 transition active:scale-95 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{session ? 'Tengeneza API Key Mpya' : 'Pata Free API Key Papo Hapo'}</span>
+          </button>
+        </div>
+
+        {/* Free API Key Box + Optional Developer Account */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left: API Key Display */}
+          <div className="lg:col-span-7 p-6 rounded-3xl neli-card-surface border border-purple-500/30 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
+                  {session ? `API Key Yako (${session.email})` : 'API Key ya Bure (Public / Developer)'}
+                </h3>
               </div>
 
-              <div>
-                <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
-                  Karibu NeliTv API Developer Portal
-                </h2>
-                <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-md mx-auto">
-                  Akaunti hii ni maalum kwa ajili ya Developers na wamiliki wa tovuti (haitumii data za app ya kawaida).
-                </p>
-              </div>
-
-              {/* Google Sign In Button */}
               <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={isAuthLoading}
-                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-neutral-100 text-neutral-900 font-bold text-xs flex items-center justify-center gap-2.5 shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
+                onClick={() => setShowKeySecret(!showKeySecret)}
+                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Ingia kwa Akaunti ya Google</span>
+                {showKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span>{showKeySecret ? 'Ficha' : 'Onyesha'}</span>
               </button>
+            </div>
 
-              <div className="flex items-center gap-3 my-2 text-neutral-500 text-[11px]">
-                <div className="flex-1 h-px bg-neutral-800" />
-                <span>au kwa barua pepe & nenosiri</span>
-                <div className="flex-1 h-px bg-neutral-800" />
+            <div className="flex items-center gap-2">
+              <div className="flex-1 px-4 py-3 rounded-xl bg-[#04050e] border border-purple-500/25 font-mono text-xs sm:text-sm text-cyan-300 overflow-x-auto select-all">
+                {showKeySecret ? activeApiKey : '••••••••••••••••••••••••••••••••••••••••'}
               </div>
+              <button
+                onClick={copyKeyToClipboard}
+                className="px-4 py-3 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/35 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              >
+                {copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedKey ? 'Imenakiliwa' : 'Nakili'}</span>
+              </button>
+            </div>
 
-              {/* Form */}
-              <form onSubmit={handleAuthSubmit} className="space-y-3.5 text-left pt-2">
-                <div className="flex rounded-xl bg-neutral-950 p-1 border border-neutral-800">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('login')}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      authMode === 'login' ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
-                    }`}
+            {keySuccessMsg && (
+              <div className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{keySuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Endpoints Quick Table (All using https://nelitv.online) */}
+            <div className="pt-2 space-y-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Endpoints Zote ({BASE_LINK})
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs font-mono">
+                {[
+                  { tag: 'INDEX', color: 'text-slate-300 bg-white/5', url: `${BASE_LINK}/api/v1` },
+                  { tag: 'CONTENT', color: 'text-emerald-300 bg-emerald-500/15', url: `${BASE_LINK}/api/v1/content` },
+                  { tag: 'PLAYER', color: 'text-cyan-300 bg-cyan-500/15', url: `${BASE_LINK}/api/v1/player/${sandboxChannelSlug}` },
+                  { tag: 'SDK.JS', color: 'text-purple-300 bg-purple-500/20', url: `${BASE_LINK}/api/v1/player/sdk.js` },
+                  { tag: 'EMBED', color: 'text-[#ffb020] bg-amber-500/15', url: `${BASE_LINK}/embed/${sandboxChannelSlug}` },
+                ].map((ep) => (
+                  <div
+                    key={ep.tag}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#04050e] border border-purple-500/20 overflow-x-auto"
                   >
-                    Ingia (Sign In)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('register')}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      authMode === 'register' ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    Jisajili Mpya (Register)
-                  </button>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${ep.color}`}>
+                        {ep.tag}
+                      </span>
+                      <code className="text-[11px] text-slate-200 truncate">{ep.url}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Developer Account (Optional Sign-In for Saved Key) */}
+          <div className="lg:col-span-5 p-6 rounded-3xl neli-card-surface border border-purple-500/30 flex flex-col justify-between space-y-4">
+            {session ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl neli-gradient-bg flex items-center justify-center text-white font-black text-base">
+                    {(session.name || session.email).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">{session.name || session.email}</h3>
+                    <p className="text-xs text-slate-400 truncate">{session.email}</p>
+                  </div>
                 </div>
 
-                {authMode === 'register' && (
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-neutral-300">Jina Lako au Kampuni:</label>
+                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-400/30 text-xs text-emerald-300 space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Akaunti ya Bure (Unlimited Free API)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Una ufikiaji kamili wa Content API na Player API bila kikomo cha muda wala maombi.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleInstantFreeKey}
+                  disabled={isGeneratingKey}
+                  className="w-full py-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-cyan-400/45 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingKey ? 'animate-spin' : ''}`} />
+                  <span>Badilisha / Zalisha Key Mpya</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-black text-white">Hifadhi API Key Yako (Hiari)</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Ingia kwa Google au barua pepe ili kuhifadhi API Key yako binafsi bure.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isAuthLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-neutral-900 font-bold text-xs flex items-center justify-center gap-2 shadow transition cursor-pointer disabled:opacity-50"
+                >
+                  <span>Ingia kwa Google</span>
+                </button>
+
+                <form onSubmit={handleAuthSubmit} className="space-y-2.5">
+                  <div className="flex rounded-xl bg-[#04050e] p-1 border border-purple-500/20">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('login')}
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                        authMode === 'login' ? 'bg-[#5b21b6] text-white' : 'text-slate-400'
+                      }`}
+                    >
+                      Ingia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('register')}
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                        authMode === 'register' ? 'bg-[#5b21b6] text-white' : 'text-slate-400'
+                      }`}
+                    >
+                      Jisajili Bure
+                    </button>
+                  </div>
+
+                  {authMode === 'register' && (
                     <input
                       type="text"
                       value={nameInput}
                       onChange={(e) => setNameInput(e.target.value)}
-                      placeholder="Mfano: Alex Tech Ltd"
-                      className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 focus:border-cyan-500 focus:outline-none text-white text-xs"
+                      placeholder="Jina au Tovuti yako"
+                      className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
                     />
-                  </div>
-                )}
+                  )}
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-neutral-300">Barua Pepe (Email):</label>
                   <input
                     type="email"
                     required
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="developer@gmail.com"
-                    className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 focus:border-cyan-500 focus:outline-none text-white text-xs"
+                    placeholder="developer@example.com"
+                    className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
                   />
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-neutral-300">Nenosiri (Password):</label>
                   <input
                     type="password"
                     required
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Weka nenosiri..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 focus:border-cyan-500 focus:outline-none text-white text-xs"
+                    placeholder="Nenosiri"
+                    className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
                   />
-                </div>
 
-                {authError && (
-                  <div className="p-3 rounded-xl bg-red-950/40 border border-red-800 text-red-300 text-xs flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>{authError}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isAuthLoading}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  {isAuthLoading ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <span>{authMode === 'login' ? 'Ingia kwenye API Portal' : 'Kamilisha Usajili'}</span>
+                  {authError && (
+                    <div className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-[11px] flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{authError}</span>
+                    </div>
                   )}
-                </button>
-              </form>
-            </div>
-          </div>
-        ) : (
-          /* 2. DEVELOPER DASHBOARD (When Logged In) */
-          <div className="space-y-8 animate-fade-in">
-            {/* Top Developer Status Bar */}
-            <div className="p-6 rounded-3xl bg-neutral-900/90 border border-neutral-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                  <Key className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-black text-white">{session.name || session.email}</h2>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300">
-                      {session.email}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs mt-1">
-                    {hasActiveLicense ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[11px]">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Kifurushi Kipo Hai {isFreeAdmin ? '(VIP Lifetime)' : `(${daysRemaining} Siku Zimebaki)`}</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[11px]">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>Haijalipiwa (Bofya Kulipia kupata API Key)</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3 self-start md:self-auto">
-                {!hasActiveLicense && (
-                  <button
-                    onClick={() => setShowPayModal(true)}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-600 hover:from-pink-500 hover:to-amber-500 text-white font-black text-xs shadow-lg shadow-pink-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
-                  >
-                    <Zap className="w-4 h-4 fill-white" />
-                    <span>Lipia Kifurushi cha API Sasa</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={handleGenerateKey}
-                  disabled={isGeneratingKey}
-                  className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingKey ? 'animate-spin' : ''}`} />
-                  <span>{session.apiKey ? 'Regenerate API Key' : 'Generate API Key'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* API Key Box */}
-            <div className="p-6 rounded-3xl bg-[#090D18] border border-cyan-500/30 shadow-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Key className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    API Key Yako ya Siri (Secret API Key)
-                  </h3>
-                </div>
-
-                {hasActiveLicense && (
-                  <button
-                    onClick={() => setShowKeySecret(!showKeySecret)}
-                    className="text-xs text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                  >
-                    {showKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{showKeySecret ? 'Ficha' : 'Onyesha'}</span>
-                  </button>
-                )}
-              </div>
-
-              {hasActiveLicense && session.apiKey ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 px-4 py-3 rounded-xl bg-neutral-950 border border-neutral-800 font-mono text-xs sm:text-sm text-cyan-300 overflow-x-auto select-all">
-                    {showKeySecret ? session.apiKey : '••••••••••••••••••••••••••••••••••••••••'}
-                  </div>
-                  <button
-                    onClick={copyKeyToClipboard}
-                    className="px-4 py-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-                  >
-                    {copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedKey ? 'Imenakiliwa' : 'Nakili'}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-800/40 text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <span>
-                    API Key yako haijaamilishwa. Unahitaji kulipia kifurushi cha API (50,000 Tsh/Mwezi au 1,000,000 Tsh/Mwaka) kupata ufikiaji.
-                  </span>
-                  <button
-                    onClick={() => setShowPayModal(true)}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shrink-0 cursor-pointer shadow"
-                  >
-                    Lipia Sasa
-                  </button>
-                </div>
-              )}
-
-              {keySuccessMsg && (
-                <p className="text-xs text-emerald-400 font-semibold">{keySuccessMsg}</p>
-              )}
-            </div>
-
-            {/* Pricing / Plan Packages Card */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-amber-400" />
-                  <span>Vifurushi vya API & Ofa Maalum za NeliTv App</span>
-                </h3>
-                <span className="text-xs text-neutral-400">Lipia kwa Simu (M-Pesa / Tigo / Airtel)</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* 1. Monthly Plan */}
-                <div className="p-6 rounded-3xl bg-neutral-900 border border-cyan-800/40 hover:border-cyan-500 transition flex flex-col justify-between gap-5 relative overflow-hidden">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="px-3 py-1 rounded-full bg-cyan-950 text-cyan-300 font-mono text-[11px] font-bold border border-cyan-800">
-                        Monthly Pass
-                      </span>
-                      <span className="text-[11px] text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-800 px-2.5 py-0.5 rounded-full">
-                        + Miezi 3 Bure App VIP!
-                      </span>
-                    </div>
-
-                    <h4 className="text-lg font-bold text-white">Developer API Pro</h4>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-black font-mono text-cyan-400">50,000</span>
-                      <span className="text-xs text-neutral-400 font-bold">TZS / Mwezi</span>
-                    </div>
-
-                    <ul className="text-xs text-neutral-300 space-y-2 pt-2 border-t border-neutral-800">
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                        <span>Player API na NeliTv Web SDK</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                        <span>Live Stream REST API ya Vituo 45+</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                        <span>Dynamic CDN DRM Token Decryption</span>
-                      </li>
-                      <li className="flex items-center gap-2 text-emerald-400 font-semibold">
-                        <Sparkles className="w-4 h-4 shrink-0" />
-                        <span><strong>Zawadi:</strong> Miezi 3 ya Bure ya VIP kwenye NeliTv App!</span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPlanId('plan_api_monthly');
-                      setShowPayModal(true);
-                    }}
-                    className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg transition active:scale-95 cursor-pointer"
-                  >
-                    Lipia 50,000 TZS (Mwezi)
-                  </button>
-                </div>
-
-                {/* 2. Yearly Enterprise Plan */}
-                <div className="p-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-[#120B20] to-[#0A1020] border-2 border-pink-500/60 shadow-xl flex flex-col justify-between gap-5 relative overflow-hidden">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="px-3 py-1 rounded-full bg-pink-950 text-pink-300 font-mono text-[11px] font-bold border border-pink-800">
-                        Annual Enterprise
-                      </span>
-                      <span className="text-[11px] text-amber-300 font-bold bg-amber-950/80 border border-amber-600 px-2.5 py-0.5 rounded-full">
-                        ★ Mwaka 1 Bure App VIP!
-                      </span>
-                    </div>
-
-                    <h4 className="text-lg font-bold text-white">Developer API Enterprise</h4>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-black font-mono text-pink-400">1,000,000</span>
-                      <span className="text-xs text-neutral-400 font-bold">TZS / Mwaka Mzima</span>
-                    </div>
-
-                    <ul className="text-xs text-neutral-300 space-y-2 pt-2 border-t border-neutral-800">
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-pink-400 shrink-0" />
-                        <span>Ufikiaji wa Mwaka Mzima wa API & Streams</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-pink-400 shrink-0" />
-                        <span>Hakuna kikomo cha maombi ya API (Unlimited Requests)</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-pink-400 shrink-0" />
-                        <span>Support ya Kiufundi ya Moja kwa Moja 24/7</span>
-                      </li>
-                      <li className="flex items-center gap-2 text-amber-300 font-bold">
-                        <Sparkles className="w-4 h-4 shrink-0" />
-                        <span><strong>Zawadi Kubwa:</strong> Mwaka 1 Mzima Bure wa VIP NeliTv App!</span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setSelectedPlanId('plan_api_yearly');
-                      setShowPayModal(true);
-                    }}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-600 to-amber-600 hover:from-pink-500 hover:to-amber-500 text-white font-black text-xs shadow-lg shadow-pink-600/30 transition active:scale-95 cursor-pointer"
-                  >
-                    Lipia 1,000,000 TZS (Mwaka Mzima)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. API Sandbox / Live Tester */}
-            <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Play className="w-4 h-4 text-cyan-400" />
-                    <span>Jaribu API Yako Moja kwa Moja (Live Sandbox)</span>
-                  </h3>
-                  <p className="text-xs text-neutral-400">Pima muunganisho wa API Key yako kabla ya kuandika code.</p>
-                </div>
-
-                <button
-                  onClick={handleTestSandbox}
-                  disabled={isSandboxTesting || !session.apiKey}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSandboxTesting ? 'animate-spin' : ''}`} />
-                  <span>{isSandboxTesting ? 'Inapima...' : 'Tuma Ombi la Jaribio'}</span>
-                </button>
-              </div>
-
-              {sandboxResult && (
-                <pre className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 text-xs font-mono text-cyan-300 overflow-x-auto max-h-72 leading-relaxed">
-                  {JSON.stringify(sandboxResult, null, 2)}
-                </pre>
-              )}
-            </div>
-
-            {/* 4. API DOCUMENTATION & INTEGRATION GUIDE */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-neutral-900/60 border border-neutral-800 space-y-6">
-              <div>
-                <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                  <Terminal className="w-5 h-5 text-cyan-400" />
-                  <span>Nyaraka za API (API Integration Documentation)</span>
-                </h3>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Miongozo ya kuunganisha Player API na Stream API kwenye tovuti au mfumo wako.
-                </p>
-              </div>
-
-              {/* Endpoint 1: Channels Stream API */}
-              <div className="p-5 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-400 font-mono text-xs font-black">
-                    GET
-                  </span>
-                  <code className="text-xs font-mono text-white break-all">
-                    /api/developer/channels
-                  </code>
-                </div>
-                <p className="text-xs text-neutral-400">
-                  Inaleta orodha kamili ya vituo vyote 45+ vya NeliTv vikiwa na Live Stream URLs zilizowekwa tokeni za kisasa za CDN token za DASH/HLS.
-                </p>
-
-                {/* Code Tabs */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 border-b border-neutral-800 pb-2 text-[11px] font-semibold">
-                    <button
-                      onClick={() => setActiveCodeTab('curl')}
-                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                        activeCodeTab === 'curl' ? 'bg-cyan-600 text-white' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      cURL
-                    </button>
-                    <button
-                      onClick={() => setActiveCodeTab('js')}
-                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                        activeCodeTab === 'js' ? 'bg-cyan-600 text-white' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      JavaScript / Node.js
-                    </button>
-                    <button
-                      onClick={() => setActiveCodeTab('python')}
-                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                        activeCodeTab === 'python' ? 'bg-cyan-600 text-white' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      Python
-                    </button>
-                    <button
-                      onClick={() => setActiveCodeTab('php')}
-                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                        activeCodeTab === 'php' ? 'bg-cyan-600 text-white' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      PHP
-                    </button>
-                  </div>
-
-                  <pre className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-200 overflow-x-auto leading-relaxed select-all">
-                    {activeCodeTab === 'curl' && `curl -X GET "${origin}/api/developer/channels" \\
-  -H "X-Neli-Api-Key: ${session.apiKey || 'YOUR_API_KEY'}"`}
-
-                    {activeCodeTab === 'js' && `const response = await fetch("${origin}/api/developer/channels", {
-  headers: {
-    "X-Neli-Api-Key": "${session.apiKey || 'YOUR_API_KEY'}"
-  }
-});
-const data = await response.json();
-console.log(data.channels);`}
-
-                    {activeCodeTab === 'python' && `import requests
-
-headers = {
-    "X-Neli-Api-Key": "${session.apiKey || 'YOUR_API_KEY'}"
-}
-response = requests.get("${origin}/api/developer/channels", headers=headers)
-channels = response.json().get('channels', [])
-print(channels)`}
-
-                    {activeCodeTab === 'php' && `<?php
-$ch = curl_init("${origin}/api/developer/channels");
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "X-Neli-Api-Key: ${session.apiKey || 'YOUR_API_KEY'}"
-]);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-$response = curl_exec($ch);
-curl_close($ch);
-$data = json_decode($response, true);
-?>`}
-                  </pre>
-                </div>
-              </div>
-
-              {/* Endpoint 2: Web Player SDK */}
-              <div className="p-5 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-md bg-purple-500/20 text-purple-400 font-mono text-xs font-black">
-                    SDK
-                  </span>
-                  <code className="text-xs font-mono text-white break-all">
-                    NeliTv Web Player SDK (Kama YouTube Player)
-                  </code>
-                </div>
-                <p className="text-xs text-neutral-400">
-                  Weka kicheza video chetu chenye ulinzi wa DRM moja kwa moja kwenye kurasa za tovuti yako:
-                </p>
-
-                <pre className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-purple-300 overflow-x-auto select-all">
-{`<!-- 1. Jumuisha Script ya SDK -->
-<script src="${origin}/api/developer/player-sdk.js"></script>
-
-<!-- 2. Sehemu ya Player itakapokaa -->
-<div id="player-container"></div>
-
-<!-- 3. Washa Player -->
-<script>
-  const player = new NeliTvPlayer('#player-container', {
-    channel: 'azam-sports-1-hd',
-    width: '100%',
-    height: '480px',
-    apiKey: '${session.apiKey || 'YOUR_API_KEY'}'
-  });
-</script>`}
-                </pre>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 5. PAYMENT MODAL FOR DEVELOPER API */}
-        {showPayModal && (
-          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="w-full max-w-lg bg-[#0C101A] border border-cyan-500/40 rounded-3xl p-6 shadow-2xl space-y-5 text-white max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
-                  <h3 className="text-base font-bold text-white">Lipia Kifurushi cha API</h3>
-                </div>
-                <button
-                  onClick={() => setShowPayModal(false)}
-                  className="text-neutral-400 hover:text-white p-1 rounded-lg"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Plan Choice in Modal */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedPlanId('plan_api_monthly')}
-                  className={`p-3.5 rounded-2xl text-left border transition cursor-pointer ${
-                    selectedPlanId === 'plan_api_monthly'
-                      ? 'bg-gradient-to-b from-cyan-600/30 to-pink-600/20 border-cyan-400 shadow text-white'
-                      : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <div className="text-xs font-bold">Mwezi (Monthly)</div>
-                  <div className="text-base font-black font-mono text-cyan-300 mt-1">50,000 TZS</div>
-                  <div className="text-[10px] text-emerald-400 font-bold mt-1">+ Miezi 3 Bure App VIP!</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedPlanId('plan_api_yearly')}
-                  className={`p-3.5 rounded-2xl text-left border transition cursor-pointer ${
-                    selectedPlanId === 'plan_api_yearly'
-                      ? 'bg-gradient-to-b from-pink-600/30 to-amber-600/20 border-pink-400 shadow text-white'
-                      : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <div className="text-xs font-bold">Mwaka (Annual)</div>
-                  <div className="text-base font-black font-mono text-pink-300 mt-1">1,000,000 TZS</div>
-                  <div className="text-[10px] text-amber-300 font-bold mt-1">★ Mwaka 1 Bure App VIP!</div>
-                </button>
-              </div>
-
-              <form onSubmit={handleStartPayment} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-neutral-300 flex items-center gap-1.5">
-                    <Smartphone className="w-4 h-4 text-cyan-400" />
-                    <span>Namba ya Simu ya Malipo (M-Pesa / Tigo / Airtel / Halopesa):</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={paymentPhone}
-                    onChange={(e) => setPaymentPhone(e.target.value)}
-                    placeholder="07XXXXXXXX au 06XXXXXXXX"
-                    className="w-full px-4 py-3 rounded-xl bg-neutral-950 border border-neutral-800 focus:border-cyan-500 focus:outline-none text-white text-sm font-mono"
-                  />
-                  <p className="text-[10px] text-neutral-400">
-                    Namba hii itapokea USSD Push ya malipo, na pia ndiyo itakayopewa ufikiaji wa bure wa VIP kwenye NeliTv App!
-                  </p>
-                </div>
-
-                {payError && (
-                  <div className="p-3 rounded-xl bg-red-950/40 border border-red-800 text-red-300 text-xs">
-                    {payError}
-                  </div>
-                )}
-
-                {activeOrderId ? (
-                  <div className="space-y-3 pt-1">
-                    <div className="p-3.5 rounded-2xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-200 text-xs space-y-1.5">
-                      <div className="flex items-center gap-2 font-bold text-white text-sm">
-                        <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                        <span>Ombi la USSD limetumwa kwenye {paymentPhone}!</span>
-                      </div>
-                      <p className="text-[11px] text-neutral-300 leading-relaxed">
-                        Tafadhali angalia simu yako, ingiza PIN ya mtandao wako wa simu (M-Pesa, Tigo, Airtel au Halopesa) kuthibitisha malipo ya <strong>TZS {selectedPlanId === 'plan_api_yearly' ? '1,000,000' : '50,000'}</strong>.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleManualVerify}
-                      disabled={isVerifyingNow}
-                      className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                    >
-                      {isVerifyingNow ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Inathibitisha malipo na mtandao...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Nimelipa Tayari (Thibitisha Malipo Sasa)</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveOrderId(null);
-                        setIsPaying(false);
-                        setPayError(null);
-                        setPaySuccessMsg(null);
-                      }}
-                      className="w-full py-2 text-center text-xs text-neutral-400 hover:text-white underline cursor-pointer"
-                    >
-                      Badilisha namba ya simu au jaribu tena
-                    </button>
-                  </div>
-                ) : (
                   <button
                     type="submit"
-                    disabled={isPaying}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-cyan-600 hover:from-pink-500 hover:to-cyan-500 text-white font-black text-sm shadow-xl shadow-pink-600/30 flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    disabled={isAuthLoading}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#5b21b6] to-[#0891b2] hover:brightness-110 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
                   >
-                    {isPaying ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Inatuma ombi la USSD...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                        <span>
-                          Lipa TZS {selectedPlanId === 'plan_api_yearly' ? '1,000,000' : '50,000'} Sasa
-                        </span>
-                      </>
-                    )}
+                    {isAuthLoading ? 'Inapakia...' : authMode === 'login' ? 'Ingia & Pata Key' : 'Jisajili Bure'}
                   </button>
-                )}
-              </form>
-
-              <div className="text-[10px] text-neutral-500 text-center flex items-center justify-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Ulinzi thabiti wa malipo na uthibitishaji wa moja kwa moja kupitia HarakaPay</span>
+                </form>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live Sandbox + Live NeliTv Player Preview */}
+        <div className="p-6 rounded-3xl neli-card-surface border border-purple-500/30 space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Play className="w-4 h-4 text-cyan-400" />
+                <span>Jaribu Content API, Player API &amp; NeliTv Player Moja kwa Moja</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Chagua kituo kupima majibu ya API na kuona jinsi player inavyocheza kupitia mfumo wa NeliTv pekee.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={sandboxChannelSlug}
+                onChange={(e) => setSandboxChannelSlug(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-[#04050e] border border-purple-500/35 text-xs text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+              >
+                {CHANNELS_DATA.map((ch) => {
+                  const slug = getChannelRouteSlug(ch);
+                  return (
+                    <option key={ch.id} value={slug}>
+                      {ch.name}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <button
+                onClick={() => handleTestSandbox('content')}
+                disabled={isSandboxTesting}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer"
+              >
+                Test Content API
+              </button>
+
+              <button
+                onClick={() => handleTestSandbox('player')}
+                disabled={isSandboxTesting}
+                className="px-3.5 py-2 rounded-xl bg-[#5b21b6] hover:bg-[#6d28d9] text-white font-bold text-xs transition cursor-pointer"
+              >
+                Test Player API
+              </button>
+
+              <button
+                onClick={() => setShowPlayerPreview((p) => !p)}
+                className="px-3.5 py-2 rounded-xl bg-[#0b0e24] border border-cyan-400/40 text-cyan-300 font-bold text-xs transition cursor-pointer"
+              >
+                {showPlayerPreview ? 'Ficha Player' : 'Onyesha Player'}
+              </button>
             </div>
           </div>
-        )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {showPlayerPreview && (
+              <div className="lg:col-span-6 space-y-2">
+                <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                  <Tv className="w-3.5 h-3.5 text-[#ffb020]" />
+                  <span>NeliTv Official Player Preview ({BASE_LINK}/embed/{sandboxChannelSlug})</span>
+                </div>
+                <div className="aspect-video w-full rounded-2xl overflow-hidden border border-purple-500/35 bg-black shadow-xl">
+                  <iframe
+                    key={sandboxChannelSlug}
+                    src={`/embed/${sandboxChannelSlug}?autoplay=1`}
+                    title={sandboxChannelSlug}
+                    className="w-full h-full border-0"
+                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className={showPlayerPreview ? 'lg:col-span-6 space-y-2' : 'lg:col-span-12 space-y-2'}>
+              <div className="text-[11px] font-bold text-slate-300">
+                API JSON Output ({BASE_LINK}/api/v1/{sandboxEndpoint === 'player' ? `player/${sandboxChannelSlug}` : `content/${sandboxChannelSlug}`})
+              </div>
+              <pre className="p-4 rounded-2xl bg-[#04050e] border border-purple-500/25 text-[11px] font-mono text-cyan-300 overflow-x-auto max-h-72 leading-relaxed">
+                {sandboxResult
+                  ? JSON.stringify(sandboxResult, null, 2)
+                  : `Bofya "Test Content API" au "Test Player API" kuona majibu halisi ya JSON yenye link za ${BASE_LINK} (bila kufichua stream links).`}
+              </pre>
+            </div>
+          </div>
+        </div>
+
+        {/* Documentation: Content API & Player API */}
+        <div className="p-6 sm:p-8 rounded-3xl neli-card-surface border border-purple-500/30 space-y-6">
+          <div>
+            <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+              <Layers className="w-5 h-5 text-cyan-400" />
+              <span>Nyaraka za API (Content API &amp; Player API)</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Miongozo ya kuunganisha vituo vya NeliTv kwenye tovuti au app yako kwa kutumia link ya{' '}
+              <strong className="text-white">{BASE_LINK}</strong>.
+            </p>
+          </div>
+
+          {/* 1. Content API */}
+          <div className="p-5 rounded-2xl bg-[#04050e] border border-purple-500/20 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-xs font-black">
+                GET
+              </span>
+              <code className="text-xs font-mono text-white break-all">
+                {BASE_LINK}/api/v1/content
+              </code>
+            </div>
+            <p className="text-xs text-slate-400">
+              Inaleta orodha ya vituo vyote, picha (logo), kategoria, vipindi vya sasa, na viungo vya <strong>Player API</strong> na <strong>Embed URL</strong> (bila kutoa stream links nje).
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 border-b border-purple-500/20 pb-2 text-[11px] font-bold">
+              {(['curl', 'js', 'python', 'php'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveCodeTab(tab)}
+                  className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                    activeCodeTab === tab ? 'bg-[#5b21b6] text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {tab.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            <pre className="p-3.5 rounded-xl bg-[#070918] border border-purple-500/20 text-[11px] font-mono text-slate-200 overflow-x-auto leading-relaxed select-all">
+              {activeCodeTab === 'curl' && `curl -X GET "${BASE_LINK}/api/v1/content" \\\n  -H "X-Neli-Api-Key: ${activeApiKey}"`}
+              {activeCodeTab === 'js' && `const res = await fetch("${BASE_LINK}/api/v1/content", {\n  headers: { "X-Neli-Api-Key": "${activeApiKey}" }\n});\nconst { channels } = await res.json();\n// Kila kituo kina endpoints.playerApi na endpoints.playerEmbed`}
+              {activeCodeTab === 'python' && `import requests\n\nr = requests.get("${BASE_LINK}/api/v1/content", headers={"X-Neli-Api-Key": "${activeApiKey}"})\nprint(r.json()["channels"])`}
+              {activeCodeTab === 'php' && `<?php\n$ch = curl_init("${BASE_LINK}/api/v1/content");\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ["X-Neli-Api-Key: ${activeApiKey}"]);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$data = json_decode(curl_exec($ch), true);`}
+            </pre>
+          </div>
+
+          {/* 2. Player API & SDK */}
+          <div className="p-5 rounded-2xl bg-[#04050e] border border-purple-500/20 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-md bg-cyan-500/20 text-cyan-300 font-mono text-xs font-black">
+                PLAYER API &amp; SDK
+              </span>
+              <code className="text-xs font-mono text-white break-all">
+                {BASE_LINK}/api/v1/player/{'{slug}'}
+              </code>
+            </div>
+            <p className="text-xs text-slate-400">
+              Inarudisha msimbo wa NeliTv Player tayari kwa kucheza kwenye tovuti yako. Video zote zinachezwa moja kwa moja ndani ya NeliTv Player:
+            </p>
+
+            <pre className="p-3.5 rounded-xl bg-[#070918] border border-purple-500/20 text-[11px] font-mono text-purple-300 overflow-x-auto leading-relaxed select-all">
+{`<!-- Njia 1: NeliTv Official Player SDK -->
+<script src="${BASE_LINK}/api/v1/player/sdk.js"></script>
+<div id="nelitv-player"></div>
+<script>
+  const player = new NeliTvPlayer('#nelitv-player', {
+    channel: '${sandboxChannelSlug}',
+    width: '100%',
+    height: '480px',
+    apiKey: '${activeApiKey}'
+  });
+</script>
+
+<!-- Njia 2: iFrame ya Moja kwa Moja -->
+<iframe src="${BASE_LINK}/embed/${sandboxChannelSlug}?autoplay=1" width="100%" height="480px" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`}
+            </pre>
+          </div>
+        </div>
       </div>
     </div>
   );

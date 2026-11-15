@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
-// Secret keys for signing and validating internal app requests
+// Secret keys for signing and validating internal app & player requests
 export const NELI_JWT_SECRET = process.env.NELITV_JWT_SECRET || 'nelitv_jwt_secret_99f82d8c3b7a1e05f6';
 export const NELI_API_KEY = process.env.NELITV_API_KEY || 'neli_sec_9971ab4f7831d8e0e5c9429b9f71c';
 
 /**
- * Generates an HMAC-SHA256 JWT for app client sessions
+ * Generates an HMAC-SHA256 JWT for app client or player sessions
  */
 export function signClientToken(payload: Record<string, any> = {}, expiresInSeconds: number = 86400): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -52,24 +52,27 @@ export function verifyClientToken(token: string): Record<string, any> | null {
 }
 
 /**
- * Token-based and API Key authentication middleware for Express routes.
- * Protects /baynithalex/api/channels from unauthorized public access.
+ * Strictly locks down internal raw channel/token endpoints.
+ * Blocks direct browser URL visits and unauthenticated external requests so raw streams
+ * are NEVER accessible outside the NeliTv Player & official Content/Player API.
  */
 export function requireChannelAuth(req: Request, res: Response, next: NextFunction) {
   res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
 
-  // Allow direct browser visits to view JSON or allow authenticated requests
   const isDirectBrowserVisit =
     req.get('sec-fetch-mode') === 'navigate' ||
     req.get('sec-fetch-dest') === 'document' ||
     Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
 
-  // If user opens directly in browser address bar, allow them to view the API data cleanly
   if (isDirectBrowserVisit) {
-    return next();
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied. Raw streams are not accessible outside NeliTv Player & API.',
+      contentApi: 'https://nelitv.online/api/v1/content',
+      playerApi: 'https://nelitv.online/api/v1/player/azam-sports-1-hd'
+    });
   }
 
-  // 2. Extract Authorization header (Bearer token) or API Key headers
   const authHeader = req.get('Authorization') || req.get('authorization');
   const apiKey =
     req.get('X-Neli-Api-Key') ||
@@ -78,18 +81,20 @@ export function requireChannelAuth(req: Request, res: Response, next: NextFuncti
     req.get('X-API-Key') ||
     (req.query.api_key as string);
   const clientHeader = req.get('X-Neli-Client');
+  const secFetchSite = req.get('sec-fetch-site');
+  const referer = req.get('referer') || req.get('origin') || '';
 
   let isAuthenticated = false;
 
-  // Check 1: API Key validation
-  if (apiKey && (apiKey === NELI_API_KEY || apiKey === 'neli_sec_9971ab4f7831d8e0e5c9429b9f71c')) {
+  // 1. Internal client API Key validation
+  if (apiKey && apiKey === NELI_API_KEY) {
     isAuthenticated = true;
   }
 
-  // Check 2: Bearer JWT or API Key token validation
+  // 2. Bearer JWT or internal key validation
   if (!isAuthenticated && authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim();
-    if (token === NELI_API_KEY || token === 'neli_sec_9971ab4f7831d8e0e5c9429b9f71c') {
+    if (token === NELI_API_KEY) {
       isAuthenticated = true;
     } else {
       const decoded = verifyClientToken(token);
@@ -99,8 +104,15 @@ export function requireChannelAuth(req: Request, res: Response, next: NextFuncti
     }
   }
 
-  // Check 3: Internal client signature handshake or standard web client
-  if (!isAuthenticated && (clientHeader === 'nelitv-web' || req.query.secret === 'baynithalex' || req.method === 'GET')) {
+  // 3. Same-origin internal NeliTv Player XHR verification
+  if (
+    !isAuthenticated &&
+    clientHeader === 'nelitv-web' &&
+    (secFetchSite === 'same-origin' ||
+      referer.includes('nelitv.online') ||
+      referer.includes('.run.app') ||
+      referer.includes('localhost'))
+  ) {
     isAuthenticated = true;
   }
 
@@ -108,9 +120,11 @@ export function requireChannelAuth(req: Request, res: Response, next: NextFuncti
     return next();
   }
 
-  // 4. Unauthorized: reject with 401 Unauthorized
-  return res.status(401).json({
+  return res.status(403).json({
     success: false,
-    error: 'Unauthorized: Invalid or missing authentication credentials (API key or Bearer token required).'
+    error: 'Forbidden: Raw stream data is strictly restricted to NeliTv internal player. Use Content API & Player API.',
+    contentApi: 'https://nelitv.online/api/v1/content',
+    playerApi: 'https://nelitv.online/api/v1/player/azam-sports-1-hd',
+    portal: 'https://nelitv.online/api'
   });
 }

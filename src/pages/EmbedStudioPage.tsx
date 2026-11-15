@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
-import { Code, Copy, Check, Tv, Play, ExternalLink, Sparkles, Layers, Shield, Settings, ArrowLeft } from 'lucide-react';
+import { getChannelRouteSlug } from '../utils/channelRoute.ts';
+import { Code, Copy, Check, Tv, Play, ExternalLink, Sparkles, Layers, ShieldCheck, Settings, ArrowLeft } from 'lucide-react';
 
 interface EmbedStudioPageProps {
   channels?: Channel[];
   onBack?: () => void;
   onNavigateToApi?: () => void;
 }
+
+const PUBLIC_BASE_URL = 'https://nelitv.online';
 
 export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
   channels = CHANNELS_DATA,
@@ -20,14 +23,14 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedSdk, setCopiedSdk] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [useCustomDomain, setUseCustomDomain] = useState<boolean>(true);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId) || channels[0];
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://nelitv.online';
-  // Default to https://nelitv.online so external Blogger and websites don't get 'refuse to connect' from Cloud Run preview proxy
-  const origin = useCustomDomain ? 'https://nelitv.online' : currentOrigin;
+  const channelSlug = getChannelRouteSlug(selectedChannel);
 
-  const embedUrl = `${origin}/embed/${selectedChannel.id}${autoplay ? '?autoplay=1' : ''}`;
+  // All exported endpoints and snippets always use https://nelitv.online
+  const embedUrl = `${PUBLIC_BASE_URL}/embed/${channelSlug}?autoplay=${autoplay ? '1' : '0'}`;
+  const previewSrc = `/embed/${channelSlug}?autoplay=${autoplay ? '1' : '0'}`;
+  const sdkScriptUrl = `${PUBLIC_BASE_URL}/api/v1/player/sdk.js`;
 
   const iframeCode = `<iframe
   src="${embedUrl}"
@@ -35,19 +38,20 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
   height="${height}"
   frameborder="0"
   allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-  allowfullscreen>
+  allowfullscreen
+  title="${selectedChannel.name} | NeliTv Player">
 </iframe>`;
 
-  const sdkCode = `<!-- 1. Include NeliTv Player SDK -->
-<script src="${origin}/api/developer/player-sdk.js"></script>
+  const sdkCode = `<!-- 1. Jumuisha NeliTv Official Player SDK (100% Bure) -->
+<script src="${sdkScriptUrl}"></script>
 
-<!-- 2. Target container -->
+<!-- 2. Sehemu ya Player -->
 <div id="nelitv-player"></div>
 
-<!-- 3. Initialize Player -->
+<!-- 3. Washa NeliTv Player -->
 <script>
   const player = new NeliTvPlayer('#nelitv-player', {
-    channel: '${selectedChannel.id}',
+    channel: '${channelSlug}',
     width: '${width}',
     height: '${height}',
     autoplay: ${autoplay}
@@ -71,29 +75,29 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[#070A0F] text-neutral-200 py-8 px-4 sm:px-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#050611] text-slate-200 py-8 px-4 sm:px-8 pb-24 md:pb-12">
+      <div className="max-w-6xl mx-auto space-y-6">
         {/* Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-purple-500/20">
           <div className="flex items-center gap-3">
             {onBack && (
               <button
                 onClick={onBack}
-                className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition cursor-pointer"
+                className="p-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/30 text-slate-200 hover:text-white transition cursor-pointer"
                 aria-label="Rudi Nyuma"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-5 h-5 text-cyan-400" />
               </button>
             )}
             <div>
               <div className="flex items-center gap-2">
                 <Code className="w-6 h-6 text-cyan-400" />
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  NeliTv Embed Studio
+                  NeliTv <span className="neli-gradient-text">Embed Studio</span>
                 </h1>
               </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                Weka Live TV na Michezo ya NBC Premier League kwenye Tovuti au Blog yako kwa sekunde chache
+              <p className="text-xs text-slate-400 mt-1">
+                Weka NeliTv Official Player kwenye tovuti au blog yako — 100% Bure na Salama bila kufichua stream links.
               </p>
             </div>
           </div>
@@ -102,42 +106,44 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
             {onNavigateToApi && (
               <button
                 onClick={onNavigateToApi}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-pink-600/20 transition active:scale-95 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl neli-gradient-bg text-white font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(255,30,138,0.35)] hover:brightness-110 transition active:scale-95 whitespace-nowrap cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Fungua Developer API Platform →</span>
+                <span>Fungua Content &amp; Player API →</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Feature Notice Banner */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-pink-950/30 border border-cyan-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        {/* Free & Protected Playback Banner */}
+        <div className="p-4 sm:p-5 rounded-2xl neli-card-surface border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
-            <span className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 shrink-0">
-              <Shield className="w-5 h-5" />
+            <span className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-400 shrink-0">
+              <ShieldCheck className="w-5 h-5" />
             </span>
             <div>
-              <span className="font-bold text-white block">Inafanya Kazi Popote (Nje ya App na Kwenye Tovuti Yoyote)</span>
-              <span className="text-neutral-400 text-[11px]">
-                Embed inacheza kwa sekunde 60 za majaribio, kisha inatokea fomu ya malipo moja kwa moja ndani ya player ya mtumiaji kulipia kwa M-Pesa/Tigo/Airtel bila kutoka kwenye blog yako!
+              <span className="font-extrabold text-white block">
+                100% Bure · Inacheza Kupitia NeliTv Player Pekee
+              </span>
+              <span className="text-slate-400 text-[11px]">
+                Endpoint zote zinatumia <strong>https://nelitv.online</strong>. Stream halisi hazipatikani nje ya Player hii, na hakuna malipo wala kikomo kwa watazamaji.
               </span>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full bg-cyan-900/60 text-cyan-300 font-mono text-[10px] font-bold shrink-0 uppercase">
-            Auto-Paywall Ready
+          <span className="px-3 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 font-bold text-[11px] shrink-0 whitespace-nowrap">
+            Free &amp; Protected
           </span>
         </div>
 
-        {/* Studio Workspace: Left Controls, Right Preview */}
+        {/* Studio Workspace */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: Channel Picker & Settings */}
           <div className="lg:col-span-5 space-y-5">
             {/* 1. Channel Selector */}
-            <div className="p-5 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-3">
-              <label className="text-xs font-bold text-white flex items-center gap-2">
+            <div className="p-5 rounded-2xl neli-card-surface border border-purple-500/25 space-y-3">
+              <label className="text-xs font-extrabold text-white flex items-center gap-2">
                 <Tv className="w-4 h-4 text-cyan-400" />
-                <span>1. Chagua Kituo cha Ku-embed ({channels.length} Vituo):</span>
+                <span>1. Chagua Kituo ({channels.length} Vituo):</span>
               </label>
 
               <input
@@ -145,30 +151,30 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tafuta kituo (mfano: Azam, Sports, Sinema)..."
-                className="w-full px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#050611] border border-purple-500/30 text-xs text-white focus:outline-none focus:border-cyan-400"
               />
 
-              <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 scrollbar-none">
                 {filteredChannels.map(ch => (
                   <button
                     key={ch.id}
                     onClick={() => setSelectedChannelId(ch.id)}
-                    className={`w-full p-2 rounded-xl text-left flex items-center gap-2.5 transition cursor-pointer ${
+                    className={`w-full p-2.5 rounded-xl text-left flex items-center gap-2.5 transition cursor-pointer ${
                       selectedChannelId === ch.id
-                        ? 'bg-gradient-to-r from-cyan-600/30 to-pink-600/20 border border-cyan-400/80 text-white shadow-sm'
-                        : 'bg-neutral-950/60 hover:bg-neutral-800/80 text-neutral-300 border border-neutral-800/50'
+                        ? 'bg-gradient-to-r from-[#5b21b6]/70 to-[#0e7490]/50 border border-cyan-400/70 text-white shadow-sm'
+                        : 'bg-[#080a1c]/80 hover:bg-[#111533] text-slate-300 border border-purple-500/15'
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-black border border-white/10 flex items-center justify-center p-0.5 overflow-hidden shrink-0">
+                    <div className="w-9 h-8 rounded-lg bg-[#04050d] border border-white/10 flex items-center justify-center p-1 overflow-hidden shrink-0">
                       {ch.thumbnailUrl ? (
-                        <img src={ch.thumbnailUrl} alt={ch.name} className="w-full h-full object-contain" />
+                        <img src={ch.thumbnailUrl} alt={ch.name} referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                       ) : (
-                        <Tv className="w-4 h-4 text-neutral-500" />
+                        <Tv className="w-4 h-4 text-slate-500" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-bold truncate">{ch.name}</div>
-                      <div className="text-[10px] text-neutral-400 truncate">{ch.currentProgram || ch.category.join(', ')}</div>
+                      <div className="text-[10px] text-slate-400 truncate">{ch.currentProgram || ch.category.join(', ')}</div>
                     </div>
                     {selectedChannelId === ch.id && (
                       <Check className="w-4 h-4 text-cyan-400 shrink-0" />
@@ -179,19 +185,19 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
             </div>
 
             {/* 2. Display Settings */}
-            <div className="p-5 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-3">
-              <label className="text-xs font-bold text-white flex items-center gap-2">
-                <Settings className="w-4 h-4 text-pink-400" />
-                <span>2. Vipimo & Mipangilio ya Player:</span>
+            <div className="p-5 rounded-2xl neli-card-surface border border-purple-500/25 space-y-3">
+              <label className="text-xs font-extrabold text-white flex items-center gap-2">
+                <Settings className="w-4 h-4 text-[#ffb020]" />
+                <span>2. Vipimo &amp; Mipangilio ya Player:</span>
               </label>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-neutral-400">Upana (Width):</label>
+                  <label className="text-[11px] text-slate-400">Upana (Width):</label>
                   <select
                     value={width}
                     onChange={(e) => setWidth(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050611] border border-purple-500/30 text-xs text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
                   >
                     <option value="100%">100% (Responsive)</option>
                     <option value="800px">800px</option>
@@ -201,14 +207,14 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] text-neutral-400">Urefu (Height):</label>
+                  <label className="text-[11px] text-slate-400">Urefu (Height):</label>
                   <select
                     value={height}
                     onChange={(e) => setHeight(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050611] border border-purple-500/30 text-xs text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
                   >
                     <option value="500px">500px (Inayopendekezwa)</option>
-                    <option value="450px">450px</option>
+                    <option value="480px">480px</option>
                     <option value="400px">400px</option>
                     <option value="100vh">100vh (Full Viewport)</option>
                   </select>
@@ -216,12 +222,12 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
               </div>
 
               <div className="pt-1 flex items-center justify-between">
-                <span className="text-xs text-neutral-300">Anza Kiotomatiki (Autoplay):</span>
+                <span className="text-xs text-slate-300">Anza Kiotomatiki (Autoplay):</span>
                 <button
                   type="button"
                   onClick={() => setAutoplay(!autoplay)}
                   className={`w-11 h-6 rounded-full transition relative cursor-pointer ${
-                    autoplay ? 'bg-cyan-500' : 'bg-neutral-800'
+                    autoplay ? 'bg-cyan-500' : 'bg-slate-800'
                   }`}
                 >
                   <span
@@ -230,45 +236,6 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                     }`}
                   />
                 </button>
-              </div>
-
-              {/* 3. Domain Mode for Blogger & Websites */}
-              <div className="pt-3 border-t border-neutral-800 space-y-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-white block">Kikoa cha Embed (Domain):</span>
-                    <span className="text-[10px] text-neutral-400">nelitv.online inapendekezwa kwa Blogger</span>
-                  </div>
-                  <div className="flex rounded-lg bg-neutral-950 p-1 border border-neutral-800 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setUseCustomDomain(true)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
-                        useCustomDomain ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      nelitv.online (Blogger)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUseCustomDomain(false)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
-                        !useCustomDomain ? 'bg-cyan-600 text-white shadow' : 'text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      Preview App
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-300 text-[11px] space-y-1">
-                  <div className="font-bold flex items-center gap-1.5 text-amber-200">
-                    <span>💡 Muhimu kwa Watumiaji wa Blogger:</span>
-                  </div>
-                  <p className="leading-relaxed">
-                    Kwenye Blogger tumia kikoa cha <strong>https://nelitv.online/embed/...</strong>. Mfumo wetu umeruhusu iframe zote bila vikwazo vyovyote vya kiusalama!
-                  </p>
-                </div>
               </div>
             </div>
           </div>
@@ -280,7 +247,7 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Play className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Hakikisho la Moja kwa Moja (Live Preview - {selectedChannel.name})</span>
+                  <span>Hakikisho la Moja kwa Moja ({selectedChannel.name})</span>
                 </span>
                 <a
                   href={embedUrl}
@@ -288,15 +255,15 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                   rel="noreferrer"
                   className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
                 >
-                  <span>Fungua Standalone</span>
+                  <span>{embedUrl}</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
 
-              <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-white/10 shadow-2xl">
+              <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-purple-500/35 shadow-[0_0_35px_rgba(124,58,237,0.2)]">
                 <iframe
-                  key={embedUrl}
-                  src={embedUrl}
+                  key={previewSrc}
+                  src={previewSrc}
                   title={selectedChannel.name}
                   className="w-full h-full border-0"
                   allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
@@ -306,21 +273,21 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
             </div>
 
             {/* Generated Code Snippets */}
-            <div className="p-5 rounded-2xl bg-neutral-900 border border-neutral-800 space-y-4">
+            <div className="p-5 rounded-2xl neli-card-surface border border-purple-500/25 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Code className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    HTML iFrame Code (Bandika Kwenye Tovuti Yako)
+                  <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
+                    HTML iFrame Code (https://nelitv.online)
                   </h3>
                 </div>
 
                 <button
                   onClick={() => copyToClipboard(iframeCode)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
                     copiedCode
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-md'
+                      : 'neli-gradient-bg text-white shadow-md'
                   }`}
                 >
                   {copiedCode ? (
@@ -331,34 +298,34 @@ export const EmbedStudioPage: React.FC<EmbedStudioPageProps> = ({
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>Nakili iFrame Code</span>
+                      <span>Nakili iFrame</span>
                     </>
                   )}
                 </button>
               </div>
 
-              <pre className="p-3.5 rounded-xl bg-neutral-950 border border-neutral-800 text-[11px] font-mono text-cyan-300 overflow-x-auto leading-relaxed select-all">
+              <pre className="p-3.5 rounded-xl bg-[#04050e] border border-purple-500/20 text-[11px] font-mono text-cyan-300 overflow-x-auto leading-relaxed select-all">
                 {iframeCode}
               </pre>
 
               {/* Player SDK Code */}
-              <div className="pt-2 border-t border-neutral-800/80 space-y-2">
+              <div className="pt-2 border-t border-purple-500/20 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-pink-400" />
-                    <span>NeliTv Player SDK (Kwa ajili ya JavaScript Developers)</span>
+                    <Layers className="w-3.5 h-3.5 text-[#ffb020]" />
+                    <span>NeliTv Player API SDK</span>
                   </div>
 
                   <button
                     onClick={() => copyToClipboard(sdkCode, true)}
-                    className="text-[11px] text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     {copiedSdk ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedSdk ? 'Imenakiliwa!' : 'Nakili SDK'}</span>
+                    <span>{copiedSdk ? 'Imenakiliwa!' : 'Nakili SDK Code'}</span>
                   </button>
                 </div>
 
-                <pre className="p-3.5 rounded-xl bg-neutral-950 border border-neutral-800 text-[10px] font-mono text-pink-300/90 overflow-x-auto leading-relaxed select-all max-h-36">
+                <pre className="p-3.5 rounded-xl bg-[#04050e] border border-purple-500/20 text-[11px] font-mono text-purple-300 overflow-x-auto leading-relaxed select-all">
                   {sdkCode}
                 </pre>
               </div>
