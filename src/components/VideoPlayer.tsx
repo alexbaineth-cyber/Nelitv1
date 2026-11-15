@@ -1127,14 +1127,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onMouseEnter={resetControlsTimeout}
       onTouchStart={resetControlsTimeout}
       onClick={handlePlayerTap}
-      className={`w-full bg-black overflow-hidden group select-none shadow-2xl transition-all duration-300 ${
+      className={`w-full bg-[#03040a] overflow-hidden group select-none shadow-2xl transition-all duration-300 ${
         isEmbedded ? '' : 'cursor-pointer'
       } ${
         isFullscreen
           ? 'fixed inset-0 z-[99999] w-screen h-[100dvh] max-w-none max-h-none rounded-none border-0 m-0 p-0'
           : isFullPage
           ? 'relative h-full flex-1 rounded-none border-0'
-          : 'relative aspect-video rounded-2xl border border-neutral-900'
+          : 'relative aspect-video rounded-2xl border border-purple-500/25'
       }`}
       style={
         isFullscreen
@@ -1151,7 +1151,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           : undefined
       }
     >
-      {/* HTML5 Video Element or Embedded Iframe (Super Sport, EPL League Tv, etc.) */}
+      {/* HTML5 Video Element or Embedded Iframe */}
       {isEmbedded ? (
         <iframe
           src={channel.embedUrl || channel.streamUrl}
@@ -1178,15 +1178,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </>
       )}
 
-      {/* Buffering Indicator - only for native video, NOT for embedded iframes */}
-      {!isEmbedded && isBuffering && !errorMessage && !isPaywallTriggered && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[1px] pointer-events-none transition">
-          <div className="w-12 h-12 rounded-full border-3 border-red-600 border-t-transparent animate-spin mb-3" />
-          <span className="text-xs text-neutral-300 font-medium">Inaunganisha TV...</span>
+      {/* Subtle Top-Right NeliTv Spectrum Corner Mark */}
+      {!errorMessage && !isPaywallTriggered && !isOffline && (
+        <div
+          className={`pointer-events-none select-none absolute top-3 right-3.5 z-10 transition-opacity duration-300 ${
+            showControls || isUserPaused ? 'opacity-90' : 'opacity-45'
+          }`}
+        >
+          <span className="font-black italic tracking-tight text-xs sm:text-sm neli-gradient-text drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">
+            NeliTv
+          </span>
         </div>
       )}
 
-      {/* Big Center Play Button ONLY when user explicitly paused video */}
+      {/* Buffering Indicator - neon spectrum ring */}
+      {!isEmbedded && isBuffering && !errorMessage && !isPaywallTriggered && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#03040a]/55 backdrop-blur-[2px] pointer-events-none transition">
+          <div className="relative w-12 h-12 rounded-full p-[3px] neli-gradient-bg animate-spin mb-3 shadow-[0_0_24px_rgba(255,30,138,0.45)]">
+            <div className="w-full h-full rounded-full bg-[#050611]" />
+          </div>
+          <span className="text-xs text-slate-200 font-semibold tracking-wide">Inaunganisha TV...</span>
+        </div>
+      )}
+
+      {/* Center Play Overlay with Neon Spectrum Ring when user explicitly paused */}
       {!isEmbedded && isUserPaused && !isBuffering && !isPaywallTriggered && !errorMessage && (
         <div
           onClick={(e) => {
@@ -1201,10 +1216,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               });
             }
           }}
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/35 backdrop-blur-[1px] cursor-pointer"
+          className="absolute inset-0 z-20 flex items-center justify-center bg-[#03040a]/45 backdrop-blur-[2px] cursor-pointer"
         >
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-2xl transition transform hover:scale-110 active:scale-95">
-            <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-white ml-1" />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full p-[3px] neli-gradient-bg shadow-[0_0_32px_rgba(255,30,138,0.5),0_0_48px_rgba(0,212,255,0.3)] transition transform hover:scale-110 active:scale-95">
+            <div className="w-full h-full rounded-full bg-[#070918]/90 hover:bg-[#0c1028]/90 text-white flex items-center justify-center">
+              <Play className="w-7 h-7 sm:w-9 sm:h-9 fill-white ml-1" />
+            </div>
           </div>
         </div>
       )}
@@ -1219,20 +1236,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               setIsMuted(false);
             }
           }}
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-25 py-1.5 px-4 rounded-full bg-black/85 hover:bg-neutral-900 text-white border border-cyan-500/50 text-[11px] sm:text-xs font-bold flex items-center gap-2 shadow-2xl cursor-pointer animate-pulse transition"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-25 py-1.5 px-4 rounded-xl bg-[#070918]/90 hover:bg-[#0d112b] text-white border border-cyan-400/50 text-[11px] sm:text-xs font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(0,212,255,0.28)] cursor-pointer animate-pulse transition"
         >
           <VolumeX className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span>Sauti imezimwa — Bonyeza hapa kufungua sauti 🔊</span>
+          <span>Sauti imezimwa — Bonyeza hapa kufungua sauti</span>
         </div>
       )}
 
-
-
-      {/* Offline Overlay - Keep <video> mounted in DOM so it immediately resumes upon reconnect without manual button press! */}
+      {/* Offline Overlay */}
       {isOffline && !isPaywallTriggered && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-35 overflow-y-auto bg-[#070A0F]"
+          className="absolute inset-0 z-35 overflow-y-auto bg-[#050611]"
         >
           <OfflineWatchPlaceholder
             channel={channel}
@@ -1249,12 +1264,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {errorMessage && !isPaywallTriggered && !isOffline && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-black/90 backdrop-blur-md text-center"
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-[#050611]/92 backdrop-blur-md text-center"
         >
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/12 border border-amber-400/35 flex items-center justify-center text-amber-400 mb-3 shadow-[0_0_20px_rgba(255,176,32,0.18)]">
             <AlertTriangle className="w-6 h-6" />
           </div>
-          <p className="text-sm text-neutral-300 max-w-sm mb-5 leading-relaxed">
+          <p className="text-sm text-slate-300 max-w-sm mb-5 leading-relaxed">
             {errorMessage}
           </p>
           <button
@@ -1262,7 +1277,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               e.stopPropagation();
               handleRetry();
             }}
-            className="py-2.5 px-6 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition"
+            className="py-2.5 px-6 rounded-xl neli-gradient-bg text-white font-bold text-xs flex items-center gap-2 shadow-[0_0_22px_rgba(255,30,138,0.4)] hover:brightness-110 transition cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Jaribu Tena</span>
@@ -1270,18 +1285,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* YouTube-Style Bottom Overlay Controls (Unified for both Native & Embedded Streams) */}
+      {/* Bottom Overlay Controls — Obsidian glass + Spectrum Live Accent Bar */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-all duration-300 ease-in-out ${
+        className={`absolute inset-x-0 bottom-0 z-20 pt-6 pb-3 px-3 sm:px-4 bg-gradient-to-t from-[#03040c]/95 via-[#050611]/75 to-transparent transition-all duration-300 ease-in-out ${
           showControls
             ? 'opacity-100 pointer-events-auto translate-y-0'
             : 'opacity-0 pointer-events-none translate-y-full'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Subtle Spectrum Live Progress Line */}
+        <div className="relative h-[3px] w-full rounded-full bg-white/15 mb-2.5 overflow-hidden">
+          <div className="h-full w-full neli-gradient-bg opacity-90" />
+        </div>
+
         <div className="flex items-center justify-between gap-3">
-          {/* Left: YouTube Volume Slider & Channel Name for Native, or Live indicator for Embedded */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Left: Volume Slider & Channel Name */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {!isEmbedded ? (
               <div
                 className="flex items-center group/vol"
@@ -1298,7 +1318,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   title={isMuted ? 'Washa Sauti (M)' : 'Zima Sauti (M)'}
                 >
                   {isMuted || volume === 0 ? (
-                    <VolumeX className="w-5 h-5 text-red-500" />
+                    <VolumeX className="w-5 h-5 text-pink-500" />
                   ) : volume < 0.5 ? (
                     <Volume1 className="w-5 h-5 text-cyan-300" />
                   ) : (
@@ -1306,7 +1326,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   )}
                 </button>
 
-                {/* Smooth YouTube Volume Slider */}
+                {/* Smooth Volume Slider */}
                 <div className="flex items-center transition-all duration-300 overflow-hidden w-0 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-focus-within/vol:w-20 pl-1">
                   <input
                     type="range"
@@ -1333,21 +1353,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
-                  LIVE
-                </span>
+              <div className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-white shrink-0">
+                <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+                <span className="text-[#ff3b8d]">LIVE</span>
               </div>
             )}
 
-            <span className="text-xs font-bold text-neutral-200 truncate max-w-[130px] sm:max-w-xs">
+            <span className="text-xs font-bold text-slate-200 truncate max-w-[140px] sm:max-w-xs">
               {channel.name}
             </span>
           </div>
 
-          {/* Right: Quality, Language, Single YouTube Fullscreen Button */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Right: Quality, Language, Fullscreen */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {!isEmbedded && (
               <>
                 {/* Quality Switcher */}
@@ -1358,10 +1376,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       setShowQualityMenu((prev) => !prev);
                       resetControlsTimeout();
                     }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border whitespace-nowrap cursor-pointer ${
                       selectedQuality === 'saver'
                         ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/80 shadow-sm shadow-emerald-500/20'
-                        : 'bg-neutral-900/90 hover:bg-neutral-800 text-white border-white/10'
+                        : 'bg-[#0b0e24]/90 hover:bg-[#131838] text-white border-purple-500/35 hover:border-cyan-400/60'
                     }`}
                     title="Badili Ubora wa Video / Okoa Bando"
                   >
@@ -1386,9 +1404,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {showQualityMenu && (
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#0B1020] border border-neutral-700 shadow-2xl py-1.5 z-50 text-xs animate-fade-in"
+                      className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#070918]/98 backdrop-blur-xl border border-purple-500/35 shadow-[0_16px_44px_rgba(0,0,0,0.85)] py-1.5 z-50 text-xs animate-fade-in"
                     >
-                      <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-purple-500/20 flex items-center justify-between">
                         <span>Ubora wa Video</span>
                         <span className="text-cyan-400 text-[9px] font-normal">Kasi ya Mtandao TZ</span>
                       </div>
@@ -1399,12 +1417,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       >
                         <div>
                           <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
-                          <div className="text-[10px] text-neutral-400">Inabadilika kulingana na kasi ya simu</div>
+                          <div className="text-[10px] text-slate-400">Inabadilika kulingana na kasi ya simu</div>
                         </div>
                         {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                       </button>
 
-                      <div className="my-1 border-t border-neutral-800" />
+                      <div className="my-1 border-t border-purple-500/20" />
 
                       {[
                         { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu (Wi-Fi / 4G)' },
@@ -1423,7 +1441,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             <div className={`font-medium ${item.id === 'saver' ? 'text-emerald-400 font-bold' : 'text-white'}`}>
                               {item.label}
                             </div>
-                            <div className="text-[10px] text-neutral-500">{item.desc}</div>
+                            <div className="text-[10px] text-slate-500">{item.desc}</div>
                           </div>
                           {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                         </button>
@@ -1439,16 +1457,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     toggleLanguage();
                     resetControlsTimeout();
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0b0e24]/90 hover:bg-[#131838] text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-purple-500/35 hover:border-amber-400/60 whitespace-nowrap cursor-pointer"
                   title="Badili Lugha ya Sauti (Swahili / English)"
                 >
-                  <Languages className="w-3.5 h-3.5 text-amber-400" />
+                  <Languages className="w-3.5 h-3.5 text-[#ffb020]" />
                   <span>{selectedLanguage === 'sw' ? 'SW' : 'EN'}</span>
                 </button>
               </>
             )}
 
-            {/* Single YouTube Fullscreen Button (The only one!) */}
+            {/* Fullscreen Button */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -1457,8 +1475,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }}
               className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
                 isFullscreen
-                  ? 'text-cyan-400 bg-cyan-600/30 hover:bg-cyan-600/40 border border-cyan-500/50'
-                  : 'text-neutral-300 hover:text-white hover:bg-white/10 border border-transparent'
+                  ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50'
+                  : 'text-slate-200 hover:text-white hover:bg-white/10 border border-transparent'
               }`}
               title={isFullscreen ? 'Punguza Skrini (Exit Fullscreen / F)' : 'Skrini Nzima (Fullscreen / F)'}
             >

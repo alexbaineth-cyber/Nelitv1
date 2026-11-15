@@ -3,7 +3,7 @@ import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  Tv, Eye, Share2, Heart, Check, ArrowLeft, Radio
+  Tv, Eye, Share2, Heart, Check, ArrowLeft, Radio, Globe
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
@@ -20,6 +20,15 @@ interface WatchPageProps {
   onPaymentInitiated?: (orderId: string, amount: number, phone: string, planName: string) => void;
 }
 
+function splitTitleWords(title: string) {
+  const parts = title.trim().split(/\s+/);
+  if (parts.length <= 1) return { lead: '', tail: title };
+  return {
+    lead: parts.slice(0, -1).join(' '),
+    tail: parts[parts.length - 1],
+  };
+}
+
 export const WatchPage: React.FC<WatchPageProps> = ({
   currentChannel,
   channels = CHANNELS_DATA,
@@ -29,7 +38,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   onOpenLoginModal,
   onPaymentInitiated
 }) => {
-  const { hasActiveSubscription, trialRemainingSeconds } = useAuth();
+  useAuth();
 
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -44,14 +53,9 @@ export const WatchPage: React.FC<WatchPageProps> = ({
   const [isWatchPageFullPage, setIsWatchPageFullPage] = useState<boolean>(false);
 
   const isFavorite = favorites.includes(currentChannel.id);
-  // Embedded channels open in the regular layout with sidepanel, just like standard channels!
-  // Fullscreen is only activated when user clicks the fullscreen button or presses 'F'
   const isFullViewport = isWatchPageFullPage;
-  const isPaidChannel = Boolean(currentChannel.requiredPackages?.includes('PAID') || currentChannel.isAzam || currentChannel.requiredPackages?.length);
-  const showTrialBadge = !hasActiveSubscription && !isPaidChannel;
 
-  // SEO: Update page title and description matching the exact requested format:
-  // e.g. "Azam One | Watch On NeliTv"
+  // SEO: Keep original dynamic title & meta format
   useEffect(() => {
     document.title = `${currentChannel.name} | Watch On NeliTv`;
     const metaDesc = document.querySelector('meta[name="description"]');
@@ -63,7 +67,6 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     }
   }, [currentChannel]);
 
-  // Lock landscape orientation when in full screen
   useEffect(() => {
     if (isFullViewport) {
       lockLandscapeOrientation();
@@ -73,6 +76,11 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     }
   }, [isFullViewport]);
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
   const toggleFavorite = () => {
     let updated: string[];
     if (isFavorite) {
@@ -80,7 +88,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
       showToast('Imeondolewa kwenye vipendwa');
     } else {
       updated = [...favorites, currentChannel.id];
-      showToast('Imeongezwa kwenye vipendwa ❤️');
+      showToast('Imeongezwa kwenye vipendwa');
     }
     setFavorites(updated);
     try {
@@ -88,12 +96,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     } catch {}
   };
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 2500);
-  };
-
-  // Keep URL in sync with currently watched channel (e.g. /azam-one or channel-id)
+  // Sync URL with currently watched channel
   useEffect(() => {
     try {
       const slug = getChannelRouteSlug(currentChannel);
@@ -118,31 +121,24 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     }
   };
 
-  const formatSeconds = (sec: number) => {
-    const s = Math.max(0, sec);
-    const mins = Math.floor(s / 60);
-    const remainingSecs = s % 60;
-    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
-  };
-
-  // Other channels list for sidepanel view
   const sideChannels = channels.filter(c => c.id !== currentChannel.id);
+  const { lead: titleLead, tail: titleTail } = splitTitleWords(currentChannel.name);
 
   return (
-    <div className={`min-h-screen ${isFullViewport ? 'bg-black' : 'pb-20 bg-[#05070D] text-neutral-100'}`}>
+    <div className={`min-h-screen ${isFullViewport ? 'bg-black' : 'pb-24 md:pb-16 text-slate-100'}`}>
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-16 right-4 z-50 py-2.5 px-4 rounded-xl bg-neutral-900 border border-neutral-700 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-fade-in">
-          <Check className="w-4 h-4 text-emerald-400" />
+        <div className="fixed top-20 right-4 z-50 py-2.5 px-4 rounded-xl bg-[#070918]/95 border border-purple-500/40 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-fade-in">
+          <Check className="w-4 h-4 text-cyan-400" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Main Container */}
-      <div className={isFullViewport ? 'w-screen h-[100dvh] overflow-hidden' : 'max-w-[1600px] mx-auto px-3 sm:px-6 pt-3 sm:pt-4'}>
-        {/* BUILT-IN APP HEADER (Not floating over the player video) */}
+      <div className={isFullViewport ? 'w-screen h-[100dvh] overflow-hidden' : 'max-w-[1600px] mx-auto px-3 sm:px-6 pt-3 sm:pt-5'}>
+        {/* Top Action Header */}
         {!isFullViewport && (
-          <div className="flex items-center justify-between pb-3 mb-1">
+          <div className="flex items-center justify-between pb-3 mb-2">
             <button
               onClick={() => {
                 if (onBack) {
@@ -151,23 +147,21 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                   window.history.back();
                 }
               }}
-              className="py-1.5 px-3 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+              className="py-2 px-4 rounded-xl bg-[#0b0e24]/90 hover:bg-[#14183b] text-slate-200 hover:text-white border border-purple-500/35 hover:border-cyan-400/60 text-xs font-bold flex items-center gap-2 transition active:scale-95 whitespace-nowrap cursor-pointer shadow-sm"
               title="Rudi Nyuma"
             >
               <ArrowLeft className="w-4 h-4 text-cyan-400" />
-              <span>Rudi Nyuma</span>
+              <span>Rudi Kwenye Vituo</span>
             </button>
 
-            <div className="flex items-center gap-2">
-              <div className="px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5 shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>100% Bure (Free Live TV)</span>
-              </div>
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Mubashara Bure · 100% Free TV</span>
             </div>
           </div>
         )}
 
-        <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5'}>
+        <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
             {/* InMobi Banner above Player */}
@@ -175,12 +169,12 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               <AdBanner slotId="inmobi-banner-watch-top" className="my-0 mb-2" />
             )}
 
-            {/* The VideoPlayer wrapper: persistent DOM node to avoid reload on fullscreen toggle */}
+            {/* VideoPlayer Frame with Neon Obsidian Border Glow */}
             <div
               className={
                 isFullViewport
                   ? 'fixed inset-0 z-30 w-screen h-[100dvh] bg-black flex flex-col overflow-hidden'
-                  : 'relative w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10'
+                  : 'relative w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-[0_0_45px_rgba(124,58,237,0.22)] border border-purple-500/35'
               }
             >
               <VideoPlayer
@@ -201,146 +195,163 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               />
             </div>
 
-            {/* Below Player (Built cleanly into the app layout) */}
+            {/* Channel Detail Panel matching Image 6 obsidian & gold aesthetic */}
             {!isFullViewport && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-neutral-900/90 via-neutral-900/60 to-[#070A10] border border-white/10 shadow-lg">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-10 sm:w-14 sm:h-12 rounded-xl bg-black border border-white/15 flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-inner">
-                      {currentChannel.thumbnailUrl ? (
-                        <img
-                          src={currentChannel.thumbnailUrl}
-                          alt={currentChannel.name}
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <Tv className="w-6 h-6 text-neutral-600" />
-                      )}
+              <div className="relative overflow-hidden p-4 sm:p-6 rounded-2xl neli-card-surface border border-purple-500/25 shadow-xl">
+                {/* Ambient Left Pink & Right Blue Glow */}
+                <div className="pointer-events-none absolute -top-20 -left-16 w-56 h-56 rounded-full bg-[#ff1e8a]/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-20 -right-16 w-56 h-56 rounded-full bg-[#00d4ff]/12 blur-3xl" />
+
+                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    {/* Emblem Poster Card */}
+                    <div className="w-16 h-16 sm:w-20 sm:h-16 rounded-xl p-[1.5px] bg-gradient-to-br from-[#ff9d00]/60 via-[#ff1e8a]/60 to-[#00d4ff]/60 shrink-0 shadow-lg">
+                      <div className="w-full h-full rounded-[10px] bg-[#04050e] flex items-center justify-center p-2 overflow-hidden">
+                        {currentChannel.thumbnailUrl ? (
+                          <img
+                            src={currentChannel.thumbnailUrl}
+                            alt={currentChannel.name}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)]"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <Tv className="w-7 h-7 text-slate-500" />
+                        )}
+                      </div>
                     </div>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h1 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
-                          {currentChannel.name}
-                        </h1>
-                        <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-black uppercase flex items-center gap-1 shadow-sm shrink-0">
-                          <Radio className="w-2.5 h-2.5" />
-                          <span>LIVE</span>
+                      <h1 className="text-xl sm:text-2xl font-black tracking-tight truncate">
+                        {titleLead && <span className="text-white">{titleLead} </span>}
+                        <span className="text-[#ffb020]">{titleTail}</span>
+                      </h1>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-300 mt-1.5">
+                        <span className="inline-flex items-center gap-1.5 font-extrabold text-[#ff3b8d]">
+                          <Radio className="w-3.5 h-3.5 animate-pulse" />
+                          <span>MUBASHARA</span>
                         </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-neutral-400 mt-1">
-                        <span className="flex items-center gap-1">
+                        <span className="text-slate-600">·</span>
+                        <span className="inline-flex items-center gap-1 text-slate-300">
                           <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>{currentChannel.viewerCount} watazamaji</span>
+                          <span>{currentChannel.viewerCount.toLocaleString()} watazamaji</span>
                         </span>
-                        <span>•</span>
-                        <span className="text-neutral-300">
-                          {currentChannel.language === 'sw' ? 'Kiswahili' : 'English'}
+                        <span className="text-slate-600">·</span>
+                        <span className="inline-flex items-center gap-1 text-slate-300">
+                          <Globe className="w-3.5 h-3.5 text-[#ffb020]" />
+                          <span>{currentChannel.language === 'sw' ? 'Kiswahili' : 'English'}</span>
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Built-in Like & Share Buttons */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  {/* Favorite & Share Buttons */}
+                  <div className="flex items-center gap-2.5 shrink-0">
                     <button
                       onClick={toggleFavorite}
-                      className={`p-2.5 rounded-xl border transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation ${
+                      className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 text-xs font-extrabold whitespace-nowrap cursor-pointer active:scale-95 touch-manipulation ${
                         isFavorite
-                          ? 'bg-pink-600/30 border-pink-500 text-pink-400'
-                          : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white'
+                          ? 'neli-gradient-bg text-white shadow-[0_0_20px_rgba(255,30,138,0.4)]'
+                          : 'bg-[#0b0e24]/90 border border-purple-500/35 text-slate-200 hover:border-pink-400/60 hover:text-white'
                       }`}
                       title={isFavorite ? 'Ondoa kwenye vipendwa' : 'Penda chaneli hii'}
                     >
-                      <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current text-pink-500' : ''}`} />
-                      <span className="hidden sm:inline">{isFavorite ? 'Imependwa' : 'Penda'}</span>
+                      <Heart className={`w-4 h-4 ${isFavorite ? 'fill-white text-white' : 'text-pink-400'}`} />
+                      <span>{isFavorite ? 'Imependwa' : 'Penda'}</span>
                     </button>
 
                     <button
                       onClick={handleShare}
-                      className="p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation"
+                      className="px-4 py-2.5 rounded-xl bg-[#0b0e24]/90 border border-cyan-400/40 text-slate-100 hover:bg-[#131838] hover:border-cyan-400 transition flex items-center gap-2 text-xs font-extrabold whitespace-nowrap cursor-pointer active:scale-95 touch-manipulation"
                       title="Sambaza link ya chaneli"
                     >
-                      <Share2 className="w-4 h-4" />
-                      <span className="hidden sm:inline">Sambaza</span>
+                      <Share2 className="w-4 h-4 text-cyan-400" />
+                      <span>Sambaza</span>
                     </button>
                   </div>
                 </div>
 
                 {currentChannel.description && (
-                  <p className="text-xs text-neutral-400 mt-3 pt-3 border-t border-white/10 leading-relaxed">
+                  <p className="relative z-10 text-xs sm:text-sm text-slate-300/90 mt-4 pt-3.5 border-t border-purple-500/20 leading-relaxed">
                     {currentChannel.description}
                   </p>
                 )}
               </div>
             )}
 
-            {/* InMobi Video Ad Placement (10000869534) below Player — non-blocking companion slot */}
+            {/* InMobi Video Ad Placement (10000869534) below Player */}
             {!isFullViewport && (
               <InMobiAdSlot format="video" slotId="inmobi-video-watch-player" className="my-2" />
             )}
           </div>
 
-          {/* Right Column: Other Side Channels (Visible in Normal non-fullscreen view) */}
+          {/* Right Column: Other Live Channels Sidepanel */}
           {!isFullViewport && (
             <div className="lg:col-span-4 space-y-4">
               {/* InMobi Banner in Sidebar */}
               <AdBanner slotId="inmobi-banner-watch-sidebar" className="my-0" />
 
-              <div className="p-4 rounded-2xl bg-[#070A10]/95 border border-white/10 shadow-xl">
-                <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
-                    <Tv className="w-4 h-4 text-pink-500" />
+              <div className="p-4 rounded-2xl neli-card-surface border border-purple-500/25 shadow-xl">
+                <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-purple-500/20">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-white flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#ff3b8d] animate-pulse" />
                     <span>Chaneli Nyingine Mubashara</span>
                   </h3>
-                  <span className="text-[11px] font-mono text-cyan-400">
+                  <span className="text-[11px] font-bold text-cyan-400 tabular-nums">
                     {sideChannels.length} Vituo
                   </span>
                 </div>
 
-                <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1 scrollbar-thin">
-                  {sideChannels.map((ch) => (
-                    <button
-                      key={ch.id}
-                      onClick={() => {
-                        onSelectChannel(ch);
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="w-full p-2.5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-pink-500/50 hover:bg-white/[0.06] text-left transition flex items-center gap-3 group cursor-pointer active:scale-98"
-                    >
-                      <div className="w-12 h-10 rounded-lg bg-black border border-white/10 flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-inner">
-                        {ch.thumbnailUrl ? (
-                          <img
-                            src={ch.thumbnailUrl}
-                            alt={ch.name}
-                            className="w-full h-full object-contain"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <Tv className="w-4 h-4 text-neutral-600" />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className="font-bold text-xs text-white group-hover:text-cyan-400 transition truncate">
-                            {ch.name}
-                          </span>
-                          <span className="text-[10px] text-neutral-400 shrink-0 font-mono">
-                            {ch.viewerCount}
-                          </span>
+                <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1 scrollbar-none">
+                  {sideChannels.map((ch) => {
+                    const { lead, tail } = splitTitleWords(ch.name);
+                    return (
+                      <button
+                        key={ch.id}
+                        onClick={() => {
+                          onSelectChannel(ch);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="w-full p-2.5 rounded-xl bg-[#0b0e24]/75 border border-purple-500/20 hover:border-cyan-400/60 hover:bg-[#131838]/90 text-left transition flex items-center gap-3 group cursor-pointer active:scale-[0.99]"
+                      >
+                        <div className="w-14 h-10 rounded-lg bg-[#04050d] border border-white/10 flex items-center justify-center p-1.5 shrink-0 overflow-hidden shadow-inner">
+                          {ch.thumbnailUrl ? (
+                            <img
+                              src={ch.thumbnailUrl}
+                              alt={ch.name}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <Tv className="w-4 h-4 text-slate-500" />
+                          )}
                         </div>
-                        <p className="text-[11px] text-neutral-400 truncate">
-                          {ch.description || 'Matangazo ya moja kwa moja'}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-0.5">
+                            <span className="font-extrabold text-xs truncate">
+                              {lead && <span className="text-white">{lead} </span>}
+                              <span className="text-[#ffb020] group-hover:text-cyan-300 transition-colors">
+                                {tail}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-cyan-400/90 shrink-0 tabular-nums font-semibold">
+                              {ch.viewerCount}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {ch.currentProgram || ch.description || 'Matangazo ya moja kwa moja'}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

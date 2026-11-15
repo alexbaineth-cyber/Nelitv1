@@ -5,7 +5,7 @@
     margin: 0;
     padding: 0;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background-color: #090a0f;
+    background-color: #050611;
     color: #f3f4f6;
     overflow-x: hidden;
     overflow-y: auto;
@@ -22,6 +22,9 @@
     flex-direction: column;
     overflow-x: hidden;
     touch-action: pan-y;
+    background: radial-gradient(circle at 12% 10%, rgba(255, 0, 128, 0.14) 0%, transparent 40%),
+                radial-gradient(circle at 88% 12%, rgba(0, 212, 255, 0.14) 0%, transparent 42%),
+                #050611;
   }
 
   code, pre {
@@ -36,19 +39,28 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d0f17;
+  background: #060714;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #262a36;
+  background: #2b2650;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b4252;
+  background: #5b21b6;
 }
 
-/* Pulse animation for live badge */
+/* Hide scrollbars cleanly on horizontal carousel rails */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Pulse animation for real live stream badge */
 @keyframes livePulse {
   0%, 100% {
     opacity: 1;
@@ -64,15 +76,37 @@
   animation: livePulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Glassmorphism utility */
-.glass-panel {
-  background: rgba(18, 20, 29, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
-.glass-card {
-  background: rgba(22, 25, 37, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+/* NeliTv Spectrum Gradient Utilities */
+.neli-gradient-text {
+  background: linear-gradient(90deg, #ff9d00 0%, #ff1e8a 42%, #8b5cf6 70%, #00d4ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.neli-gradient-bg {
+  background: linear-gradient(90deg, #ff9d00 0%, #ff1e8a 45%, #7c3aed 75%, #00d4ff 100%);
+}
+
+.neli-glass {
+  background: rgba(10, 12, 26, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+}
+
+.neli-card-surface {
+  background: linear-gradient(155deg, rgba(22, 18, 48, 0.9) 0%, rgba(9, 12, 26, 0.96) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.neli-card-surface:hover {
+  border-color: rgba(0, 212, 255, 0.55);
+  box-shadow: 0 12px 32px -8px rgba(255, 30, 138, 0.22), 0 0 22px -6px rgba(0, 212, 255, 0.25);
 }

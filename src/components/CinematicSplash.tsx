@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Play, Volume2, VolumeX, Sparkles, Tv } from 'lucide-react';
+import { Volume2, VolumeX } from 'lucide-react';
+import { NeliTvBrandMark } from './NeliTvBrandMark.tsx';
 
 interface CinematicSplashProps {
   onComplete: () => void;
@@ -8,13 +9,12 @@ interface CinematicSplashProps {
 
 export const CinematicSplash: React.FC<CinematicSplashProps> = ({
   onComplete,
-  appName = "NeliTv"
+  appName = 'NELITV',
 }) => {
   const [phase, setPhase] = useState<'intro' | 'glow' | 'reveal' | 'outro'>('intro');
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Synthesize theatrical cinematic boom / synth swell using Web Audio API (zero external mp3 file needed)
   const playCinematicSound = () => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -24,24 +24,22 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
 
       const now = ctx.currentTime;
 
-      // 1. Sub bass rumble (theatrical low frequency 45Hz -> 32Hz)
       const subOsc = ctx.createOscillator();
       const subGain = ctx.createGain();
       subOsc.type = 'sine';
       subOsc.frequency.setValueAtTime(55, now);
-      subOsc.frequency.exponentialRampToValueAtTime(35, now + 2.2);
+      subOsc.frequency.exponentialRampToValueAtTime(35, now + 2.0);
 
       subGain.gain.setValueAtTime(0.001, now);
-      subGain.gain.exponentialRampToValueAtTime(0.4, now + 0.4);
-      subGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.4);
+      subGain.gain.exponentialRampToValueAtTime(0.35, now + 0.35);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
 
       subOsc.connect(subGain);
       subGain.connect(ctx.destination);
       subOsc.start(now);
-      subOsc.stop(now + 2.5);
+      subOsc.stop(now + 2.3);
 
-      // 2. Cinematic brass / synth harmonic chord (F# major cinematic swell)
-      const frequencies = [185.00, 233.08, 277.18, 369.99]; // F#3, A#3, C#4, F#4
+      const frequencies = [185.0, 233.08, 277.18, 369.99];
       frequencies.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -51,49 +49,45 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
         osc.frequency.setValueAtTime(freq, now);
 
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(200, now);
-        filter.frequency.exponentialRampToValueAtTime(2400, now + 1.2);
-        filter.frequency.exponentialRampToValueAtTime(300, now + 2.3);
+        filter.frequency.setValueAtTime(220, now);
+        filter.frequency.exponentialRampToValueAtTime(2400, now + 1.0);
+        filter.frequency.exponentialRampToValueAtTime(300, now + 2.1);
 
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(0.12 / frequencies.length, now + 0.6);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.4);
+        gain.gain.exponentialRampToValueAtTime(0.11 / frequencies.length, now + 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
 
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 2.5);
+        osc.stop(now + 2.3);
       });
     } catch {
-      // Audio autoplay policy fallback
+      // Browser autoplay fallback
     }
   };
 
   useEffect(() => {
-    // Phase 1: Darkness & Sub bass
     const t1 = setTimeout(() => {
       setPhase('glow');
       if (audioEnabled) {
         playCinematicSound();
       }
-    }, 200);
+    }, 150);
 
-    // Phase 2: Full logo reveal with light sweep
     const t2 = setTimeout(() => {
       setPhase('reveal');
-    }, 1100);
+    }, 850);
 
-    // Phase 3: Outro fade
     const t3 = setTimeout(() => {
       setPhase('outro');
-    }, 2800);
+    }, 2400);
 
-    // Complete transition
     const t4 = setTimeout(() => {
       onComplete();
-    }, 3400);
+    }, 2950);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
@@ -117,93 +111,131 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
   return (
     <div
       onClick={onComplete}
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black select-none overflow-hidden transition-opacity duration-700 cursor-pointer ${
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-[#030308] select-none overflow-hidden transition-opacity duration-600 cursor-pointer ${
         phase === 'outro' ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
-      {/* Cinematic anamorphic lens flare & particle backdrop */}
-      <div className="absolute inset-0 bg-radial from-red-950/40 via-black to-black" />
-      
-      {/* Horizontal anamorphic light beam */}
+      {/* Sweeping Magenta (Left) & Electric Blue-Cyan (Right) Neon Wave Ribbons */}
       <div
-        className={`absolute w-full h-[2px] bg-gradient-to-r from-transparent via-red-500/80 to-transparent blur-sm transition-transform duration-1000 ${
-          phase === 'reveal' ? 'scale-x-100 opacity-80' : 'scale-x-0 opacity-0'
+        className={`absolute -left-24 top-1/4 w-[65vw] h-[55vh] rounded-full blur-3xl transition-all duration-1000 pointer-events-none ${
+          phase === 'reveal' ? 'opacity-60 scale-105' : 'opacity-25 scale-90'
         }`}
+        style={{
+          background:
+            'radial-gradient(ellipse at center, rgba(255, 0, 128, 0.55) 0%, rgba(168, 85, 247, 0.25) 45%, transparent 72%)',
+        }}
+      />
+      <div
+        className={`absolute -right-24 bottom-1/4 w-[65vw] h-[55vh] rounded-full blur-3xl transition-all duration-1000 pointer-events-none ${
+          phase === 'reveal' ? 'opacity-65 scale-105' : 'opacity-25 scale-90'
+        }`}
+        style={{
+          background:
+            'radial-gradient(ellipse at center, rgba(0, 212, 255, 0.52) 0%, rgba(37, 99, 235, 0.3) 45%, transparent 72%)',
+        }}
       />
 
-      {/* Radial soft glow behind logo */}
-      <div
-        className={`absolute w-[360px] sm:w-[540px] h-[360px] sm:h-[540px] rounded-full bg-red-600/20 blur-3xl transition-all duration-1000 ${
-          phase === 'reveal' ? 'scale-110 opacity-100' : 'scale-50 opacity-0'
-        }`}
-      />
+      {/* Luminous horizontal ribbon curves inspired by Splash Showcase */}
+      <svg
+        viewBox="0 0 1440 720"
+        className="absolute inset-0 w-full h-full object-cover opacity-55 pointer-events-none"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id="splashPink" x1="0%" y1="0%" x2="100%" y2="50%">
+            <stop offset="0%" stopColor="#ff1e8a" stopOpacity="0.95" />
+            <stop offset="60%" stopColor="#a855f7" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="splashBlue" x1="100%" y1="100%" x2="0%" y2="40%">
+            <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.95" />
+            <stop offset="55%" stopColor="#2563eb" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="#ff1e8a" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M-60 120 C 320 280, 620 420, 1480 560"
+          stroke="url(#splashPink)"
+          strokeWidth="4"
+          fill="none"
+        />
+        <path
+          d="M-60 540 C 420 480, 960 300, 1500 120"
+          stroke="url(#splashBlue)"
+          strokeWidth="4"
+          fill="none"
+        />
+      </svg>
 
-      {/* Main Theatrical Content */}
-      <div className="relative z-10 flex flex-col items-center text-center px-4">
-        {/* Animated 3D Neon NeliTv Crest Logo */}
+      {/* Main Centered Neon Crest & Title */}
+      <div className="relative z-10 flex flex-col items-center text-center px-6">
         <div
-          className={`w-24 h-24 sm:w-32 sm:h-32 mb-4 rounded-3xl bg-gradient-to-br from-amber-500 via-pink-500 to-cyan-400 p-[2.5px] shadow-2xl transition-all duration-1000 transform ${
-            phase === 'intro' ? 'scale-75 opacity-0' : phase === 'glow' ? 'scale-95 opacity-80' : 'scale-100 opacity-100 shadow-pink-500/30'
+          className={`mb-5 transition-all duration-700 transform ${
+            phase === 'intro'
+              ? 'scale-75 opacity-0'
+              : phase === 'glow'
+              ? 'scale-95 opacity-85'
+              : 'scale-100 opacity-100'
           }`}
         >
-          <div className="w-full h-full rounded-3xl bg-neutral-950/90 flex items-center justify-center relative overflow-hidden p-2">
-            {/* Shimmer light sweep */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent translate-x-[-100%] animate-[shimmer_2s_infinite]" />
-            <img
-              src="/logo.png"
-              alt="NeliTv Logo"
-              className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(255,0,122,0.4)]"
-            />
-          </div>
+          <NeliTvBrandMark size="lg" showWordmark={false} />
         </div>
 
-        {/* Brand Name Typography with Cinema Styling */}
         <div
-          className={`transition-all duration-1000 transform ${
+          className={`transition-all duration-700 transform ${
             phase === 'reveal'
               ? 'translate-y-0 opacity-100 scale-100'
-              : 'translate-y-4 opacity-0 scale-95'
+              : 'translate-y-3 opacity-80 scale-95'
           }`}
         >
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-pink-500 to-cyan-400 drop-shadow-[0_10px_25px_rgba(255,0,122,0.4)]">
+          <h1
+            className="text-5xl sm:text-7xl md:text-8xl font-black tracking-[0.06em] neli-gradient-text drop-shadow-[0_12px_36px_rgba(255,30,138,0.4)]"
+            style={{ lineHeight: 1.02 }}
+          >
             {appName}
           </h1>
-          <div className="mt-2 flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold tracking-widest text-cyan-300 uppercase">
-            <span>Live Sports</span>
-            <span className="text-neutral-600">·</span>
-            <span>NBC Premier League</span>
-            <span className="text-neutral-600">·</span>
-            <span>Cinema HD</span>
+
+          {/* Glossy floor mirror reflection */}
+          <div
+            aria-hidden="true"
+            className="text-5xl sm:text-7xl md:text-8xl font-black tracking-[0.06em] neli-gradient-text opacity-20 scale-y-[-0.42] -mt-4 blur-[2px] pointer-events-none select-none"
+          >
+            {appName}
+          </div>
+
+          <div className="mt-1 flex items-center justify-center gap-4 text-[11px] sm:text-xs font-semibold tracking-[0.42em] text-neutral-300 uppercase">
+            <span className="h-[1px] w-10 bg-gradient-to-r from-transparent to-pink-500/70" />
+            <span>READY TO PLAY</span>
+            <span className="h-[1px] w-10 bg-gradient-to-l from-transparent to-cyan-400/70" />
           </div>
         </div>
 
-        {/* Subtle tagline */}
-        <p
-          className={`mt-4 text-[11px] sm:text-xs text-neutral-400 tracking-wider transition-opacity duration-700 ${
-            phase === 'reveal' ? 'opacity-80' : 'opacity-0'
-          }`}
+        {/* Minimal Skip & Audio Controls */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="mt-8 flex items-center gap-3"
         >
-          Burudani ya Moja kwa Moja Popote Ulipo
-        </p>
-
-        {/* Skip button for quick TV & PC access */}
-        <div className="mt-8 flex items-center gap-4">
           <button
+            type="button"
             onClick={onComplete}
-            className="px-5 py-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-200 hover:text-white text-xs font-semibold backdrop-blur-md transition active:scale-95 flex items-center gap-2 shadow-lg"
+            className="px-5 py-2 rounded-full bg-white/5 hover:bg-white/15 border border-white/15 text-neutral-200 hover:text-white text-xs font-semibold backdrop-blur-md transition active:scale-95 cursor-pointer"
           >
-            <span>Ruka Utangulizi</span>
+            Ruka Utangulizi
           </button>
-          
+
           <button
+            type="button"
             onClick={() => {
-              setAudioEnabled(!audioEnabled);
-              if (!audioEnabled) playCinematicSound();
+              const next = !audioEnabled;
+              setAudioEnabled(next);
+              if (next) playCinematicSound();
             }}
-            className="p-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-white transition"
-            title={audioEnabled ? "Zima Sauti ya Intro" : "Washa Sauti ya Intro"}
+            className="p-2 rounded-full bg-white/5 hover:bg-white/15 border border-white/15 text-neutral-300 hover:text-white transition cursor-pointer"
+            title={audioEnabled ? 'Zima Sauti ya Intro' : 'Washa Sauti ya Intro'}
+            aria-label={audioEnabled ? 'Zima Sauti ya Intro' : 'Washa Sauti ya Intro'}
           >
-            {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
         </div>
       </div>

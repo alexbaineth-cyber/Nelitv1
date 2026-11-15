@@ -22,6 +22,8 @@ export default defineConfig(() => {
         'lucide-react',
         'firebase/app',
         'firebase/auth',
+        'shaka-player',
+        'hls.js',
       ],
     },
     server: {
