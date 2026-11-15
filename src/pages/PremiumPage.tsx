@@ -136,8 +136,8 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
           </p>
         </div>
 
-        {/* Top In-page Automatic Ad Unit */}
-        <AdBanner className="my-2" />
+        {/* Top InMobi Banner Ad */}
+        <AdBanner slotId="inmobi-banner-premium-top" className="my-2" />
 
         {/* Active subscription status indicator */}
         {hasActiveSubscription && (
@@ -226,8 +226,8 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
           </p>
         </div>
 
-        {/* Bottom In-page Automatic Ad Unit */}
-        <AdBanner className="my-3" />
+        {/* Bottom InMobi Banner Ad */}
+        <AdBanner slotId="inmobi-banner-premium-bottom" className="my-3" />
       </div>
 
       {/* SIMPLE POPUP FOR PHONE NUMBER INPUT & USSD PUSH */}

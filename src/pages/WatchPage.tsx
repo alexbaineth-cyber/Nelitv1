@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
-import { AdBanner, ADS_ENABLED } from '../components/AdBanner';
+import { AdBanner } from '../components/AdBanner';
+import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -169,9 +170,9 @@ export const WatchPage: React.FC<WatchPageProps> = ({
         <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
-            {/* Ad Banner juu ya Player */}
+            {/* InMobi Banner above Player */}
             {!isFullViewport && (
-              <AdBanner className="my-0 mb-2" />
+              <AdBanner slotId="inmobi-banner-watch-top" className="my-0 mb-2" />
             )}
 
             {/* The VideoPlayer wrapper: persistent DOM node to avoid reload on fullscreen toggle */}
@@ -277,17 +278,17 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               </div>
             )}
 
-            {/* Ad Banner chini ya Player */}
+            {/* InMobi Video Ad Placement (10000869534) below Player — non-blocking companion slot */}
             {!isFullViewport && (
-              <AdBanner className="my-2" />
+              <InMobiAdSlot format="video" slotId="inmobi-video-watch-player" className="my-2" />
             )}
           </div>
 
           {/* Right Column: Other Side Channels (Visible in Normal non-fullscreen view) */}
           {!isFullViewport && (
             <div className="lg:col-span-4 space-y-4">
-              {/* Ad Banner pembeni ya app */}
-              <AdBanner className="my-0" />
+              {/* InMobi Banner in Sidebar */}
+              <AdBanner slotId="inmobi-banner-watch-sidebar" className="my-0" />
 
               <div className="p-4 rounded-2xl bg-[#070A10]/95 border border-white/10 shadow-xl">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">

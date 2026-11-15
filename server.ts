@@ -42,11 +42,11 @@ app.use(express.json());
 // Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Allow framing for Google AdSense site preview, /embed, and blogger/external embeds
+  // Allow framing for /embed and external website embeds
   res.removeHeader('X-Frame-Options');
   res.setHeader(
     'Content-Security-Policy',
-    "frame-ancestors * 'self' https://*.google.com https://adsense.google.com https://*.googlesyndication.com https://*.googleadservices.com;"
+    "frame-ancestors * 'self';"
   );
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
@@ -668,11 +668,53 @@ setInterval(() => {
   getOrFetchCdnToken(true).catch(() => {});
 }, 3 * 60 * 1000);
 
-// Google AdSense ads.txt verification endpoint
+// InMobi authorized digital sellers (ads.txt) endpoint
+const INMOBI_ADS_TXT_FALLBACK = `inmobi.com, 6db4aff5416d4bb7b0ba0b274749cc7c, DIRECT, 83e75a7ae333ca9d
+rubiconproject.com, 12266, RESELLER, 0bfd66d529a55807
+rubiconproject.com, 11726, RESELLER, 0bfd66d529a55807
+conversantmedia.com, 40881, RESELLER, 03113cd04947736d
+pubmatic.com, 157097, RESELLER, 5d62403b186f2ace
+opera.com, pub6871903319744, RESELLER, 55a0c5fd61378de3
+smaato.com, 1100053415, RESELLER, 07bcf65f187117b4
+blis.com, 33, RESELLER, 61453ae19a4b73f4
+mintegral.com, 10003, RESELLER
+loopme.com, 9724, RESELLER, 6c8d5f95897a5a3b
+lijit.com, 502742, RESELLER, fafdf38b16bf6b2b
+admanmedia.com, 2063, RESELLER
+eskimi.com, 2020000030, RESELLER
+appnexus.com, 15670, RESELLER
+pubmatic.com, 156931, RESELLER, 5d62403b186f2ace
+pubmatic.com, 159035, RESELLER, 5d62403b186f2ace
+smartyads.com, 478, RESELLER, fd2bde0ff2e62c5d
+se7en.es, 212430, RESELLER, 064bc410192443d8
+themediagrid.com, B8N9YH, RESELLER, 35d5010d7789b49d
+Trustedstack.com, TSP4UUFB8, RESELLER
+thebrave.io, 1234568, RESELLER, c25b2154543746ac
+axonix.com, 57716, RESELLER
+smartadserver.com, 3232, RESELLER, 060d053dcf45cbf3
+risecodes.com, 662a26f1f3d42a00015ffbad, RESELLER
+ssp.e-volution.ai, AJxF6R378a9M6CaTvK, RESELLER
+apester.com, 2212, RESELLER
+zmaticoo.com, 5135082, RESELLER
+playdigo.com, 2010, RESELLER
+e-volution.ai, AJxF6R378a9M6CaTvK, RESELLER
+conversantmedia.com, 100357, RESELLER, 03113cd04947736d
+selectmedia.asia, 645b5a31e427dc0a87094fc4, RESELLER, e365c871a27c655d
+smartbid.ai, SMB30004, RESELLER, 98eb473904e71631
+adagio.io, 1618, RESELLER
+lijit.com, 571745, RESELLER
+thunder-monetize.com, 3905806597, RESELLER
+triplelift.com, 14851, RESELLER, 6c33edb13117fd86
+`;
+
 app.get('/ads.txt', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.send('google.com, pub-7483821694512350, DIRECT, f08c47fec0942fa0\n');
+  const publicAdsPath = path.join(__dirname, 'public', 'ads.txt');
+  if (fs.existsSync(publicAdsPath)) {
+    return res.sendFile(publicAdsPath);
+  }
+  return res.send(INMOBI_ADS_TXT_FALLBACK);
 });
 
 // Block all direct / public exposure of /api/channels and /api/cdn-token
@@ -2173,15 +2215,10 @@ ${channelUrls}
   res.send(sitemapXml);
 });
 
-// 12. Robots.txt & Ads.txt (Google AdSense crawler compliance)
+// 12. Robots.txt (Crawler compliance)
 app.get('/robots.txt', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/plain');
   res.send(`User-agent: *\nAllow: /\n\nSitemap: https://nelitv.online/sitemap.xml\n`);
-});
-
-app.get('/ads.txt', (_req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(`google.com, pub-7483821694512350, DIRECT, f08c47fec0942fa0\n`);
 });
 
 // -------------------------------------------------------------

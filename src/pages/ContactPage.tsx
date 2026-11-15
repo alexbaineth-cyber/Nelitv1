@@ -56,9 +56,6 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
           </span>
         </div>
 
-        {/* Top In-Page Ad Banner (Auto collapses when unfilled) */}
-        <AdBanner className="my-2" />
-
         {/* Contact Info Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-5 rounded-2xl bg-neutral-900/60 border border-neutral-800 space-y-2">
@@ -167,8 +164,8 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
           )}
         </div>
 
-        {/* Bottom In-Page Ad Banner */}
-        <AdBanner className="my-4" />
+        {/* Bottom InMobi Banner Ad */}
+        <AdBanner slotId="inmobi-banner-contact-bottom" className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

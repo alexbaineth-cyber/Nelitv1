@@ -93,17 +93,17 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             </p>
           </div>
 
-          {/* Section 4: Google AdSense & Cookies */}
+          {/* Section 4: InMobi WebX Advertising & Cookies */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
               <Eye className="w-4 h-4 text-amber-400" />
-              <h3>4. Vidakuzi (Cookies) na Matangazo ya Google AdSense</h3>
+              <h3>4. Vidakuzi (Cookies) na Matangazo ya InMobi</h3>
             </div>
             <p>
-              Tovuti ya NeliTv inatumia huduma ya matangazo ya Google AdSense. Google na washirika wake wa wahusika wengine (third-party vendors) hutumia vidakuzi (cookies kama vile Google DoubleClick cookie) kuonyesha matangazo yanayomfaa mtumiaji kulingana na matembezi yake ya awali kwenye tovuti hii au tovuti zingine kwenye mtandao wa intaneti.
+              Tovuti ya NeliTv inatumia huduma ya matangazo ya <strong>InMobi (WebX)</strong> (IAB TCF Vendor ID: 333) kuwezesha upatikanaji wa matangazo ya runinga bila malipo. InMobi na washirika wake wa matangazo wanaweza kutumia vidakuzi (cookies), vitambulisho vya kivinjari, na taarifa za kiufundi za kifaa ili kuonyesha matangazo yanayolingana na muktadha wa ukurasa na kupima ufanisi wa matangazo.
             </p>
             <p className="text-neutral-400 text-xs">
-              Watumiaji wanaweza kuchagua kutotumia matangazo yaliyobinafsishwa (personalized ads) kwa kutembelea ukurasa wa mipangilio ya matangazo ya Google kupitia <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">Google Ads Settings</a> au kupitia tovuti ya <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">aboutads.info</a>.
+              Unaweza kusoma zaidi kuhusu jinsi InMobi inavyochakata data na jinsi ya kudhibiti mapendeleo ya matangazo kwenye <a href="https://www.inmobi.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">InMobi Privacy Policy</a> au kupitia mipangilio ya <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">aboutads.info</a>.
             </p>
           </div>
 
@@ -118,11 +118,11 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             </p>
           </div>
 
-          {/* Section 5 */}
+          {/* Section 6 */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
               <FileText className="w-4 h-4 text-purple-400" />
-              <h3>5. Mawasiliano & Msaada</h3>
+              <h3>6. Mawasiliano & Msaada</h3>
             </div>
             <p>
               Ikiwa una maswali yoyote kuhusu sera hii au msaada wa akaunti yako ya NeliTv, tafadhali wasiliana na kitengo chetu cha msaada:

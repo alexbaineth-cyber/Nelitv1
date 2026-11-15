@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Play, Eye, Tv, Check, Radio, Sparkles, Volume2 } from 'lucide-react';
-import { AdBanner, ADS_ENABLED } from '../components/AdBanner';
+import { AdBanner } from '../components/AdBanner';
+import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 
 interface HomePageProps {
@@ -340,9 +341,9 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 2. AD BANNER (JUU YA CHANNELS) */}
+      {/* 2. TOP INMOBI BANNER AD */}
       <div className="max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-12 pt-4">
-        <AdBanner />
+        <AdBanner slotId="inmobi-banner-home-top" />
       </div>
 
       {/* 3. MAIN CHANNELS GRID (Spacious TV Tile Architecture) */}
@@ -373,7 +374,8 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
           {currentDisplayChannels.map((channel, idx) => {
             const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-            const isMidpoint = idx === 5 && currentDisplayChannels.length > 6;
+            const isFirstNative = idx === 5 && currentDisplayChannels.length > 6;
+            const isSecondNative = idx === 23 && currentDisplayChannels.length > 24;
             return (
               <React.Fragment key={channel.id}>
                 <ChannelCard
@@ -383,9 +385,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                   isFocused={focusedChannelIndex === idx}
                   onSelectChannel={onSelectChannel}
                 />
-                {isMidpoint && (
-                  <div className="col-span-full py-4">
-                    <AdBanner />
+                {isFirstNative && (
+                  <div className="col-span-full py-2">
+                    <InMobiAdSlot format="native" slotId="inmobi-native-home-feed-1" />
+                  </div>
+                )}
+                {isSecondNative && (
+                  <div className="col-span-full py-2">
+                    <InMobiAdSlot format="native" slotId="inmobi-native-home-feed-2" />
                   </div>
                 )}
               </React.Fragment>
@@ -393,9 +400,9 @@ export const HomePage: React.FC<HomePageProps> = ({
           })}
         </div>
 
-        {/* 4. AD BANNER (CHINI YA CHANNELS) */}
-        <div className="pt-10 pb-4">
-          <AdBanner />
+        {/* 4. BOTTOM INMOBI BANNER AD */}
+        <div className="pt-8 pb-4">
+          <AdBanner slotId="inmobi-banner-home-bottom" />
         </div>
       </div>
     </div>

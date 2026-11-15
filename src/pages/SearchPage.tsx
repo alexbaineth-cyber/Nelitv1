@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Search, X, Tv, Eye, ShieldCheck, Play, Radio, Filter } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
+import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
 
 interface SearchPageProps {
   channels?: Channel[];
@@ -136,8 +137,8 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         </div>
 
-        {/* In-page Automatic Ad Unit */}
-        <AdBanner className="my-2" />
+        {/* Top InMobi Banner Ad */}
+        <AdBanner slotId="inmobi-banner-search-top" className="my-2" />
 
         {/* Results Counter */}
         <div className="text-xs text-neutral-400 font-medium">
@@ -155,9 +156,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6 lg:gap-7">
-            {filteredChannels.map(channel => (
+            {filteredChannels.map((channel, idx) => (
+              <React.Fragment key={channel.id}>
               <div
-                key={channel.id}
                 onClick={() => onSelectChannel(channel)}
                 className="group relative flex flex-col rounded-2xl bg-[#0c1120] border border-white/10 hover:border-cyan-400/50 overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-500/10 hover:-translate-y-1.5 focus:scale-[1.03]"
               >
@@ -224,13 +225,19 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                   </div>
                 </div>
               </div>
+              {idx === 5 && filteredChannels.length > 8 && (
+                <div className="col-span-full py-2">
+                  <InMobiAdSlot format="native" slotId="inmobi-native-search-feed" />
+                </div>
+              )}
+              </React.Fragment>
             ))}
           </div>
         )}
 
-        {/* Bottom In-page Automatic Ad Unit */}
+        {/* Bottom InMobi Banner Ad */}
         <div className="pt-4">
-          <AdBanner className="my-2" />
+          <AdBanner slotId="inmobi-banner-search-bottom" className="my-2" />
         </div>
       </div>
     </div>

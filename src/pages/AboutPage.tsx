@@ -40,9 +40,6 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
           </span>
         </div>
 
-        {/* Top In-page Automatic Ad Unit */}
-        <AdBanner className="my-2" />
-
         {/* Hero Section */}
         <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900/90 to-[#0c1322] border border-white/10 shadow-xl space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold">
@@ -128,8 +125,8 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
           </a>
         </div>
 
-        {/* Bottom In-page Automatic Ad Unit */}
-        <AdBanner className="my-2" />
+        {/* Bottom InMobi Banner Ad */}
+        <AdBanner slotId="inmobi-banner-about-bottom" className="my-2" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

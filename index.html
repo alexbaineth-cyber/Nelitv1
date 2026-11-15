@@ -47,25 +47,13 @@
       }
     }
     </script>
-    <!-- Google AdSense Account Verification & Auto-Ads -->
-    <meta name="google-adsense-account" content="ca-pub-7483821694512350" />
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7483821694512350" crossorigin="anonymous"></script>
-    <script>
-      (window.adsbygoogle = window.adsbygoogle || []).push({
-        google_ad_client: "ca-pub-7483821694512350",
-        enable_page_level_ads: true
-      });
-    </script>
-    <!-- Google AMP Auto-Ads Script -->
-    <script async custom-element="amp-auto-ads"
-            src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js">
-    </script>
+    <!-- InMobi WebX Production Advertising SDK -->
+    <link rel="preconnect" href="https://app.inmobi.com" crossorigin />
+    <link rel="preconnect" href="https://ns.inmobi.com" crossorigin />
+    <link rel="preconnect" href="https://supply.inmobicdn.net" crossorigin />
+    <script defer src="https://app.inmobi.com/web-sdk?publisherId=10000252101"></script>
   </head>
   <body class="bg-black text-neutral-100 antialiased selection:bg-red-600 selection:text-white">
-    <!-- Google AMP Auto-Ads Unit -->
-    <amp-auto-ads type="adsense"
-            data-ad-client="ca-pub-7483821694512350">
-    </amp-auto-ads>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

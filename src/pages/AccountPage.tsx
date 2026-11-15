@@ -257,9 +257,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           <ContactPage onBack={() => setSelectedSubpage(null)} />
         )}
 
-        {/* In-page Automatic Ad Unit */}
-        <AdBanner className="my-2" />
-
         {/* TAB 1: PROFILE & LIVE COUNTDOWN */}
         {!selectedSubpage && activeTab === 'profile' && (
           <div className="space-y-6">
@@ -717,7 +714,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 <span>Kurasa Rasmi na Sera za NeliTv</span>
               </h3>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Kurasa zote zimebuniwa kuwa nyepesi, safi na zenye ufikiaji wa haraka bila kuchelewa, kufuata viwango vya Google AdSense na sheria za kidijitali.
+                Kurasa zote zimebuniwa kuwa nyepesi, safi na zenye ufikiaji wa haraka bila kuchelewa, kufuata viwango vya matangazo vya kidijitali na sera za faragha.
               </p>
             </div>
 
@@ -780,12 +777,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                       <Shield className="w-5 h-5" />
                     </span>
                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/40">
-                      Google AdSense
+                      Faragha & Ads
                     </span>
                   </div>
                   <h4 className="text-sm font-bold text-white">Sera ya Faragha (Privacy Policy)</h4>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Ulinzi wa data za kibinafsi, maelezo ya vidakuzi (Cookies & DART) kwa matangazo ya Google AdSense, na haki za mtumiaji.
+                    Ulinzi wa data za kibinafsi, maelezo ya vidakuzi (Cookies) na matangazo ya InMobi WebX, na haki za mtumiaji.
                   </p>
                 </div>
                 <button
@@ -852,9 +849,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           </div>
         )}
 
-        {/* Bottom In-page Automatic Ad Unit */}
+        {/* Bottom InMobi Banner Ad */}
         <div className="pt-2">
-          <AdBanner className="my-2" />
+          <AdBanner slotId="inmobi-banner-account-bottom" className="my-2" />
         </div>
       </div>
     </div>
