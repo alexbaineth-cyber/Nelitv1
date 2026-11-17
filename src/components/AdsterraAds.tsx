@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { RefreshCw, ShieldAlert } from 'lucide-react';
 
 /**
  * Official Adsterra Production Units for NeliTv (https://nelitv.online)
@@ -78,7 +79,7 @@ const BANNER_UNITS: Record<AdsterraBannerVariant, BannerUnitConfig> = {
   },
 };
 
-function buildBannerSrcDoc(cfg: BannerUnitConfig): string {
+function buildBannerSrcDoc(cfg: BannerUnitConfig, uid: string): string {
   return `<!doctype html>
 <html>
   <head>
@@ -108,7 +109,39 @@ function buildBannerSrcDoc(cfg: BannerUnitConfig): string {
         'params' : {}
       };
     </script>
-    <script src="${cfg.scriptSrc}"></script>
+    <script src="${cfg.scriptSrc}" onerror="window.parent.postMessage({type:'neli-frame-status',uid:'${uid}',filled:false},'*')"></script>
+    <script>
+      (function () {
+        var uid = ${JSON.stringify(uid)};
+        var checks = 0;
+        var maxChecks = 16;
+        function hasCreative() {
+          var imgs = document.querySelectorAll('img');
+          for (var i = 0; i < imgs.length; i++) {
+            if (imgs[i].offsetWidth > 8 || imgs[i].naturalWidth > 8) return true;
+          }
+          var frames = document.querySelectorAll('iframe');
+          for (var j = 0; j < frames.length; j++) {
+            if (frames[j].offsetWidth > 12 && frames[j].offsetHeight > 12) return true;
+          }
+          var links = document.querySelectorAll('a, ins, canvas, video, object');
+          for (var k = 0; k < links.length; k++) {
+            if (links[k].offsetWidth > 8 || links[k].offsetHeight > 8) return true;
+          }
+          return document.body && document.body.scrollHeight > 16 && document.body.innerText.trim().length > 0;
+        }
+        var timer = setInterval(function () {
+          checks++;
+          if (hasCreative()) {
+            clearInterval(timer);
+            window.parent.postMessage({ type: 'neli-frame-status', uid: uid, filled: true }, '*');
+          } else if (checks >= maxChecks) {
+            clearInterval(timer);
+            window.parent.postMessage({ type: 'neli-frame-status', uid: uid, filled: false }, '*');
+          }
+        }, 380);
+      })();
+    </script>
   </body>
 </html>`;
 }
@@ -116,71 +149,80 @@ function buildBannerSrcDoc(cfg: BannerUnitConfig): string {
 interface AdsterraBannerProps {
   variant: AdsterraBannerVariant;
   className?: string;
-  label?: string;
 }
 
 /**
- * Isolated iframe-hosted Adsterra banner slot.
- * Gives every banner instance its own clean global `atOptions` context so
- * multiple ad sizes coexist seamlessly without script collisions.
+ * Isolated iframe-hosted Adsterra banner unit.
+ * Remains visually collapsed while probing, reveals cleanly when an ad renders,
+ * and auto-hides completely (`return null`) when there is no fill.
  */
 export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({
   variant,
   className = '',
-  label = 'Tangazo · Sponsored',
 }) => {
   const cfg = BANNER_UNITS[variant];
-  const [hasError, setHasError] = useState(false);
+  const uid = useId();
+  const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
 
-  const srcDoc = useMemo(() => buildBannerSrcDoc(cfg), [cfg]);
+  const srcDoc = useMemo(() => buildBannerSrcDoc(cfg, uid), [cfg, uid]);
 
-  if (hasError) {
+  useEffect(() => {
+    setStatus('probing');
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data && data.type === 'neli-frame-status' && data.uid === uid) {
+        setStatus(data.filled ? 'filled' : 'empty');
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    const fallbackTimeout = setTimeout(() => {
+      setStatus((prev) => (prev === 'probing' ? 'empty' : prev));
+    }, 6800);
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      clearTimeout(fallbackTimeout);
+    };
+  }, [uid, variant]);
+
+  if (status === 'empty') {
     return null;
   }
 
   return (
     <div
-      className={`w-full flex flex-col items-center justify-center ${className}`}
-      data-adsterra-variant={variant}
-      data-adsterra-key={cfg.key}
+      className={
+        status === 'filled'
+          ? `w-full flex items-center justify-center transition-opacity duration-200 opacity-100 ${className}`
+          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0'
+      }
     >
-      <div className="relative max-w-full rounded-2xl neli-card-surface border border-purple-500/20 px-2.5 pt-2 pb-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.45)] overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-1 pb-1.5 text-[10px] font-semibold tracking-wider uppercase text-slate-400/80 select-none">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/75" />
-            <span>{label}</span>
-          </span>
-          <span className="text-[9px] font-mono text-slate-500 tabular-nums">
-            {cfg.width}×{cfg.height}
-          </span>
-        </div>
-
-        <div
-          className="flex items-center justify-center overflow-hidden rounded-xl bg-[#04050e]/90 border border-white/5"
+      <div
+        className="flex items-center justify-center overflow-hidden rounded-lg bg-[#141923] border border-white/[0.08]"
+        style={{
+          width: cfg.width,
+          maxWidth: '100%',
+          height: cfg.height,
+        }}
+      >
+        <iframe
+          title={`NeliTv Promotion ${variant}`}
+          srcDoc={srcDoc}
+          width={cfg.width}
+          height={cfg.height}
+          scrolling="no"
+          frameBorder={0}
+          referrerPolicy="no-referrer-when-downgrade"
+          onError={() => setStatus('empty')}
+          className="border-0 block max-w-full"
           style={{
             width: cfg.width,
-            maxWidth: '100%',
             height: cfg.height,
+            background: 'transparent',
           }}
-        >
-          <iframe
-            title={`NeliTv Ad ${variant}`}
-            srcDoc={srcDoc}
-            width={cfg.width}
-            height={cfg.height}
-            scrolling="no"
-            frameBorder={0}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            onError={() => setHasError(true)}
-            className="border-0 block max-w-full"
-            style={{
-              width: cfg.width,
-              height: cfg.height,
-              background: 'transparent',
-            }}
-          />
-        </div>
+        />
       </div>
     </div>
   );
@@ -188,19 +230,16 @@ export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({
 
 interface AdsterraResponsiveBannerProps {
   className?: string;
-  /** 'full' uses 728x90 / 468x60 / 320x50; 'compact' uses 468x60 / 320x50 */
   mode?: 'full' | 'compact';
-  label?: string;
 }
 
 /**
- * Automatically selects the ideal Adsterra horizontal banner for the current viewport
- * so desktop, tablet, and mobile screens never overflow horizontally.
+ * Selects optimal horizontal banner size per viewport width (728x90 / 468x60 / 320x50).
+ * Auto-hides completely if no ad renders.
  */
 export const AdsterraResponsiveBanner: React.FC<AdsterraResponsiveBannerProps> = ({
   className = '',
   mode = 'full',
-  label,
 }) => {
   const [variant, setVariant] = useState<AdsterraBannerVariant>(() => {
     if (typeof window === 'undefined') return mode === 'compact' ? '468x60' : '728x90';
@@ -227,7 +266,91 @@ export const AdsterraResponsiveBanner: React.FC<AdsterraResponsiveBannerProps> =
     return () => window.removeEventListener('resize', updateVariant);
   }, [mode]);
 
-  return <AdsterraBanner variant={variant} className={className} label={label} />;
+  return <AdsterraBanner variant={variant} className={className} />;
+};
+
+interface AdsterraGridCardProps {
+  className?: string;
+}
+
+/**
+ * Inline ad unit placed directly inside the channel grid container
+ * (e.g. TBC 1 -> Ad -> TBC 2 -> Ad -> Tanzania Safari Channel).
+ * Auto-collapses completely (`return null`) if unfilled so channels align seamlessly.
+ */
+export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
+  className = '',
+}) => {
+  const uid = useId();
+  const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
+  const [variant, setVariant] = useState<AdsterraBannerVariant>(() => {
+    if (typeof window === 'undefined') return '300x250';
+    return window.innerWidth >= 640 ? '300x250' : '320x50';
+  });
+
+  useEffect(() => {
+    const update = () => {
+      setVariant(window.innerWidth >= 640 ? '300x250' : '320x50');
+    };
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  const cfg = BANNER_UNITS[variant];
+  const srcDoc = useMemo(() => buildBannerSrcDoc(cfg, uid), [cfg, uid]);
+
+  useEffect(() => {
+    setStatus('probing');
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data && data.type === 'neli-frame-status' && data.uid === uid) {
+        setStatus(data.filled ? 'filled' : 'empty');
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    const fallbackTimeout = setTimeout(() => {
+      setStatus((prev) => (prev === 'probing' ? 'empty' : prev));
+    }, 6800);
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      clearTimeout(fallbackTimeout);
+    };
+  }, [uid, variant]);
+
+  if (status === 'empty') {
+    return null;
+  }
+
+  return (
+    <div
+      className={
+        status === 'filled'
+          ? `rounded-xl overflow-hidden bg-[#141923] border border-white/[0.08] flex items-center justify-center p-1.5 min-h-[120px] ${className}`
+          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0 border-0'
+      }
+    >
+      <iframe
+        title={`NeliTv Channel Feed Item`}
+        srcDoc={srcDoc}
+        width={cfg.width}
+        height={cfg.height}
+        scrolling="no"
+        frameBorder={0}
+        referrerPolicy="no-referrer-when-downgrade"
+        onError={() => setStatus('empty')}
+        className="border-0 block max-w-full rounded-lg"
+        style={{
+          width: cfg.width,
+          maxWidth: '100%',
+          height: cfg.height,
+          background: 'transparent',
+        }}
+      />
+    </div>
+  );
 };
 
 interface AdsterraNativeBannerProps {
@@ -235,57 +358,89 @@ interface AdsterraNativeBannerProps {
 }
 
 /**
- * Official Adsterra Native 4:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f)
- * Styled seamlessly between channel listings ("katikati ya vipindi vya channel").
+ * Official Adsterra Native 4:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
+ * Auto-hides completely if no native items render within timeout.
  */
 export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
   className = '',
 }) => {
   const hostRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    setStatus('probing');
 
-    // Remove any previously injected copy of the native invoke script so SPA navigation re-renders cleanly
     const staleScripts = document.querySelectorAll(
       `script[src="${ADSTERRA_NATIVE_SRC}"]`
     );
     staleScripts.forEach((s) => s.parentNode?.removeChild(s));
 
+    const containerEl = document.getElementById(ADSTERRA_NATIVE_CONTAINER_ID);
+    const checkContent = () => {
+      if (!containerEl) return false;
+      const hasMedia = containerEl.querySelector('iframe, img, a');
+      return Boolean(hasMedia || containerEl.scrollHeight > 24);
+    };
+
+    const observer = new MutationObserver(() => {
+      if (checkContent()) {
+        setStatus('filled');
+      }
+    });
+
+    if (containerEl) {
+      observer.observe(containerEl, { childList: true, subtree: true });
+    }
+
     const script = document.createElement('script');
     script.async = true;
     script.setAttribute('data-cfasync', 'false');
     script.src = ADSTERRA_NATIVE_SRC;
+    script.onerror = () => setStatus('empty');
     host.appendChild(script);
 
+    const pollInterval = setInterval(() => {
+      if (checkContent()) {
+        setStatus('filled');
+        clearInterval(pollInterval);
+      }
+    }, 450);
+
+    const hideTimeout = setTimeout(() => {
+      if (!checkContent()) {
+        setStatus('empty');
+      }
+      clearInterval(pollInterval);
+    }, 6800);
+
     return () => {
+      observer.disconnect();
+      clearInterval(pollInterval);
+      clearTimeout(hideTimeout);
       if (script.parentNode) {
         script.parentNode.removeChild(script);
       }
     };
   }, []);
 
-  return (
-    <section
-      aria-label="Matangazo ya Washirika"
-      className={`w-full rounded-2xl neli-card-surface border border-purple-500/25 p-3 sm:p-4 shadow-[0_12px_34px_rgba(0,0,0,0.45)] overflow-hidden ${className}`}
-    >
-      <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-purple-500/15 text-[11px] text-slate-400">
-        <span className="flex items-center gap-2 font-bold text-slate-300">
-          <span className="w-2 h-2 rounded-full neli-gradient-bg" />
-          <span>Mapendekezo ya Washirika · Sponsored</span>
-        </span>
-        <span className="text-[10px] font-mono text-cyan-400/75 uppercase">4:1 Native</span>
-      </div>
+  if (status === 'empty') {
+    return null;
+  }
 
-      <div ref={hostRef} className="w-full min-h-[100px] flex items-center justify-center">
-        <div
-          id={ADSTERRA_NATIVE_CONTAINER_ID}
-          className="w-full"
-        />
+  return (
+    <div
+      className={
+        status === 'filled'
+          ? `w-full rounded-xl bg-[#141923] border border-white/[0.08] p-3 overflow-hidden transition-opacity duration-200 opacity-100 ${className}`
+          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0'
+      }
+    >
+      <div ref={hostRef} className="w-full">
+        <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full" />
       </div>
-    </section>
+    </div>
   );
 };
 
@@ -294,33 +449,117 @@ interface AdsterraGlobalScriptsProps {
 }
 
 /**
- * Injects Adsterra Popunder + Social Bar scripts once on main viewing routes.
- * Disabled automatically on /embed/* and /api/* views so external embeds remain pure.
+ * Injects Adsterra Popunder + Social Bar scripts once on main viewing routes,
+ * and monitors if an AdBlocker is actively blocking ad delivery so users are prompted
+ * cleanly to disable AdBlocker and allow ads.
  */
 export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
   enabled = true,
 }) => {
+  const [adBlockerDetected, setAdBlockerDetected] = useState(false);
+  const [retrySeed, setRetrySeed] = useState(0);
+
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
     const path = window.location.pathname.toLowerCase();
     if (path.startsWith('/embed') || path.startsWith('/api')) return;
 
-    if (!document.querySelector(`script[src="${ADSTERRA_POPUNDER_SRC}"]`)) {
+    let blockedByNetwork = false;
+
+    const existingPop = document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`);
+    if (existingPop && retrySeed > 0) existingPop.remove();
+    if (!document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`)) {
       const popunder = document.createElement('script');
       popunder.setAttribute('data-cfasync', 'false');
-      popunder.src = ADSTERRA_POPUNDER_SRC;
+      popunder.src =
+        retrySeed > 0 ? `${ADSTERRA_POPUNDER_SRC}?r=${retrySeed}` : ADSTERRA_POPUNDER_SRC;
       popunder.async = true;
+      popunder.onerror = () => {
+        blockedByNetwork = true;
+        setAdBlockerDetected(true);
+      };
       document.body.appendChild(popunder);
     }
 
-    if (!document.querySelector(`script[src="${ADSTERRA_SOCIAL_BAR_SRC}"]`)) {
+    const existingSocial = document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`);
+    if (existingSocial && retrySeed > 0) existingSocial.remove();
+    if (!document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`)) {
       const socialBar = document.createElement('script');
       socialBar.setAttribute('data-cfasync', 'false');
-      socialBar.src = ADSTERRA_SOCIAL_BAR_SRC;
+      socialBar.src =
+        retrySeed > 0 ? `${ADSTERRA_SOCIAL_BAR_SRC}?r=${retrySeed}` : ADSTERRA_SOCIAL_BAR_SRC;
       socialBar.async = true;
+      socialBar.onerror = () => {
+        blockedByNetwork = true;
+        setAdBlockerDetected(true);
+      };
       document.body.appendChild(socialBar);
     }
-  }, [enabled]);
 
-  return null;
+    // Cosmetic filter bait check to detect active AdBlock extensions
+    const bait = document.createElement('div');
+    bait.className = 'adsbox ad-banner pub_300x250 pub_728x90 text-ad';
+    bait.style.cssText =
+      'width:1px;height:1px;position:absolute;left:-9999px;top:-9999px;pointer-events:none;';
+    bait.innerHTML = '&nbsp;';
+    document.body.appendChild(bait);
+
+    const checkTimer = setTimeout(() => {
+      try {
+        const computed = window.getComputedStyle(bait);
+        const hiddenByBlocker =
+          bait.offsetParent === null ||
+          bait.offsetHeight === 0 ||
+          computed.display === 'none' ||
+          computed.visibility === 'hidden';
+        if (hiddenByBlocker || blockedByNetwork) {
+          setAdBlockerDetected(true);
+        } else {
+          setAdBlockerDetected(false);
+        }
+      } catch {}
+      if (bait.parentNode) {
+        bait.parentNode.removeChild(bait);
+      }
+    }, 1100);
+
+    return () => {
+      clearTimeout(checkTimer);
+      if (bait.parentNode) bait.parentNode.removeChild(bait);
+    };
+  }, [enabled, retrySeed]);
+
+  if (!enabled || !adBlockerDetected) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#0b0e14]/95 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="max-w-md w-full rounded-2xl bg-[#141923] border border-white/15 p-6 text-center shadow-2xl space-y-4">
+        <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-white">
+            Tafadhali Zima AdBlocker
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            NeliTv inakuletea vituo vyote vya Live TV, Michezo na Sinema <strong>BURE 100%</strong> kwa msaada wa matangazo. Zima AdBlocker yako kwenye kivinjari hiki ili kuendelea kutazama.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setAdBlockerDetected(false);
+            setRetrySeed((s) => s + 1);
+            window.location.reload();
+          }}
+          className="w-full py-3 px-5 rounded-xl bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Nimezima AdBlocker — Onyesha Matangazo</span>
+        </button>
+      </div>
+    </div>
+  );
 };

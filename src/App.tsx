@@ -212,7 +212,7 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050611] text-slate-100 selection:bg-cyan-500 selection:text-black flex flex-col">
+    <div className="min-h-screen bg-[#0b0e14] text-slate-100 selection:bg-[#1ce783] selection:text-[#04120b] flex flex-col">
       <AdsterraGlobalScripts
         enabled={activeTab !== 'api' && activeTab !== 'embed'}
       />
@@ -302,53 +302,54 @@ function MainApp() {
 
       {/* Clean Footer Navigation for Legal, Privacy & Tools */}
       {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'embed' && (
-        <footer className="relative border-t border-purple-500/20 bg-[#04050e] text-slate-400 pb-24 md:pb-8 pt-8 px-4 sm:px-8">
-          <div className="pointer-events-none absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-purple-500/45 to-cyan-400/40" />
+        <footer className="border-t border-white/[0.08] bg-[#090c11] text-slate-400 pb-24 md:pb-8 pt-7 px-4 sm:px-8">
           <div className="max-w-[1680px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <div className="text-center sm:text-left">
-              <span className="font-black italic neli-gradient-text text-sm mr-1.5">NeliTv</span> · Live TV, Sports &amp; Cinema · 100% Bure
+              <span className="font-bold text-white text-sm mr-1.5">
+                Neli<span className="text-[#1ce783]">Tv</span>
+              </span> · Live TV, Sports &amp; Cinema · Bure 100%
             </div>
 
             <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
               <button
                 onClick={() => navigateToTab('about')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 Kuhusu Sisi
               </button>
               <button
                 onClick={() => setPrivacyModalOpen(true)}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 Sera ya Faragha
               </button>
               <button
                 onClick={() => navigateToTab('terms')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 Masharti
               </button>
               <button
                 onClick={() => navigateToTab('dmca')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 DMCA
               </button>
               <button
                 onClick={() => navigateToTab('contact')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 Mawasiliano
               </button>
               <button
                 onClick={() => navigateToTab('embed')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 Embed Studio
               </button>
               <button
                 onClick={() => navigateToTab('api')}
-                className="hover:text-cyan-400 transition cursor-pointer"
+                className="hover:text-white transition cursor-pointer"
               >
                 API
               </button>
@@ -360,12 +361,12 @@ function MainApp() {
       {/* Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile Navigation"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#060716]/95 backdrop-blur-xl border-t border-purple-500/25 px-2 py-1.5 flex items-center justify-around"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0b0e14]/95 backdrop-blur-md border-t border-white/[0.08] px-2 py-1.5 flex items-center justify-around"
       >
         <button
           onClick={() => navigateToTab('home')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'home' || activeTab === 'watch' ? 'text-cyan-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-semibold transition cursor-pointer ${
+            activeTab === 'home' || activeTab === 'watch' ? 'text-white' : 'text-slate-400'
           }`}
         >
           <Home className="w-5 h-5" />
@@ -374,8 +375,8 @@ function MainApp() {
 
         <button
           onClick={() => navigateToTab('search')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'search' ? 'text-cyan-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-semibold transition cursor-pointer ${
+            activeTab === 'search' ? 'text-white' : 'text-slate-400'
           }`}
         >
           <Search className="w-5 h-5" />
@@ -384,7 +385,7 @@ function MainApp() {
 
         <button
           onClick={() => setDownloadModalOpen(true)}
-          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-bold text-[#ffb020] transition cursor-pointer"
+          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-semibold text-[#1ce783] transition cursor-pointer"
         >
           <Download className="w-5 h-5" />
           <span>Pakua APK</span>
@@ -392,8 +393,8 @@ function MainApp() {
 
         <button
           onClick={() => navigateToTab('account')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'account' ? 'text-cyan-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-semibold transition cursor-pointer ${
+            activeTab === 'account' ? 'text-white' : 'text-slate-400'
           }`}
         >
           <User className="w-5 h-5" />
