@@ -4,7 +4,6 @@ import { Play, Tv, Check } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
 import {
   AdsterraBanner,
-  AdsterraGridCard,
   AdsterraNativeBanner,
 } from '../components/AdsterraAds.tsx';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
@@ -420,27 +419,26 @@ export const HomePage: React.FC<HomePageProps> = ({
                         const isFocused = focusedTargetChannel?.id === channel.id;
 
                         return (
-                          <React.Fragment key={channel.id}>
-                            <ChannelCard
-                              domId={`channel-card-${flatIdx}`}
-                              channel={channel}
-                              channelNumber={channelNumber > 0 ? channelNumber : flatIdx + 1}
-                              isFocused={isFocused}
-                              onSelectChannel={onSelectChannel}
-                            />
-                            <AdsterraGridCard />
-                          </React.Fragment>
+                          <ChannelCard
+                            key={channel.id}
+                            domId={`channel-card-${flatIdx}`}
+                            channel={channel}
+                            channelNumber={channelNumber > 0 ? channelNumber : flatIdx + 1}
+                            isFocused={isFocused}
+                            onSelectChannel={onSelectChannel}
+                          />
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Native 4:1 horizontal divider between channel groups */}
-                  {groupIdx < channelGroups.length - 1 && (
-                    <div className="pt-1">
-                      <AdsterraNativeBanner mode="iframe" />
-                    </div>
-                  )}
+                  {/* Balanced Native 4:1 divider between major channel groups (no ad spam) */}
+                  {(groupIdx === 0 || groupIdx === 2) &&
+                    groupIdx < channelGroups.length - 1 && (
+                      <div className="pt-1">
+                        <AdsterraNativeBanner mode="iframe" />
+                      </div>
+                    )}
                 </React.Fragment>
               ));
             })()}
