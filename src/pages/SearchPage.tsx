@@ -131,12 +131,15 @@ export const SearchPage: React.FC<SearchPageProps> = ({
         {/* Top Responsive Banner (auto-hides if no-fill) */}
         <AdBanner />
 
+        {/* Primary Native 4:1 Banner right above search channels */}
+        <AdsterraNativeBanner mode="dom" />
+
         {/* Results Counter */}
         <div className="text-xs text-slate-400 font-medium">
           Zimepatikana chaneli <strong className="text-white">{filteredChannels.length}</strong>
         </div>
 
-        {/* Results Grid */}
+        {/* Results Grid (chunked with Native 4:1 group dividers) */}
         {filteredChannels.length === 0 ? (
           <div className="text-center py-20 rounded-xl bg-[#141923] border border-white/[0.08]">
             <Tv className="w-10 h-10 text-slate-500 mx-auto mb-3" />
@@ -146,64 +149,72 @@ export const SearchPage: React.FC<SearchPageProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4">
-            {filteredChannels.map((channel, idx) => {
-              const lower = channel.name.toLowerCase();
-              const hasTbc1 = filteredChannels.some(c => c.name.toLowerCase() === 'tbc 1');
-              const isNativeSlot = hasTbc1 ? lower === 'tbc 1' : idx === 0;
-              const showInline = !isNativeSlot;
+          <div className="space-y-6">
+            {Array.from(
+              { length: Math.ceil(filteredChannels.length / 10) },
+              (_, chunkIdx) => {
+                const chunk = filteredChannels.slice(chunkIdx * 10, (chunkIdx + 1) * 10);
+                return (
+                  <React.Fragment key={`search-chunk-${chunkIdx}`}>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4">
+                      {chunk.map((channel) => (
+                        <React.Fragment key={channel.id}>
+                          <button
+                            onClick={() => onSelectChannel(channel)}
+                            className="group relative aspect-[16/10] w-full rounded-xl overflow-hidden text-left border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] cursor-pointer bg-[#141923]"
+                          >
+                            <div className="relative z-10 h-full w-full flex items-center justify-center p-4 pb-10 bg-gradient-to-b from-[#1a2130] to-[#11151f]">
+                              {channel.thumbnailUrl ? (
+                                <img
+                                  src={channel.thumbnailUrl}
+                                  alt={channel.name}
+                                  referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  className="max-h-11 sm:max-h-12 max-w-[110px] object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <Radio className="w-7 h-7 text-slate-500" />
+                              )}
+                            </div>
 
-              return (
-                <React.Fragment key={channel.id}>
-                  <button
-                    onClick={() => onSelectChannel(channel)}
-                    className="group relative aspect-[16/10] w-full rounded-xl overflow-hidden text-left border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] cursor-pointer bg-[#141923]"
-                  >
-                    <div className="relative z-10 h-full w-full flex items-center justify-center p-4 pb-10 bg-gradient-to-b from-[#1a2130] to-[#11151f]">
-                      {channel.thumbnailUrl ? (
-                        <img
-                          src={channel.thumbnailUrl}
-                          alt={channel.name}
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          className="max-h-11 sm:max-h-12 max-w-[110px] object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <Radio className="w-7 h-7 text-slate-500" />
-                      )}
+                            <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/35">
+                              <div className="w-9 h-9 rounded-full bg-white text-[#0b0e14] flex items-center justify-center shadow">
+                                <Play className="w-4 h-4 fill-[#0b0e14] ml-0.5" />
+                              </div>
+                            </div>
+
+                            <div className="absolute inset-x-0 bottom-0 z-20 p-3 bg-gradient-to-t from-[#090c12] via-[#090c12]/90 to-transparent">
+                              <h4 className="font-semibold text-xs sm:text-sm text-white leading-tight truncate">
+                                {channel.name}
+                              </h4>
+                              <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
+                                <span className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#1ce783]" />
+                                  Live
+                                </span>
+                                <span className="inline-flex items-center gap-1 tabular-nums">
+                                  <Eye className="w-3 h-3" />
+                                  {(channel.viewerCount || 650).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          <AdsterraGridCard />
+                        </React.Fragment>
+                      ))}
                     </div>
 
-                    <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/35">
-                      <div className="w-9 h-9 rounded-full bg-white text-[#0b0e14] flex items-center justify-center shadow">
-                        <Play className="w-4 h-4 fill-[#0b0e14] ml-0.5" />
-                      </div>
-                    </div>
-
-                    <div className="absolute inset-x-0 bottom-0 z-20 p-3 bg-gradient-to-t from-[#090c12] via-[#090c12]/90 to-transparent">
-                      <h4 className="font-semibold text-xs sm:text-sm text-white leading-tight truncate">
-                        {channel.name}
-                      </h4>
-                      <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#1ce783]" />
-                          Live
-                        </span>
-                        <span className="inline-flex items-center gap-1 tabular-nums">
-                          <Eye className="w-3 h-3" />
-                          {(channel.viewerCount || 650).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-
-                  {isNativeSlot && <AdsterraNativeBanner />}
-                  {showInline && <AdsterraGridCard />}
-                </React.Fragment>
-              );
-            })}
+                    {(chunkIdx + 1) * 10 < filteredChannels.length && (
+                      <AdsterraNativeBanner mode="iframe" />
+                    )}
+                  </React.Fragment>
+                );
+              }
+            )}
           </div>
         )}
 

@@ -390,15 +390,205 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
 
 interface AdsterraNativeBannerProps {
   className?: string;
+  /**
+   * 'dom' mounts #container-1f34e1dd1781212d8cccc0d2af939c1f directly in main DOM
+   * (best for the primary 4:1 slot right above all channels).
+   * 'iframe' isolates #container-1f34e1dd1781212d8cccc0d2af939c1f per slot so multiple
+   * 4:1 native dividers can render cleanly between channel groups without ID collisions.
+   */
+  mode?: 'dom' | 'iframe';
 }
 
-/**
- * Official Adsterra Native 1:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
- * Matches the exact channel card container (`aspect-[16/10] rounded-xl bg-[#141923]`)
- * so it sits naturally inside the channel grid, occupies zero grid space while probing,
- * and auto-hides completely if empty.
- */
-export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
+function buildNativeSrcDoc(uid: string): string {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base target="_blank" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        background: transparent;
+        color: #f1f5f9;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+      }
+      #${ADSTERRA_NATIVE_CONTAINER_ID} {
+        width: 100%;
+        display: block;
+      }
+      #${ADSTERRA_NATIVE_CONTAINER_ID} a {
+        color: #f8fafc;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="${ADSTERRA_NATIVE_CONTAINER_ID}"></div>
+    <script async="async" data-cfasync="false" src="${ADSTERRA_NATIVE_SRC}" onerror="window.parent.postMessage({type:'neli-native-status',uid:'${uid}',filled:false,height:0},'*')"></script>
+    <script>
+      (function () {
+        var uid = ${JSON.stringify(uid)};
+        var container = document.getElementById(${JSON.stringify(ADSTERRA_NATIVE_CONTAINER_ID)});
+        var checks = 0;
+        var maxChecks = 22;
+        var notifiedFilled = false;
+
+        function measure() {
+          if (!container) return { filled: false, height: 0 };
+          var hasMedia = container.querySelector('iframe, img, a, ins');
+          var h = Math.max(container.scrollHeight || 0, document.body.scrollHeight || 0);
+          var filled = Boolean((hasMedia && h > 20) || h > 36);
+          return { filled: filled, height: h };
+        }
+
+        function report() {
+          var res = measure();
+          if (res.filled) {
+            notifiedFilled = true;
+            window.parent.postMessage({
+              type: 'neli-native-status',
+              uid: uid,
+              filled: true,
+              height: res.height
+            }, '*');
+          }
+          return res.filled;
+        }
+
+        if (typeof ResizeObserver !== 'undefined' && container) {
+          var ro = new ResizeObserver(function () {
+            report();
+          });
+          ro.observe(container);
+        }
+
+        if (typeof MutationObserver !== 'undefined' && container) {
+          var mo = new MutationObserver(function () {
+            report();
+          });
+          mo.observe(container, { childList: true, subtree: true });
+        }
+
+        var timer = setInterval(function () {
+          checks++;
+          if (report()) {
+            if (checks > 10) clearInterval(timer);
+          } else if (checks >= maxChecks && !notifiedFilled) {
+            clearInterval(timer);
+            window.parent.postMessage({
+              type: 'neli-native-status',
+              uid: uid,
+              filled: false,
+              height: 0
+            }, '*');
+          }
+        }, 420);
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
+const AdsterraNativeIframeSlot: React.FC<{ className?: string }> = ({
+  className = '',
+}) => {
+  const uid = useId();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(false);
+  const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
+  const [frameHeight, setFrameHeight] = useState<number>(190);
+  const srcDoc = useMemo(() => buildNativeSrcDoc(uid), [uid]);
+
+  useEffect(() => {
+    if (inView) return;
+    const el = hostRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '420px 0px' }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [inView]);
+
+  useEffect(() => {
+    if (!inView) return;
+    setStatus('probing');
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data && data.type === 'neli-native-status' && data.uid === uid) {
+        if (data.filled) {
+          setStatus('filled');
+          if (typeof data.height === 'number' && data.height > 20) {
+            setFrameHeight(Math.ceil(data.height) + 4);
+          }
+        } else {
+          setStatus('empty');
+        }
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    const fallbackTimer = setTimeout(() => {
+      setStatus((prev) => (prev === 'probing' ? 'empty' : prev));
+    }, 9500);
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      clearTimeout(fallbackTimer);
+    };
+  }, [inView, uid]);
+
+  if (status === 'empty') {
+    return null;
+  }
+
+  return (
+    <div
+      ref={hostRef}
+      className={
+        status === 'filled'
+          ? `w-full rounded-xl bg-[#141923] border border-white/[0.08] p-2.5 sm:p-3 overflow-hidden transition-opacity duration-200 opacity-100 ${className}`
+          : 'w-full h-px overflow-hidden opacity-0 pointer-events-none'
+      }
+    >
+      {inView && (
+        <iframe
+          title="NeliTv Native Promotion"
+          srcDoc={srcDoc}
+          width="100%"
+          height={status === 'filled' ? frameHeight : 220}
+          scrolling="no"
+          frameBorder={0}
+          referrerPolicy="no-referrer-when-downgrade"
+          onError={() => setStatus('empty')}
+          className="border-0 block w-full"
+          style={{
+            height: status === 'filled' ? `${frameHeight}px` : '220px',
+            background: 'transparent',
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const AdsterraNativeDomSlot: React.FC<{ className?: string }> = ({
   className = '',
 }) => {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -410,14 +600,14 @@ export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
     setStatus('probing');
 
     const staleScripts = document.querySelectorAll(
-      `script[src="${ADSTERRA_NATIVE_SRC}"]`
+      `script[src^="${ADSTERRA_NATIVE_SRC}"]`
     );
     staleScripts.forEach((s) => s.parentNode?.removeChild(s));
 
     const containerEl = document.getElementById(ADSTERRA_NATIVE_CONTAINER_ID);
     const checkContent = () => {
       if (!containerEl) return false;
-      const hasMedia = containerEl.querySelector('iframe, img, a');
+      const hasMedia = containerEl.querySelector('iframe, img, a, ins');
       return Boolean(hasMedia || containerEl.scrollHeight > 24);
     };
 
@@ -443,14 +633,14 @@ export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
         setStatus('filled');
         clearInterval(pollInterval);
       }
-    }, 450);
+    }, 400);
 
     const hideTimeout = setTimeout(() => {
       if (!checkContent()) {
         setStatus('empty');
       }
       clearInterval(pollInterval);
-    }, 6800);
+    }, 9500);
 
     return () => {
       observer.disconnect();
@@ -470,15 +660,30 @@ export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
     <div
       className={
         status === 'filled'
-          ? `relative aspect-[16/10] w-full rounded-xl bg-[#141923] border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] overflow-hidden opacity-100 ${className}`
-          : 'fixed -left-[9999px] top-0 w-[300px] h-[250px] opacity-0 pointer-events-none overflow-hidden'
+          ? `w-full rounded-xl bg-[#141923] border border-white/[0.08] p-2.5 sm:p-3 overflow-hidden transition-opacity duration-200 opacity-100 ${className}`
+          : 'w-full min-h-0 max-h-px overflow-hidden opacity-0 pointer-events-none'
       }
     >
-      <div ref={hostRef} className="w-full h-full">
-        <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full h-full" />
+      <div ref={hostRef} className="w-full">
+        <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full" />
       </div>
     </div>
   );
+};
+
+/**
+ * Official Adsterra Native 4:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
+ * Renders at full horizontal width (4 columns on desktop, clean responsive stack on mobile),
+ * stays in visible document flow so Adsterra sees real container width, and auto-hides if empty.
+ */
+export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
+  className = '',
+  mode = 'dom',
+}) => {
+  if (mode === 'iframe') {
+    return <AdsterraNativeIframeSlot className={className} />;
+  }
+  return <AdsterraNativeDomSlot className={className} />;
 };
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;

@@ -92,6 +92,74 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   const liveFeaturedRow = channels.slice(0, 6);
 
+  /** Group channels cleanly into non-overlapping sections for "Vituo Vyote" */
+  const channelGroups = React.useMemo(() => {
+    if (selectedCategory !== 'all') {
+      if (currentDisplayChannels.length <= 8) {
+        return [
+          {
+            id: selectedCategory,
+            title: categories.find((c) => c.id === selectedCategory)?.label || 'Vituo',
+            items: currentDisplayChannels,
+          },
+        ];
+      }
+      const chunks: { id: string; title: string; items: Channel[] }[] = [];
+      const baseTitle = categories.find((c) => c.id === selectedCategory)?.label || 'Vituo';
+      for (let i = 0; i < currentDisplayChannels.length; i += 8) {
+        chunks.push({
+          id: `${selectedCategory}-${i}`,
+          title: i === 0 ? baseTitle : `${baseTitle} — Sehemu ya ${Math.floor(i / 8) + 1}`,
+          items: currentDisplayChannels.slice(i, i + 8),
+        });
+      }
+      return chunks;
+    }
+
+    const assignedIds = new Set<string>();
+    const take = (predicate: (c: Channel) => boolean) => {
+      const list = channels.filter((c) => !assignedIds.has(c.id) && predicate(c));
+      list.forEach((c) => assignedIds.add(c.id));
+      return list;
+    };
+
+    const tanzaniaGroup = take(
+      (c) =>
+        (c.category.includes('tanzania') && !c.category.includes('sport')) ||
+        c.name.toLowerCase().includes('azam one') ||
+        c.name.toLowerCase().includes('azam two') ||
+        c.name.toLowerCase().includes('sinema zetu')
+    );
+    const sportsGroup = take((c) => c.category.includes('sport') || c.category.includes('sports'));
+    const moviesGroup = take(
+      (c) =>
+        c.category.includes('movies') ||
+        c.category.includes('comedy') ||
+        c.name.toLowerCase().includes('movie') ||
+        c.name.toLowerCase().includes('cinema')
+    );
+    const kidsGroup = take((c) => c.category.includes('kids'));
+    const newsAfricaMusicGroup = take(() => true);
+
+    return [
+      { id: 'tanzania', title: 'Tanzania & Burudani', items: tanzaniaGroup },
+      { id: 'sports', title: 'Michezo Mubashara', items: sportsGroup },
+      { id: 'movies', title: 'Sinema & Tamthilia', items: moviesGroup },
+      { id: 'kids', title: 'Watoto & Katuni', items: kidsGroup },
+      { id: 'africa-news', title: 'Habari, Muziki & Afrika', items: newsAfricaMusicGroup },
+    ].filter((g) => g.items.length > 0);
+  }, [channels, currentDisplayChannels, selectedCategory, categories]);
+
+  const orderedDisplayedChannels = React.useMemo(
+    () => channelGroups.flatMap((g) => g.items),
+    [channelGroups]
+  );
+
+  const focusedTargetChannel =
+    focusedChannelIndex >= 0 && focusedChannelIndex < orderedDisplayedChannels.length
+      ? orderedDisplayedChannels[focusedChannelIndex]
+      : null;
+
   const triggerChannelJump = (channel: Channel) => {
     if (dialTimerRef.current) clearTimeout(dialTimerRef.current);
     setDialedNumber('');
@@ -131,9 +199,9 @@ export const HomePage: React.FC<HomePageProps> = ({
           triggerChannelJump(dialedTargetChannel);
           return;
         }
-        if (focusedChannelIndex >= 0 && focusedChannelIndex < currentDisplayChannels.length) {
+        if (focusedChannelIndex >= 0 && focusedChannelIndex < orderedDisplayedChannels.length) {
           e.preventDefault();
-          onSelectChannel(currentDisplayChannels[focusedChannelIndex]);
+          onSelectChannel(orderedDisplayedChannels[focusedChannelIndex]);
           return;
         }
       }
@@ -160,7 +228,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         setFocusedChannelIndex((prev) => {
-          const next = Math.min(currentDisplayChannels.length - 1, (prev < 0 ? 0 : prev) + 1);
+          const next = Math.min(orderedDisplayedChannels.length - 1, (prev < 0 ? 0 : prev) + 1);
           scrollToChannelCard(next);
           return next;
         });
@@ -180,7 +248,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         }
         e.preventDefault();
         setFocusedChannelIndex((prev) => {
-          const next = Math.min(currentDisplayChannels.length - 1, prev + cols);
+          const next = Math.min(orderedDisplayedChannels.length - 1, prev + cols);
           scrollToChannelCard(next);
           return next;
         });
@@ -208,7 +276,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       if (dialTimerRef.current) clearTimeout(dialTimerRef.current);
     };
-  }, [dialedNumber, dialedTargetChannel, focusedChannelIndex, currentDisplayChannels, channels]);
+  }, [dialedNumber, dialedTargetChannel, focusedChannelIndex, orderedDisplayedChannels, channels]);
 
   const scrollToChannelCard = (idx: number) => {
     try {
@@ -218,20 +286,6 @@ export const HomePage: React.FC<HomePageProps> = ({
       }
     } catch {}
   };
-
-  /** Show an ad slot after every channel (auto-hides if unfilled) */
-  const shouldShowInlineAdAfter = (_channel: Channel, _idx: number): boolean => {
-    return currentDisplayChannels.length > 0;
-  };
-
-  // Place Native 1:1 inline right after TBC 1 (or after index 0 on filtered views)
-  const nativeCardIndex = (() => {
-    const tbc1Idx = currentDisplayChannels.findIndex(
-      (c) => c.name.toLowerCase() === 'tbc 1'
-    );
-    if (tbc1Idx >= 0) return tbc1Idx;
-    return currentDisplayChannels.length > 0 ? 0 : -1;
-  })();
 
   return (
     <div className="min-h-screen pb-24 sm:pb-16 bg-[#0b0e14] text-slate-100 touch-pan-y">
@@ -296,7 +350,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
-      {/* TRENDING LIVE ROW (Hulu/Disney+ Horizontal Rail, no bloated hero slider) */}
+      {/* TRENDING LIVE ROW (Hulu/Disney+ Horizontal Rail) */}
       {selectedCategory === 'all' && liveFeaturedRow.length > 0 && (
         <section className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-5">
           <div className="flex items-center justify-between mb-3">
@@ -321,10 +375,15 @@ export const HomePage: React.FC<HomePageProps> = ({
         </section>
       )}
 
-      {/* ALL CHANNELS GRID WITH INLINE NATIVE 1:1 & FEED ADS */}
+      {/* NATIVE 4:1 BANNER DIRECTLY ABOVE ALL CHANNELS ("JUU YA VITUO VYOTE") */}
+      <section className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-6">
+        <AdsterraNativeBanner mode="dom" />
+      </section>
+
+      {/* GROUPED CHANNELS SEPARATED BY NATIVE 4:1 BANNERS */}
       <section
         ref={allChannelsRef}
-        className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-7"
+        className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-5"
       >
         <div className="flex items-center justify-between gap-4 mb-4">
           <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
@@ -339,27 +398,52 @@ export const HomePage: React.FC<HomePageProps> = ({
 
         {/* Flex layout collapses right skyscraper column cleanly to 0px when no skyscraper ads fill */}
         <div className="flex flex-col xl:flex-row items-start gap-6">
-          <div className="flex-1 min-w-0 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
-            {currentDisplayChannels.map((channel, idx) => {
-              const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-              const isNativeSlot = idx === nativeCardIndex;
-              const showInlineAd = !isNativeSlot && shouldShowInlineAdAfter(channel, idx);
+          <div className="flex-1 min-w-0 w-full space-y-8">
+            {(() => {
+              let runningFlatIdx = 0;
+              return channelGroups.map((group, groupIdx) => (
+                <React.Fragment key={group.id}>
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/[0.07] pb-2">
+                      <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                        {group.title}
+                      </h2>
+                      <span className="text-xs text-slate-400 tabular-nums">
+                        Vituo {group.items.length}
+                      </span>
+                    </div>
 
-              return (
-                <React.Fragment key={channel.id}>
-                  <ChannelCard
-                    domId={`channel-card-${idx}`}
-                    channel={channel}
-                    channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
-                    isFocused={focusedChannelIndex === idx}
-                    onSelectChannel={onSelectChannel}
-                  />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                      {group.items.map((channel) => {
+                        const flatIdx = runningFlatIdx++;
+                        const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
+                        const isFocused = focusedTargetChannel?.id === channel.id;
 
-                  {isNativeSlot && <AdsterraNativeBanner />}
-                  {showInlineAd && <AdsterraGridCard />}
+                        return (
+                          <React.Fragment key={channel.id}>
+                            <ChannelCard
+                              domId={`channel-card-${flatIdx}`}
+                              channel={channel}
+                              channelNumber={channelNumber > 0 ? channelNumber : flatIdx + 1}
+                              isFocused={isFocused}
+                              onSelectChannel={onSelectChannel}
+                            />
+                            <AdsterraGridCard />
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Native 4:1 horizontal divider between channel groups */}
+                  {groupIdx < channelGroups.length - 1 && (
+                    <div className="pt-1">
+                      <AdsterraNativeBanner mode="iframe" />
+                    </div>
+                  )}
                 </React.Fragment>
-              );
-            })}
+              ));
+            })()}
           </div>
 
           <aside className="hidden xl:flex flex-col items-center gap-4 shrink-0 sticky top-20 empty:hidden">
