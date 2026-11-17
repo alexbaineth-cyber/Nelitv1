@@ -149,9 +149,13 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4">
             {filteredChannels.map((channel, idx) => {
               const lower = channel.name.toLowerCase();
-              const showInline =
+              const isNativeSlot =
                 filteredChannels.length > 4 &&
-                (lower === 'tbc 1' || lower === 'tbc 2' || idx === 1);
+                (lower === 'tbc 1' || (idx === 4 && !filteredChannels.some(c => c.name.toLowerCase() === 'tbc 1')));
+              const showInline =
+                !isNativeSlot &&
+                filteredChannels.length > 4 &&
+                (lower === 'tbc 2' || idx === 1);
 
               return (
                 <React.Fragment key={channel.id}>
@@ -199,13 +203,8 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                     </div>
                   </button>
 
+                  {isNativeSlot && <AdsterraNativeBanner />}
                   {showInline && <AdsterraGridCard />}
-
-                  {idx === 5 && filteredChannels.length > 8 && (
-                    <div className="col-span-full">
-                      <AdsterraNativeBanner />
-                    </div>
-                  )}
                 </React.Fragment>
               );
             })}

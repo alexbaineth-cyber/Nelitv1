@@ -157,7 +157,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
-    if ((e.target as HTMLElement).closest('button, input, select, a, form')) {
+    if ((e.target as HTMLElement).closest('button, input, select, a, form, [data-player-ui]')) {
       return;
     }
     // Attempt smooth un-mute on user tap if video was muted by browser autoplay policy
@@ -1201,11 +1201,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Center Play Overlay with Neon Spectrum Ring when user explicitly paused */}
+      {/* Center Play Overlay when user explicitly paused */}
       {!isEmbedded && isUserPaused && !isBuffering && !isPaywallTriggered && !errorMessage && (
         <div
-          onClick={(e) => {
-            e.stopPropagation();
+          data-player-ui="true"
+          onClick={() => {
             setIsUserPaused(false);
             if (videoRef.current) {
               videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {
@@ -1216,12 +1216,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               });
             }
           }}
-          className="absolute inset-0 z-20 flex items-center justify-center bg-[#03040a]/45 backdrop-blur-[2px] cursor-pointer"
+          className="absolute inset-0 z-20 flex items-center justify-center bg-[#03040a]/45 cursor-pointer"
         >
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full p-[3px] neli-gradient-bg shadow-[0_0_32px_rgba(255,30,138,0.5),0_0_48px_rgba(0,212,255,0.3)] transition transform hover:scale-110 active:scale-95">
-            <div className="w-full h-full rounded-full bg-[#070918]/90 hover:bg-[#0c1028]/90 text-white flex items-center justify-center">
-              <Play className="w-7 h-7 sm:w-9 sm:h-9 fill-white ml-1" />
-            </div>
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white text-[#0b0e14] flex items-center justify-center shadow-xl transition transform hover:scale-105 active:scale-95">
+            <Play className="w-7 h-7 sm:w-9 sm:h-9 fill-[#0b0e14] ml-1" />
           </div>
         </div>
       )}
@@ -1229,16 +1227,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Tap to Unmute Banner when autoplay policy muted the video */}
       {!isEmbedded && isPlaying && isMuted && !isPaywallTriggered && !isOffline && (
         <div
-          onClick={(e) => {
-            e.stopPropagation();
+          data-player-ui="true"
+          onClick={() => {
             if (videoRef.current) {
               videoRef.current.muted = false;
               setIsMuted(false);
             }
           }}
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-25 py-1.5 px-4 rounded-xl bg-[#070918]/90 hover:bg-[#0d112b] text-white border border-cyan-400/50 text-[11px] sm:text-xs font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(0,212,255,0.28)] cursor-pointer animate-pulse transition"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-25 py-1.5 px-4 rounded-lg bg-[#141923]/95 hover:bg-[#1b2230] text-white border border-white/20 text-[11px] sm:text-xs font-semibold flex items-center gap-2 shadow-lg cursor-pointer transition"
         >
-          <VolumeX className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <VolumeX className="w-3.5 h-3.5 text-[#1ce783] shrink-0" />
           <span>Sauti imezimwa — Bonyeza hapa kufungua sauti</span>
         </div>
       )}
@@ -1285,14 +1283,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Bottom Overlay Controls — Obsidian glass + Spectrum Live Accent Bar */}
+      {/* Bottom Overlay Controls */}
       <div
+        data-player-ui="true"
         className={`absolute inset-x-0 bottom-0 z-20 pt-6 pb-3 px-3 sm:px-4 bg-gradient-to-t from-[#03040c]/95 via-[#050611]/75 to-transparent transition-all duration-300 ease-in-out ${
           showControls
             ? 'opacity-100 pointer-events-auto translate-y-0'
             : 'opacity-0 pointer-events-none translate-y-full'
         }`}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Subtle Spectrum Live Progress Line */}
         <div className="relative h-[3px] w-full rounded-full bg-white/15 mb-2.5 overflow-hidden">

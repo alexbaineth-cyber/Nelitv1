@@ -328,12 +328,12 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
     <div
       className={
         status === 'filled'
-          ? `rounded-xl overflow-hidden bg-[#141923] border border-white/[0.08] flex items-center justify-center p-1.5 min-h-[120px] ${className}`
+          ? `relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-[#141923] border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] flex items-center justify-center ${className}`
           : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0 border-0'
       }
     >
       <iframe
-        title={`NeliTv Channel Feed Item`}
+        title="NeliTv Channel Item"
         srcDoc={srcDoc}
         width={cfg.width}
         height={cfg.height}
@@ -341,11 +341,10 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
         frameBorder={0}
         referrerPolicy="no-referrer-when-downgrade"
         onError={() => setStatus('empty')}
-        className="border-0 block max-w-full rounded-lg"
+        className="border-0 block w-full h-full"
         style={{
-          width: cfg.width,
           maxWidth: '100%',
-          height: cfg.height,
+          maxHeight: '100%',
           background: 'transparent',
         }}
       />
@@ -358,8 +357,9 @@ interface AdsterraNativeBannerProps {
 }
 
 /**
- * Official Adsterra Native 4:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
- * Auto-hides completely if no native items render within timeout.
+ * Official Adsterra Native 1:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
+ * Matches the exact channel card container (`aspect-[16/10] rounded-xl bg-[#141923]`)
+ * so it sits naturally inside the channel grid, and auto-hides completely if empty.
  */
 export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
   className = '',
@@ -433,12 +433,12 @@ export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
     <div
       className={
         status === 'filled'
-          ? `w-full rounded-xl bg-[#141923] border border-white/[0.08] p-3 overflow-hidden transition-opacity duration-200 opacity-100 ${className}`
-          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0'
+          ? `relative aspect-[16/10] w-full rounded-xl bg-[#141923] border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] overflow-hidden opacity-100 ${className}`
+          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0 border-0'
       }
     >
-      <div ref={hostRef} className="w-full">
-        <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full" />
+      <div ref={hostRef} className="w-full h-full">
+        <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full h-full" />
       </div>
     </div>
   );
@@ -508,7 +508,6 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
       try {
         const computed = window.getComputedStyle(bait);
         const hiddenByBlocker =
-          bait.offsetParent === null ||
           bait.offsetHeight === 0 ||
           computed.display === 'none' ||
           computed.visibility === 'hidden';

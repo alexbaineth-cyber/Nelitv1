@@ -219,15 +219,24 @@ export const HomePage: React.FC<HomePageProps> = ({
     } catch {}
   };
 
-  /** Determine where inline ads appear inside the channel grid (e.g. TBC 1 -> Ad -> TBC 2 -> Ad -> Tanzania Safari Channel) */
+  /** Determine where inline grid ads appear between channels */
   const shouldShowInlineAdAfter = (channel: Channel, idx: number): boolean => {
     if (currentDisplayChannels.length <= 4) return false;
     const lower = channel.name.toLowerCase();
-    if (lower === 'tbc 1' || lower === 'tbc 2') return true;
+    if (lower === 'tbc 2') return true;
     if (idx === 1) return true;
     if (idx > 14 && (idx - 11) % 10 === 0) return true;
     return false;
   };
+
+  // Place Native 1:1 inline right after TBC 1 (or after index 4 on filtered category views)
+  const nativeCardIndex = (() => {
+    const tbc1Idx = currentDisplayChannels.findIndex(
+      (c) => c.name.toLowerCase() === 'tbc 1'
+    );
+    if (tbc1Idx >= 0) return tbc1Idx;
+    return currentDisplayChannels.length > 6 ? 4 : -1;
+  })();
 
   return (
     <div className="min-h-screen pb-24 sm:pb-16 bg-[#0b0e14] text-slate-100 touch-pan-y">
@@ -317,7 +326,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </section>
       )}
 
-      {/* ALL CHANNELS GRID WITH INLINE NATIVE & FEED ADS */}
+      {/* ALL CHANNELS GRID WITH INLINE NATIVE 1:1 & FEED ADS */}
       <section
         ref={allChannelsRef}
         className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-7"
@@ -338,8 +347,8 @@ export const HomePage: React.FC<HomePageProps> = ({
           <div className="flex-1 min-w-0 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
             {currentDisplayChannels.map((channel, idx) => {
               const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-              const isMidFeedNative = idx === 5 && currentDisplayChannels.length > 7;
-              const showInlineAd = shouldShowInlineAdAfter(channel, idx);
+              const isNativeSlot = idx === nativeCardIndex;
+              const showInlineAd = !isNativeSlot && shouldShowInlineAdAfter(channel, idx);
 
               return (
                 <React.Fragment key={channel.id}>
@@ -351,13 +360,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                     onSelectChannel={onSelectChannel}
                   />
 
+                  {isNativeSlot && <AdsterraNativeBanner />}
                   {showInlineAd && <AdsterraGridCard />}
-
-                  {isMidFeedNative && (
-                    <div className="col-span-full">
-                      <AdsterraNativeBanner />
-                    </div>
-                  )}
                 </React.Fragment>
               );
             })}
