@@ -105,8 +105,8 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
           </section>
         </div>
 
-        {/* Bottom InMobi Banner Ad */}
-        <AdBanner slotId="inmobi-banner-terms-bottom" className="my-4" />
+        {/* Bottom Adsterra Responsive Banner */}
+        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

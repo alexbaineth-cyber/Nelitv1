@@ -25,6 +25,7 @@ import { LoginModal } from './components/LoginModal.tsx';
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
 import { CinematicSplash } from './components/CinematicSplash.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
+import { AdsterraGlobalScripts } from './components/AdsterraAds.tsx';
 import { Home, Search, Download, User } from 'lucide-react';
 
 type ActiveRouteTab =
@@ -212,6 +213,9 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-[#050611] text-slate-100 selection:bg-cyan-500 selection:text-black flex flex-col">
+      <AdsterraGlobalScripts
+        enabled={activeTab !== 'api' && activeTab !== 'embed'}
+      />
       {showSplash && <CinematicSplash onComplete={handleSplashComplete} />}
 
       <Navbar

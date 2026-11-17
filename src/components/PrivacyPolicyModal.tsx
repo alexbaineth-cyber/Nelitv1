@@ -93,17 +93,17 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             </p>
           </div>
 
-          {/* Section 4: InMobi WebX Advertising & Cookies */}
+          {/* Section 4: Advertising Partners & Cookies */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
               <Eye className="w-4 h-4 text-amber-400" />
-              <h3>4. Vidakuzi (Cookies) na Matangazo ya InMobi</h3>
+              <h3>4. Vidakuzi (Cookies) na Matangazo ya Mtandaoni</h3>
             </div>
             <p>
-              Tovuti ya NeliTv inatumia huduma ya matangazo ya <strong>InMobi (WebX)</strong> (IAB TCF Vendor ID: 333) kuwezesha upatikanaji wa matangazo ya runinga bila malipo. InMobi na washirika wake wa matangazo wanaweza kutumia vidakuzi (cookies), vitambulisho vya kivinjari, na taarifa za kiufundi za kifaa ili kuonyesha matangazo yanayolingana na muktadha wa ukurasa na kupima ufanisi wa matangazo.
+              Tovuti ya NeliTv inatumia huduma ya matangazo ya <strong>Adsterra</strong> kuwezesha upatikanaji wa matangazo ya runinga bila malipo. Adsterra na washirika wake wa matangazo wanaweza kutumia vidakuzi (cookies), vitambulisho vya kivinjari, na taarifa za kiufundi za kifaa ili kuonyesha matangazo yanayolingana na muktadha wa ukurasa na kupima ufanisi wa matangazo.
             </p>
             <p className="text-neutral-400 text-xs">
-              Unaweza kusoma zaidi kuhusu jinsi InMobi inavyochakata data na jinsi ya kudhibiti mapendeleo ya matangazo kwenye <a href="https://www.inmobi.com/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">InMobi Privacy Policy</a> au kupitia mipangilio ya <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">aboutads.info</a>.
+              Unaweza kudhibiti au kufuta vidakuzi kupitia mipangilio ya kivinjari chako au kusoma zaidi kuhusu faragha ya matangazo kupitia <a href="https://adsterra.com/privacy-policy/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">Adsterra Privacy Policy</a> na <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">aboutads.info</a>.
             </p>
           </div>
 

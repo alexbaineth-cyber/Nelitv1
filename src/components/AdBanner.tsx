@@ -1,29 +1,32 @@
 import React from 'react';
-import { InMobiAdSlot } from './InMobiAdSlot.tsx';
+import { AdsterraResponsiveBanner } from './AdsterraAds.tsx';
 
 export const ADS_ENABLED = true;
 
 interface AdBannerProps {
   className?: string;
   slotId?: string;
+  mode?: 'full' | 'compact';
+  label?: string;
 }
 
 /**
- * InMobi WebX Production Banner Component (Placement ID: 10000869533)
- * Renders responsive banners and collapses automatically to zero height on no-fill/error.
+ * Responsive Adsterra Leaderboard Banner (728x90 / 468x60 / 320x50)
+ * Automatically adapts to desktop, tablet, and mobile viewports.
  */
 export const AdBanner: React.FC<AdBannerProps> = ({
   className = '',
-  slotId,
+  mode = 'full',
+  label,
 }) => {
   if (!ADS_ENABLED) {
     return null;
   }
 
   return (
-    <InMobiAdSlot
-      format="banner"
-      slotId={slotId}
+    <AdsterraResponsiveBanner
+      mode={mode}
+      label={label}
       className={className}
     />
   );

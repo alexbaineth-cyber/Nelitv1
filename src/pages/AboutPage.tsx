@@ -125,8 +125,8 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
           </a>
         </div>
 
-        {/* Bottom InMobi Banner Ad */}
-        <AdBanner slotId="inmobi-banner-about-bottom" className="my-2" />
+        {/* Bottom Adsterra Responsive Banner */}
+        <AdBanner className="my-2" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

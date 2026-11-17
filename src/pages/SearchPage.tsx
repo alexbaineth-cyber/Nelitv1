@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Search, X, Tv, Eye, Play, Radio } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
-import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
+import { AdsterraNativeBanner } from '../components/AdsterraAds.tsx';
 
 interface SearchPageProps {
   channels?: Channel[];
@@ -153,8 +153,8 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         </div>
 
-        {/* Top InMobi Banner Ad */}
-        <AdBanner slotId="inmobi-banner-search-top" className="my-2" />
+        {/* Top Adsterra Responsive Banner */}
+        <AdBanner className="my-2" />
 
         {/* Results Counter */}
         <div className="text-xs text-slate-400 font-semibold flex items-center justify-between">
@@ -233,7 +233,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({
 
                   {idx === 5 && filteredChannels.length > 8 && (
                     <div className="col-span-full py-2">
-                      <InMobiAdSlot format="native" slotId="inmobi-native-search-feed" />
+                      <AdsterraNativeBanner />
                     </div>
                   )}
                 </React.Fragment>
@@ -242,9 +242,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         )}
 
-        {/* Bottom InMobi Banner Ad */}
+        {/* Bottom Adsterra Responsive Banner */}
         <div className="pt-4">
-          <AdBanner slotId="inmobi-banner-search-bottom" className="my-2" />
+          <AdBanner className="my-2" />
         </div>
       </div>
     </div>

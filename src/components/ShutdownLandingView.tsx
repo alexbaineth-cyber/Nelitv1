@@ -303,9 +303,9 @@ export const ShutdownLandingView: React.FC = () => {
           </div>
         </section>
 
-        {/* Non-disruptive InMobi WebX Banner Slot (auto-collapses if no-fill) */}
+        {/* Non-disruptive Adsterra Banner Slot */}
         <div className="w-full max-w-4xl mx-auto mt-6">
-          <AdBanner slotId="inmobi-banner-shutdown-bottom" />
+          <AdBanner />
         </div>
       </main>
 

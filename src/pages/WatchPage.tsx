@@ -3,12 +3,12 @@ import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { VideoPlayer } from '../components/VideoPlayer.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
-  Tv, Eye, Share2, Heart, Check, ArrowLeft, Radio, Globe
+  Tv, Eye, Share2, Heart, Check, ArrowLeft, Radio, Globe, Copy
 } from 'lucide-react';
 import { lockLandscapeOrientation, unlockScreenOrientation } from '../utils/orientation.ts';
 import { getChannelRouteSlug, getChannelShareUrl } from '../utils/channelRoute.ts';
 import { AdBanner } from '../components/AdBanner';
-import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
+import { AdsterraBanner, ADSTERRA_SMART_LINK } from '../components/AdsterraAds.tsx';
 
 interface WatchPageProps {
   currentChannel: Channel;
@@ -107,18 +107,26 @@ export const WatchPage: React.FC<WatchPageProps> = ({
     } catch {}
   }, [currentChannel]);
 
-  const handleShare = () => {
+  const handleCopyChannelLink = () => {
     const shareUrl = getChannelShareUrl(currentChannel);
     if (navigator.share) {
       navigator.share({
         title: `${currentChannel.name} | Watch On NeliTv`,
-        text: `Tazama ${currentChannel.name} mubashara kwenye NeliTv! Bonyeza hapa kutazama:`,
+        text: `Tazama ${currentChannel.name} mubashara kwenye NeliTv!`,
         url: shareUrl
       }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(shareUrl);
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).catch(() => {});
       showToast(`Link ya ${currentChannel.name} imenakiliwa!`);
     }
+  };
+
+  const handleSmartShare = () => {
+    const shareUrl = getChannelShareUrl(currentChannel);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).catch(() => {});
+    }
+    showToast(`Link ya ${currentChannel.name} imenakiliwa & kufunguliwa!`);
   };
 
   const sideChannels = channels.filter(c => c.id !== currentChannel.id);
@@ -164,12 +172,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
         <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
-            {/* InMobi Banner above Player */}
-            {!isFullViewport && (
-              <AdBanner slotId="inmobi-banner-watch-top" className="my-0 mb-2" />
-            )}
-
-            {/* VideoPlayer Frame with Neon Obsidian Border Glow */}
+            {/* VideoPlayer Frame with Neon Obsidian Border Glow (unobstructed at top) */}
             <div
               className={
                 isFullViewport
@@ -248,8 +251,8 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Favorite & Share Buttons */}
-                  <div className="flex items-center gap-2.5 shrink-0">
+                  {/* Favorite & Share Buttons (Smart Link powered Share) */}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
                       onClick={toggleFavorite}
                       className={`px-4 py-2.5 rounded-xl transition flex items-center gap-2 text-xs font-extrabold whitespace-nowrap cursor-pointer active:scale-95 touch-manipulation ${
@@ -263,13 +266,25 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                       <span>{isFavorite ? 'Imependwa' : 'Penda'}</span>
                     </button>
 
-                    <button
-                      onClick={handleShare}
-                      className="px-4 py-2.5 rounded-xl bg-[#0b0e24]/90 border border-cyan-400/40 text-slate-100 hover:bg-[#131838] hover:border-cyan-400 transition flex items-center gap-2 text-xs font-extrabold whitespace-nowrap cursor-pointer active:scale-95 touch-manipulation"
+                    <a
+                      href={ADSTERRA_SMART_LINK}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleSmartShare}
+                      className="px-4 py-2.5 rounded-xl bg-[#0b0e24]/90 border border-cyan-400/40 text-slate-100 hover:bg-[#131838] hover:border-cyan-400 transition flex items-center gap-2 text-xs font-extrabold whitespace-nowrap active:scale-95 touch-manipulation"
                       title="Sambaza link ya chaneli"
                     >
                       <Share2 className="w-4 h-4 text-cyan-400" />
                       <span>Sambaza</span>
+                    </a>
+
+                    <button
+                      onClick={handleCopyChannelLink}
+                      className="p-2.5 rounded-xl bg-[#0b0e24]/90 border border-purple-500/30 text-slate-300 hover:text-white hover:border-cyan-400/50 transition cursor-pointer active:scale-95"
+                      title="Nakili URL ya chaneli"
+                      aria-label="Nakili URL ya chaneli"
+                    >
+                      <Copy className="w-4 h-4 text-amber-400" />
                     </button>
                   </div>
                 </div>
@@ -282,17 +297,16 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               </div>
             )}
 
-            {/* InMobi Video Ad Placement (10000869534) below Player */}
+            {/* Adsterra Responsive Leaderboard below Player Info (728x90 / 468x60 / 320x50) */}
             {!isFullViewport && (
-              <InMobiAdSlot format="video" slotId="inmobi-video-watch-player" className="my-2" />
+              <AdBanner className="pt-1" />
             )}
           </div>
 
-          {/* Right Column: Other Live Channels Sidepanel */}
+          {/* Right Column: Adsterra 300x250 + Other Live Channels Sidepanel + 160x300 */}
           {!isFullViewport && (
             <div className="lg:col-span-4 space-y-4">
-              {/* InMobi Banner in Sidebar */}
-              <AdBanner slotId="inmobi-banner-watch-sidebar" className="my-0" />
+              <AdsterraBanner variant="300x250" />
 
               <div className="p-4 rounded-2xl neli-card-surface border border-purple-500/25 shadow-xl">
                 <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-purple-500/20">
@@ -353,6 +367,10 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              <div className="hidden lg:flex justify-center">
+                <AdsterraBanner variant="160x300" />
               </div>
             </div>
           )}

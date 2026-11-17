@@ -2,10 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import {
   Play, Info, Tv, Check, ChevronLeft, ChevronRight, ArrowRight,
-  Flame, Sparkles, Trophy, Film, Radio, Newspaper, Baby, Globe
+  Flame, Sparkles, Trophy, Film, Radio, Newspaper, Baby, Globe, Share2
 } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
-import { InMobiAdSlot } from '../components/InMobiAdSlot.tsx';
+import {
+  AdsterraBanner,
+  AdsterraNativeBanner,
+  ADSTERRA_SMART_LINK,
+} from '../components/AdsterraAds.tsx';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 
 interface HomePageProps {
@@ -423,7 +427,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   {featuredChannel.currentProgram || featuredChannel.description}
                 </p>
 
-                {/* Two Signature Hero CTA Buttons */}
+                {/* Hero CTA Buttons */}
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={() => onSelectChannel(featuredChannel)}
@@ -440,6 +444,16 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <Info className="w-4 h-4 text-cyan-400" />
                     <span>Maelezo Zaidi</span>
                   </button>
+
+                  <a
+                    href={ADSTERRA_SMART_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-3 px-5 rounded-full bg-[#0b0f26]/80 hover:bg-[#13193b] border border-purple-400/40 hover:border-amber-400/70 text-neutral-100 font-semibold text-sm flex items-center gap-2 backdrop-blur-md transition active:scale-95 whitespace-nowrap"
+                  >
+                    <Share2 className="w-4 h-4 text-amber-400" />
+                    <span>Sambaza</span>
+                  </a>
                 </div>
 
                 {/* Slide Indicator Dots */}
@@ -494,9 +508,9 @@ export const HomePage: React.FC<HomePageProps> = ({
         </section>
       )}
 
-      {/* 2. TOP INMOBI PRODUCTION BANNER AD */}
-      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-12 pt-4">
-        <AdBanner slotId="inmobi-banner-home-top" />
+      {/* 2. TOP ADSTERRA RESPONSIVE LEADERBOARD BANNER (728x90 / 468x60 / 320x50) */}
+      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-12 pt-5">
+        <AdBanner />
       </div>
 
       {/* 3. TRENDING LIVE CHANNELS ROW (Matching "Filamu Zinazotazamika Sana") */}
@@ -578,35 +592,39 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </div>
 
-        {/* Spacious 16:9 Neon Channel Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-5">
-          {currentDisplayChannels.map((channel, idx) => {
-            const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-            const isFirstNative = idx === 4 && currentDisplayChannels.length > 6;
-            const isSecondNative = idx === 24 && currentDisplayChannels.length > 26;
-            return (
-              <React.Fragment key={channel.id}>
-                <ChannelCard
-                  domId={`channel-card-${idx}`}
-                  channel={channel}
-                  channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
-                  index={idx}
-                  isFocused={focusedChannelIndex === idx}
-                  onSelectChannel={onSelectChannel}
-                />
-                {isFirstNative && (
-                  <div className="col-span-full py-2">
-                    <InMobiAdSlot format="native" slotId="inmobi-native-home-feed-1" />
-                  </div>
-                )}
-                {isSecondNative && (
-                  <div className="col-span-full py-2">
-                    <InMobiAdSlot format="native" slotId="inmobi-native-home-feed-2" />
-                  </div>
-                )}
-              </React.Fragment>
-            );
-          })}
+        {/* Balanced Channel Grid + Desktop Skyscraper Companion Rail (160x600 & 160x300) */}
+        <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_196px] xl:gap-6 items-start">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-5">
+            {currentDisplayChannels.map((channel, idx) => {
+              const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
+              const isMidFeedNative = idx === 4 && currentDisplayChannels.length > 6;
+              return (
+                <React.Fragment key={channel.id}>
+                  <ChannelCard
+                    domId={`channel-card-${idx}`}
+                    channel={channel}
+                    channelNumber={channelNumber > 0 ? channelNumber : idx + 1}
+                    index={idx}
+                    isFocused={focusedChannelIndex === idx}
+                    onSelectChannel={onSelectChannel}
+                  />
+                  {isMidFeedNative && (
+                    <div className="col-span-full py-2">
+                      <AdsterraNativeBanner />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <aside
+            aria-label="Matangazo ya Pembeni"
+            className="hidden xl:flex flex-col items-center gap-5 sticky top-20"
+          >
+            <AdsterraBanner variant="160x600" />
+            <AdsterraBanner variant="160x300" />
+          </aside>
         </div>
 
         {/* 5. DISCOVER BY GENRE / CATEGORY TILES (Matching "Gundua kwa Aina" / Genre Explorer) */}
@@ -655,9 +673,40 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </div>
 
-        {/* 6. BOTTOM INMOBI BANNER AD */}
+        {/* 6. SHARE SMART-LINK & 300x250 SPOTLIGHT SHOWCASE */}
+        <div className="pt-10 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-6 items-center rounded-3xl neli-card-surface border border-purple-500/25 p-5 sm:p-7 mt-8">
+          <div className="space-y-3">
+            <div className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+              <Share2 className="w-4 h-4" />
+              <span>Sambaza Burudani Bure</span>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Waalike marafiki watazame <span className="neli-gradient-text">NeliTv Live</span> bure 24/7
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
+              Vituo {channels.length}+ vya Michezo, Sinema, Habari na Burudani vinapatikana kwenye simu, kompyuta na Smart TV bila malipo.
+            </p>
+            <div className="pt-1 flex flex-wrap items-center gap-3">
+              <a
+                href={ADSTERRA_SMART_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-2.5 px-5 rounded-full neli-gradient-bg hover:opacity-95 text-white font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-[0_0_22px_rgba(255,30,138,0.4)] transition active:scale-95"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Sambaza Link ya NeliTv</span>
+              </a>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <AdsterraBanner variant="300x250" />
+          </div>
+        </div>
+
+        {/* 7. BOTTOM ADSTERRA RESPONSIVE BANNER AD */}
         <div className="pt-8 pb-4">
-          <AdBanner slotId="inmobi-banner-home-bottom" />
+          <AdBanner />
         </div>
       </section>
     </div>

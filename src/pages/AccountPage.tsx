@@ -782,7 +782,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   </div>
                   <h4 className="text-sm font-bold text-white">Sera ya Faragha (Privacy Policy)</h4>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Ulinzi wa data za kibinafsi, maelezo ya vidakuzi (Cookies) na matangazo ya InMobi WebX, na haki za mtumiaji.
+                    Ulinzi wa data za kibinafsi, maelezo ya vidakuzi (Cookies) na matangazo yanayowezesha huduma bure, na haki za mtumiaji.
                   </p>
                 </div>
                 <button
@@ -849,9 +849,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           </div>
         )}
 
-        {/* Bottom InMobi Banner Ad */}
+        {/* Bottom Adsterra Responsive Banner */}
         <div className="pt-2">
-          <AdBanner slotId="inmobi-banner-account-bottom" className="my-2" />
+          <AdBanner className="my-2" />
         </div>
       </div>
     </div>

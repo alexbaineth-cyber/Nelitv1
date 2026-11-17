@@ -164,8 +164,8 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
           )}
         </div>
 
-        {/* Bottom InMobi Banner Ad */}
-        <AdBanner slotId="inmobi-banner-contact-bottom" className="my-4" />
+        {/* Bottom Adsterra Responsive Banner */}
+        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

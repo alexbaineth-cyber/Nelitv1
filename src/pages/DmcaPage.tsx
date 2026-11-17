@@ -115,8 +115,8 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
           </section>
         </div>
 
-        {/* Bottom InMobi Banner Ad */}
-        <AdBanner slotId="inmobi-banner-dmca-bottom" className="my-2" />
+        {/* Bottom Adsterra Responsive Banner */}
+        <AdBanner className="my-2" />
 
         {/* Footer info */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
