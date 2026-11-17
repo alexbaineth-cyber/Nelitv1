@@ -19,6 +19,7 @@ import {
 } from '../utils/orientation.ts';
 import { useServiceWorkerOnline } from '../hooks/useServiceWorkerOnline.ts';
 import { OfflineWatchPlaceholder } from './OfflineWatchPlaceholder.tsx';
+import { AdsterraFullscreenBanner } from './AdsterraAds.tsx';
 
 // Install shaka polyfill once at module initialization
 try {
@@ -1244,7 +1245,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Offline Overlay */}
       {isOffline && !isPaywallTriggered && (
         <div
-          onClick={(e) => e.stopPropagation()}
+          data-player-ui="true"
           className="absolute inset-0 z-35 overflow-y-auto bg-[#050611]"
         >
           <OfflineWatchPlaceholder
@@ -1261,26 +1262,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Error Overlay */}
       {errorMessage && !isPaywallTriggered && !isOffline && (
         <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-[#050611]/92 backdrop-blur-md text-center"
+          data-player-ui="true"
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 bg-[#0b0e14]/95 text-center"
         >
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/12 border border-amber-400/35 flex items-center justify-center text-amber-400 mb-3 shadow-[0_0_20px_rgba(255,176,32,0.18)]">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-center text-amber-400 mb-3">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <p className="text-sm text-slate-300 max-w-sm mb-5 leading-relaxed">
             {errorMessage}
           </p>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleRetry();
-            }}
-            className="py-2.5 px-6 rounded-xl neli-gradient-bg text-white font-bold text-xs flex items-center gap-2 shadow-[0_0_22px_rgba(255,30,138,0.4)] hover:brightness-110 transition cursor-pointer"
+            onClick={() => handleRetry()}
+            className="py-2.5 px-6 rounded-xl bg-[#0072d2] hover:bg-[#0082ee] text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Jaribu Tena</span>
           </button>
         </div>
+      )}
+
+      {/* Fullscreen-Only Bottom-Above-Timeline Banner (728x90 responsive, X close, reappears every 15 min) */}
+      {!isEmbedded && (
+        <AdsterraFullscreenBanner isFullscreen={isFullscreen} />
       )}
 
       {/* Bottom Overlay Controls */}
@@ -1307,8 +1310,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 onMouseLeave={() => setShowVolumeSlider(false)}
               >
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     toggleMute();
                     resetControlsTimeout();
                   }}
@@ -1333,7 +1335,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     step="0.05"
                     value={isMuted ? 0 : volume}
                     onChange={(e) => {
-                      e.stopPropagation();
                       const val = parseFloat(e.target.value);
                       setVolume(val);
                       setIsMuted(val === 0);
@@ -1369,15 +1370,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 {/* Quality Switcher */}
                 <div className="relative">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       setShowQualityMenu((prev) => !prev);
                       resetControlsTimeout();
                     }}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border whitespace-nowrap cursor-pointer ${
                       selectedQuality === 'saver'
                         ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/80 shadow-sm shadow-emerald-500/20'
-                        : 'bg-[#0b0e24]/90 hover:bg-[#131838] text-white border-purple-500/35 hover:border-cyan-400/60'
+                        : 'bg-[#0b0e24]/90 hover:bg-[#131838] text-white border-white/15 hover:border-white/35'
                     }`}
                     title="Badili Ubora wa Video / Okoa Bando"
                   >
@@ -1401,12 +1401,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {/* Floating Quality Menu */}
                   {showQualityMenu && (
                     <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#070918]/98 backdrop-blur-xl border border-purple-500/35 shadow-[0_16px_44px_rgba(0,0,0,0.85)] py-1.5 z-50 text-xs animate-fade-in"
+                      data-player-ui="true"
+                      className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#141923] border border-white/15 shadow-2xl py-1.5 z-50 text-xs"
                     >
-                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-purple-500/20 flex items-center justify-between">
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-white/10 flex items-center justify-between">
                         <span>Ubora wa Video</span>
-                        <span className="text-cyan-400 text-[9px] font-normal">Kasi ya Mtandao TZ</span>
+                        <span className="text-[#1ce783] text-[9px] font-normal">Kasi ya Mtandao TZ</span>
                       </div>
 
                       <button
@@ -1417,10 +1417,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                           <div className="font-semibold text-white">Auto (Kiotomatiki)</div>
                           <div className="text-[10px] text-slate-400">Inabadilika kulingana na kasi ya simu</div>
                         </div>
-                        {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                        {selectedQuality === 'auto' && <Check className="w-3.5 h-3.5 text-[#1ce783]" />}
                       </button>
 
-                      <div className="my-1 border-t border-purple-500/20" />
+                      <div className="my-1 border-t border-white/10" />
 
                       {[
                         { id: '1080', label: '1080p Full HD', desc: 'Ubora wa Juu (Wi-Fi / 4G)' },
@@ -1441,7 +1441,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             </div>
                             <div className="text-[10px] text-slate-500">{item.desc}</div>
                           </div>
-                          {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                          {selectedQuality === item.id && <Check className="w-3.5 h-3.5 text-[#1ce783]" />}
                         </button>
                       ))}
                     </div>
@@ -1450,12 +1450,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                 {/* Audio Language Switcher */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     toggleLanguage();
                     resetControlsTimeout();
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#0b0e24]/90 hover:bg-[#131838] text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-purple-500/35 hover:border-amber-400/60 whitespace-nowrap cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-[#0b0e24]/90 hover:bg-[#131838] text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 border border-white/15 hover:border-white/35 whitespace-nowrap cursor-pointer"
                   title="Badili Lugha ya Sauti (Swahili / English)"
                 >
                   <Languages className="w-3.5 h-3.5 text-[#ffb020]" />
@@ -1466,19 +1465,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             {/* Fullscreen Button */}
             <button
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 toggleFullscreen();
                 resetControlsTimeout();
               }}
               className={`p-2 rounded-lg active:scale-95 transition cursor-pointer ${
                 isFullscreen
-                  ? 'text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50'
+                  ? 'text-[#1ce783] bg-[#1ce783]/15 hover:bg-[#1ce783]/25 border border-[#1ce783]/40'
                   : 'text-slate-200 hover:text-white hover:bg-white/10 border border-transparent'
               }`}
               title={isFullscreen ? 'Punguza Skrini (Exit Fullscreen / F)' : 'Skrini Nzima (Fullscreen / F)'}
             >
-              {isFullscreen ? <Minimize2 className="w-5 h-5 text-cyan-400" /> : <Maximize2 className="w-5 h-5" />}
+              {isFullscreen ? <Minimize2 className="w-5 h-5 text-[#1ce783]" /> : <Maximize2 className="w-5 h-5" />}
             </button>
           </div>
         </div>

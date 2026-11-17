@@ -149,13 +149,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4">
             {filteredChannels.map((channel, idx) => {
               const lower = channel.name.toLowerCase();
-              const isNativeSlot =
-                filteredChannels.length > 4 &&
-                (lower === 'tbc 1' || (idx === 4 && !filteredChannels.some(c => c.name.toLowerCase() === 'tbc 1')));
-              const showInline =
-                !isNativeSlot &&
-                filteredChannels.length > 4 &&
-                (lower === 'tbc 2' || idx === 1);
+              const hasTbc1 = filteredChannels.some(c => c.name.toLowerCase() === 'tbc 1');
+              const isNativeSlot = hasTbc1 ? lower === 'tbc 1' : idx === 0;
+              const showInline = !isNativeSlot;
 
               return (
                 <React.Fragment key={channel.id}>

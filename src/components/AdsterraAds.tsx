@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { RefreshCw, ShieldAlert } from 'lucide-react';
+import { RefreshCw, ShieldAlert, X } from 'lucide-react';
 
 /**
  * Official Adsterra Production Units for NeliTv (https://nelitv.online)
@@ -149,6 +149,7 @@ function buildBannerSrcDoc(cfg: BannerUnitConfig, uid: string): string {
 interface AdsterraBannerProps {
   variant: AdsterraBannerVariant;
   className?: string;
+  onStatusChange?: (status: 'probing' | 'filled' | 'empty') => void;
 }
 
 /**
@@ -159,12 +160,17 @@ interface AdsterraBannerProps {
 export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({
   variant,
   className = '',
+  onStatusChange,
 }) => {
   const cfg = BANNER_UNITS[variant];
   const uid = useId();
   const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
 
   const srcDoc = useMemo(() => buildBannerSrcDoc(cfg, uid), [cfg, uid]);
+
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   useEffect(() => {
     setStatus('probing');
@@ -196,7 +202,7 @@ export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({
       className={
         status === 'filled'
           ? `w-full flex items-center justify-center transition-opacity duration-200 opacity-100 ${className}`
-          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0'
+          : 'fixed -left-[9999px] top-0 w-px h-px overflow-hidden opacity-0 pointer-events-none m-0 p-0'
       }
     >
       <div
@@ -274,14 +280,17 @@ interface AdsterraGridCardProps {
 }
 
 /**
- * Inline ad unit placed directly inside the channel grid container
- * (e.g. TBC 1 -> Ad -> TBC 2 -> Ad -> Tanzania Safari Channel).
- * Auto-collapses completely (`return null`) if unfilled so channels align seamlessly.
+ * Inline ad unit placed after every channel in the channel grid
+ * (e.g. TBC 1 -> Ad -> TBC 2 -> Ad -> Tanzania Safari Channel -> Ad ...).
+ * Uses IntersectionObserver on its preceding ChannelCard for fast lazy loading,
+ * occupies zero grid cells while probing, and auto-collapses (`return null`) if empty.
  */
 export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
   className = '',
 }) => {
   const uid = useId();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(false);
   const [status, setStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
   const [variant, setVariant] = useState<AdsterraBannerVariant>(() => {
     if (typeof window === 'undefined') return '300x250';
@@ -296,10 +305,34 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
     return () => window.removeEventListener('resize', update);
   }, []);
 
+  // Observe preceding ChannelCard so only visible/nearby slots load iframes
+  useEffect(() => {
+    if (inView) return;
+    const targetEl = hostRef.current?.previousElementSibling || hostRef.current;
+    if (!targetEl || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '350px 0px' }
+    );
+
+    observer.observe(targetEl);
+    return () => observer.disconnect();
+  }, [inView]);
+
   const cfg = BANNER_UNITS[variant];
   const srcDoc = useMemo(() => buildBannerSrcDoc(cfg, uid), [cfg, uid]);
 
   useEffect(() => {
+    if (!inView) return;
     setStatus('probing');
 
     const onMessage = (event: MessageEvent) => {
@@ -318,7 +351,7 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
       window.removeEventListener('message', onMessage);
       clearTimeout(fallbackTimeout);
     };
-  }, [uid, variant]);
+  }, [inView, uid, variant]);
 
   if (status === 'empty') {
     return null;
@@ -326,28 +359,31 @@ export const AdsterraGridCard: React.FC<AdsterraGridCardProps> = ({
 
   return (
     <div
+      ref={hostRef}
       className={
         status === 'filled'
           ? `relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-[#141923] border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] flex items-center justify-center ${className}`
-          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0 border-0'
+          : 'fixed -left-[9999px] top-0 w-[300px] h-[250px] opacity-0 pointer-events-none overflow-hidden'
       }
     >
-      <iframe
-        title="NeliTv Channel Item"
-        srcDoc={srcDoc}
-        width={cfg.width}
-        height={cfg.height}
-        scrolling="no"
-        frameBorder={0}
-        referrerPolicy="no-referrer-when-downgrade"
-        onError={() => setStatus('empty')}
-        className="border-0 block w-full h-full"
-        style={{
-          maxWidth: '100%',
-          maxHeight: '100%',
-          background: 'transparent',
-        }}
-      />
+      {inView && (
+        <iframe
+          title="NeliTv Channel Item"
+          srcDoc={srcDoc}
+          width={cfg.width}
+          height={cfg.height}
+          scrolling="no"
+          frameBorder={0}
+          referrerPolicy="no-referrer-when-downgrade"
+          onError={() => setStatus('empty')}
+          className="border-0 block w-full h-full"
+          style={{
+            maxWidth: '100%',
+            maxHeight: '100%',
+            background: 'transparent',
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -359,7 +395,8 @@ interface AdsterraNativeBannerProps {
 /**
  * Official Adsterra Native 1:1 Banner (#container-1f34e1dd1781212d8cccc0d2af939c1f).
  * Matches the exact channel card container (`aspect-[16/10] rounded-xl bg-[#141923]`)
- * so it sits naturally inside the channel grid, and auto-hides completely if empty.
+ * so it sits naturally inside the channel grid, occupies zero grid space while probing,
+ * and auto-hides completely if empty.
  */
 export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
   className = '',
@@ -434,11 +471,114 @@ export const AdsterraNativeBanner: React.FC<AdsterraNativeBannerProps> = ({
       className={
         status === 'filled'
           ? `relative aspect-[16/10] w-full rounded-xl bg-[#141923] border border-white/[0.08] hover:border-white/30 transition-transform duration-150 hover:scale-[1.03] overflow-hidden opacity-100 ${className}`
-          : 'max-h-0 overflow-hidden opacity-0 pointer-events-none m-0 p-0 border-0'
+          : 'fixed -left-[9999px] top-0 w-[300px] h-[250px] opacity-0 pointer-events-none overflow-hidden'
       }
     >
       <div ref={hostRef} className="w-full h-full">
         <div id={ADSTERRA_NATIVE_CONTAINER_ID} className="w-full h-full" />
+      </div>
+    </div>
+  );
+};
+
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+interface AdsterraFullscreenBannerProps {
+  isFullscreen: boolean;
+}
+
+/**
+ * Fullscreen-only bottom-above-timeline banner (728x90 on landscape/desktop,
+ * scaling cleanly to 468x60 / 320x50 on narrow screens).
+ * - Opens immediately each time user enters fullscreen.
+ * - Closes immediately when user exits fullscreen.
+ * - Includes an X close button; closing hides it for 15 minutes, then shows again.
+ * - Auto-hides cleanly if no ad creative renders.
+ */
+export const AdsterraFullscreenBanner: React.FC<AdsterraFullscreenBannerProps> = ({
+  isFullscreen,
+}) => {
+  const [dismissed, setDismissed] = useState(false);
+  const [cycleKey, setCycleKey] = useState(0);
+  const [bannerStatus, setBannerStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
+  const [variant, setVariant] = useState<AdsterraBannerVariant>(() => {
+    if (typeof window === 'undefined') return '728x90';
+    const w = window.innerWidth;
+    if (w >= 740) return '728x90';
+    if (w >= 490) return '468x60';
+    return '320x50';
+  });
+
+  useEffect(() => {
+    const updateVariant = () => {
+      const w = window.innerWidth;
+      if (w >= 740) {
+        setVariant('728x90');
+      } else if (w >= 490) {
+        setVariant('468x60');
+      } else {
+        setVariant('320x50');
+      }
+    };
+    updateVariant();
+    window.addEventListener('resize', updateVariant);
+    return () => window.removeEventListener('resize', updateVariant);
+  }, []);
+
+  // Reset every time fullscreen toggles off/on so entering fullscreen always shows fresh
+  useEffect(() => {
+    if (!isFullscreen) {
+      setDismissed(false);
+      setBannerStatus('probing');
+      return;
+    }
+    setDismissed(false);
+    setCycleKey((k) => k + 1);
+  }, [isFullscreen]);
+
+  // Every 15 minutes while in fullscreen: automatically re-display banner even if closed
+  useEffect(() => {
+    if (!isFullscreen || !dismissed) return;
+    const reopenTimer = setTimeout(() => {
+      setDismissed(false);
+      setBannerStatus('probing');
+      setCycleKey((k) => k + 1);
+    }, FIFTEEN_MINUTES_MS);
+
+    return () => clearTimeout(reopenTimer);
+  }, [isFullscreen, dismissed]);
+
+  if (!isFullscreen || dismissed) {
+    return null;
+  }
+
+  return (
+    <div
+      data-player-ui="true"
+      className={
+        bannerStatus === 'filled'
+          ? 'absolute inset-x-0 bottom-[66px] sm:bottom-[74px] z-30 flex justify-center px-2 pointer-events-none'
+          : 'fixed -left-[9999px] top-0 w-px h-px overflow-hidden opacity-0 pointer-events-none'
+      }
+    >
+      <div className="relative pointer-events-auto max-w-full">
+        {bannerStatus === 'filled' && (
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            title="Funga tangazo"
+            aria-label="Funga tangazo"
+            className="absolute -top-2.5 -right-2.5 z-40 w-6 h-6 rounded-full bg-[#0b0e14]/95 hover:bg-black text-white border border-white/30 flex items-center justify-center shadow-lg transition cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        <AdsterraBanner
+          key={`fs-${cycleKey}-${variant}`}
+          variant={variant}
+          onStatusChange={setBannerStatus}
+        />
       </div>
     </div>
   );

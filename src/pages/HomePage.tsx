@@ -219,23 +219,18 @@ export const HomePage: React.FC<HomePageProps> = ({
     } catch {}
   };
 
-  /** Determine where inline grid ads appear between channels */
-  const shouldShowInlineAdAfter = (channel: Channel, idx: number): boolean => {
-    if (currentDisplayChannels.length <= 4) return false;
-    const lower = channel.name.toLowerCase();
-    if (lower === 'tbc 2') return true;
-    if (idx === 1) return true;
-    if (idx > 14 && (idx - 11) % 10 === 0) return true;
-    return false;
+  /** Show an ad slot after every channel (auto-hides if unfilled) */
+  const shouldShowInlineAdAfter = (_channel: Channel, _idx: number): boolean => {
+    return currentDisplayChannels.length > 0;
   };
 
-  // Place Native 1:1 inline right after TBC 1 (or after index 4 on filtered category views)
+  // Place Native 1:1 inline right after TBC 1 (or after index 0 on filtered views)
   const nativeCardIndex = (() => {
     const tbc1Idx = currentDisplayChannels.findIndex(
       (c) => c.name.toLowerCase() === 'tbc 1'
     );
     if (tbc1Idx >= 0) return tbc1Idx;
-    return currentDisplayChannels.length > 6 ? 4 : -1;
+    return currentDisplayChannels.length > 0 ? 0 : -1;
   })();
 
   return (
