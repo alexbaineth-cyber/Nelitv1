@@ -6,6 +6,7 @@ export interface CdnTokenData {
   cdnHost: string;
   exp: number | null;
   source?: string;
+  provider?: string;
   fetchedAt?: number;
 }
 
@@ -19,6 +20,10 @@ let lastFetchTime = 0;
 let inFlightPromise: Promise<CdnTokenData> | null = null;
 const TOKEN_CACHE_DURATION = 90 * 1000; // 90 seconds live cache
 
+function cleanTokenValue(token: string): string {
+  return String(token || '').trim().replace(/^(?:tok_)+/, '');
+}
+
 function decodeJwtExp(token: string): number | null {
   try {
     const parts = token.split('.');
@@ -31,13 +36,22 @@ function decodeJwtExp(token: string): number | null {
   }
 }
 
-async function fetchFromLocalApi(forceRefresh: boolean): Promise<CdnTokenData | null> {
+async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string): Promise<CdnTokenData | null> {
   try {
-    const url = forceRefresh
-      ? `/baynithalex/api/cdn-token?refresh=true&_t=${Date.now()}`
-      : `/baynithalex/api/cdn-token`;
+    const params = new URLSearchParams();
+    if (forceRefresh) {
+      params.set('refresh', 'true');
+      params.set('_t', String(Date.now()));
+    }
+    if (excludeProvider) {
+      params.set('excludeProvider', excludeProvider);
+      params.set('fresh', '1');
+    }
+    const qs = params.toString();
+    const url = qs ? `/baynithalex/api/cdn-token?${qs}` : `/baynithalex/api/cdn-token`;
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1600);
+    const timeoutId = setTimeout(() => controller.abort(), 2400);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -50,12 +64,19 @@ async function fetchFromLocalApi(forceRefresh: boolean): Promise<CdnTokenData | 
     const data = await res.json();
     if (!data?.token) return null;
 
-    const exp = Number(data.exp) || decodeJwtExp(data.token);
+    const cleanTok = cleanTokenValue(data.token);
+    const provider = data.upstreamProvider || (data.provider !== 'NeliTv Server' ? data.provider : undefined) || 'mpingo';
+    if (excludeProvider && provider === excludeProvider) {
+      return null;
+    }
+
+    const exp = Number(data.exp) || decodeJwtExp(cleanTok);
     return {
-      token: data.token,
+      token: cleanTok,
       cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
       exp,
       source: data.source || 'server_api',
+      provider,
       fetchedAt: Date.now(),
     };
   } catch {
@@ -63,13 +84,22 @@ async function fetchFromLocalApi(forceRefresh: boolean): Promise<CdnTokenData | 
   }
 }
 
-async function fetchFromStreamzone(forceRefresh: boolean): Promise<CdnTokenData | null> {
+async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: string): Promise<CdnTokenData | null> {
   try {
-    const url = forceRefresh
-      ? `https://streamzone.fun/api/cdn-token?refresh=true&_t=${Date.now()}`
-      : `https://streamzone.fun/api/cdn-token`;
+    const params = new URLSearchParams();
+    if (forceRefresh) {
+      params.set('fresh', '1');
+      params.set('_t', String(Date.now()));
+    }
+    if (excludeProvider) {
+      params.set('excludeProvider', excludeProvider);
+      params.set('fresh', '1');
+    }
+    const qs = params.toString();
+    const url = qs ? `https://streamzone.fun/api/cdn-token?${qs}` : `https://streamzone.fun/api/cdn-token`;
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800);
+    const timeoutId = setTimeout(() => controller.abort(), 3200);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -82,12 +112,19 @@ async function fetchFromStreamzone(forceRefresh: boolean): Promise<CdnTokenData 
     const data = await res.json();
     if (!data?.token) return null;
 
-    const exp = Number(data.exp) || decodeJwtExp(data.token);
+    const cleanTok = cleanTokenValue(data.token);
+    const provider = data.provider || 'mpingo';
+    if (excludeProvider && provider === excludeProvider) {
+      return null;
+    }
+
+    const exp = Number(data.exp) || decodeJwtExp(cleanTok);
     return {
-      token: data.token,
+      token: cleanTok,
       cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
       exp,
       source: data.source || 'direct_streamzone',
+      provider,
       fetchedAt: Date.now(),
     };
   } catch (err) {
@@ -131,13 +168,14 @@ function firstValidToken(
 }
 
 // Fetch latest valid token from server or direct live CDN endpoint (returns fastest valid response)
-export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenData> {
+export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: string): Promise<CdnTokenData> {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000);
 
   // Return short-lived in-memory live token if still fresh and valid
   if (
     !forceRefresh &&
+    !excludeProvider &&
     inMemoryToken &&
     nowMs - lastFetchTime < TOKEN_CACHE_DURATION &&
     (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 60)
@@ -145,14 +183,16 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
     return inMemoryToken;
   }
 
-  if (!forceRefresh && inFlightPromise) {
+  if (!forceRefresh && !excludeProvider && inFlightPromise) {
     return inFlightPromise;
   }
 
   const runFetch = async (): Promise<CdnTokenData> => {
-    // Race local API and direct streamzone endpoint; resolve immediately on first valid token
     const winner = await firstValidToken(
-      [fetchFromLocalApi(forceRefresh), fetchFromStreamzone(forceRefresh)],
+      [
+        fetchFromLocalApi(forceRefresh, excludeProvider),
+        fetchFromStreamzone(forceRefresh, excludeProvider),
+      ],
       nowSec
     );
 
@@ -169,6 +209,7 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
       cdnHost: FALLBACK_CDN_HOST,
       exp: FALLBACK_EXP,
       source: "static_active",
+      provider: "mpingo",
       fetchedAt: Date.now(),
     };
     inMemoryToken = fallback;
@@ -177,11 +218,37 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
     return fallback;
   };
 
+  if (excludeProvider) {
+    return runFetch();
+  }
+
   inFlightPromise = runFetch().finally(() => {
     inFlightPromise = null;
   });
 
   return inFlightPromise;
+}
+
+/** Switch to alternate upstream CDN token provider (e.g. mpingo <-> aztv) on 429/403 errors */
+export async function recoverAlternateCdnToken(failedProvider?: string): Promise<CdnTokenData> {
+  const targetExclude = failedProvider || inMemoryToken?.provider || 'mpingo';
+  const nowSec = Math.floor(Date.now() / 1000);
+  const alt = await firstValidToken(
+    [
+      fetchFromStreamzone(true, targetExclude),
+      fetchFromLocalApi(true, targetExclude),
+    ],
+    nowSec
+  );
+
+  if (alt && alt.token) {
+    inMemoryToken = alt;
+    lastFetchTime = Date.now();
+    updateGlobalAzamToken(alt.token, alt.cdnHost);
+    return alt;
+  }
+
+  return getLiveCdnToken(true);
 }
 
 /** Silently pre-warm CDN token in the background on app mount for 0ms playback startup */
@@ -201,19 +268,17 @@ export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData
   let path = '';
   try {
     const parsed = new URL(channel.streamUrl);
-    // Remove any existing /tok_... prefix if present
     path = parsed.pathname.replace(/^\/tok_[^/]+/, '');
   } catch {
-    // If relative or raw path
     const match = channel.streamUrl.match(/\/live\/eds\/.+$/);
-    path = match ? match[0] : channel.streamUrl;
+    path = match ? match[0] : channel.streamUrl.split('?')[0];
   }
 
+  const cleanToken = cleanTokenValue(tokenData.token);
   const host = tokenData.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz';
   const cleanHost = host.replace(/\/+$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Preferred Azam path-tokenized URL with dual auth (path token + cdntoken param for edge nodes)
-  return `${cleanHost}/tok_${tokenData.token}${cleanPath}?cdntoken=${encodeURIComponent(tokenData.token)}`;
+  // Clean path-tokenized URL (matches streamzone working format without duplicate ?cdntoken=)
+  return `${cleanHost}/tok_${cleanToken}${cleanPath}`;
 }
-

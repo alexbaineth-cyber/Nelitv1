@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
 import { Channel, ALL_KNOWN_CLEAR_KEYS } from '../data/channels.ts';
-import { getLiveCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.ts';
+import { getLiveCdnToken, recoverAlternateCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.ts';
 import {
   Volume2, Volume1, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
@@ -72,8 +72,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
   const hlsAudioPlayerRef = useRef<any>(null);
-  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkyNTIxNTk3Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiYzllODBkNTRjMjBjMzMwZiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwMi4yMDguMjQ0LjkiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.8TkNI2HZfLClpNNOxnkqsbJpRtG7n7vXV7lxQqt96XD2zXpINzgBEqFhHTRegs3Voe22yHBC4R6CxvNAugs4ZQ==');
+  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA');
   const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
+  const activeProviderRef = useRef<string>('mpingo');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
@@ -329,12 +330,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
       let targetUrl = channel.streamUrl;
 
+      let hasTriedAlternateProvider = false;
+
       // Always resolve latest valid CDN token for Azam TV to guarantee active playback
       if (isAzam) {
         try {
           const tokenData = await getLiveCdnToken(retryCount > 0);
           activeTokenRef.current = tokenData.token;
           activeCdnHostRef.current = tokenData.cdnHost;
+          activeProviderRef.current = tokenData.provider || 'mpingo';
           targetUrl = buildPlayableStreamUrl(channel, tokenData);
         } catch (e) {
           console.warn('Token resolution fallback:', e);
@@ -342,9 +346,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       }
 
-      // Fast startup timeout: if stream is ready but waiting, trigger autoplay
+      // Fast startup nudge only if media data has already reached HAVE_CURRENT_DATA
       const stallTimer = setTimeout(async () => {
-        if (isMounted && isBuffering && !errorMessage) {
+        if (isMounted && videoRef.current && videoRef.current.readyState >= 2 && videoRef.current.paused) {
           await attemptAutoPlay();
         }
       }, 3500);
@@ -454,19 +458,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   updatedUri = reqUrl.toString();
                 } catch {}
 
-                // 2. Inject token in path: replace /tok_.../ or insert before /live/eds/
+                // 2. Strip duplicate cdntoken query param and inject clean /tok_<token>/ path segment
+                try {
+                  const u = new URL(updatedUri);
+                  u.searchParams.delete('cdntoken');
+                  updatedUri = u.toString();
+                } catch {}
+
                 if (/\/tok_[^/]+\//.test(updatedUri)) {
                   updatedUri = updatedUri.replace(/\/tok_[^/]+\//, `/tok_${currentToken}/`);
                 } else if (updatedUri.includes('/live/eds/')) {
                   updatedUri = updatedUri.replace('/live/eds/', `/tok_${currentToken}/live/eds/`);
+                } else {
+                  try {
+                    const u = new URL(updatedUri);
+                    u.searchParams.set('cdntoken', currentToken);
+                    updatedUri = u.toString();
+                  } catch {}
                 }
-
-                // 3. Guarantee ?cdntoken= query param is set
-                try {
-                  const u = new URL(updatedUri);
-                  u.searchParams.set('cdntoken', currentToken);
-                  updatedUri = u.toString();
-                } catch {}
               }
               return updatedUri;
             });
@@ -577,31 +586,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               return;
             }
 
-            // 2. Handle CDN Token expiration / Network 1003 / 1001 / 1002 / 429 / 403 / 401
+            // 2. Handle CDN Token expiration / 429 Too Many IPs / Network 1001 / 1002 / 1003
             const httpCode = err?.data?.[1];
             if (isAzam || httpCode === 429 || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
-              try {
-                const freshToken = await getLiveCdnToken(true);
-                activeTokenRef.current = freshToken.token;
-                activeCdnHostRef.current = freshToken.cdnHost;
-                const freshUrl = buildPlayableStreamUrl(channel, freshToken);
-                targetUrl = freshUrl;
-                await player.load(freshUrl);
-                setIsBuffering(false);
-                await video.play();
-                setIsPlaying(true);
-                return;
-              } catch (reloadErr) {
-                console.warn('Token auto-reload retry note:', reloadErr);
-                // Proxy fallback attempt
+              if (!hasTriedAlternateProvider) {
+                hasTriedAlternateProvider = true;
                 try {
-                  const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
-                  await player.load(proxyUrl);
+                  const altToken = await recoverAlternateCdnToken(activeProviderRef.current);
+                  activeTokenRef.current = altToken.token;
+                  activeCdnHostRef.current = altToken.cdnHost;
+                  activeProviderRef.current = altToken.provider || activeProviderRef.current;
+                  const altUrl = buildPlayableStreamUrl(channel, altToken);
+                  targetUrl = altUrl;
+                  await player.load(altUrl);
+                  setErrorMessage(null);
                   setIsBuffering(false);
-                  await video.play();
+                  await video.play().catch(() => {});
                   setIsPlaying(true);
                   return;
-                } catch {}
+                } catch (altErr) {
+                  console.warn('Alternate provider rotation note:', altErr);
+                }
+              }
+
+              try {
+                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
+                await player.load(proxyUrl);
+                setErrorMessage(null);
+                setIsBuffering(false);
+                await video.play().catch(() => {});
+                setIsPlaying(true);
+                return;
+              } catch (proxyErr) {
+                console.warn('Proxy fallback note:', proxyErr);
               }
             }
 
@@ -623,37 +640,42 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         } catch (error: any) {
           console.warn('Shaka load initial note:', error);
           if (shakaPlayerRef.current) {
-            try {
-              const freshToken = await getLiveCdnToken(true);
-              activeTokenRef.current = freshToken.token;
-              activeCdnHostRef.current = freshToken.cdnHost;
-              const freshUrl = buildPlayableStreamUrl(channel, freshToken);
-              targetUrl = freshUrl;
-              await shakaPlayerRef.current.load(freshUrl);
-              clearTimeout(stallTimer);
-              if (isMounted) {
-                await attemptAutoPlay();
-                return;
-              }
-            } catch (retryErr) {
-              // Proxy fallback attempt for cross-regional connection stability
+            if (isAzam && !hasTriedAlternateProvider) {
+              hasTriedAlternateProvider = true;
               try {
-                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
-                await shakaPlayerRef.current.load(proxyUrl);
+                const altToken = await recoverAlternateCdnToken(activeProviderRef.current);
+                activeTokenRef.current = altToken.token;
+                activeCdnHostRef.current = altToken.cdnHost;
+                activeProviderRef.current = altToken.provider || activeProviderRef.current;
+                const altUrl = buildPlayableStreamUrl(channel, altToken);
+                targetUrl = altUrl;
+                await shakaPlayerRef.current.load(altUrl);
                 clearTimeout(stallTimer);
                 if (isMounted) {
                   await attemptAutoPlay();
                   return;
                 }
-              } catch (proxyErr) {
-                console.warn('Proxy fallback note:', proxyErr);
+              } catch (altLoadErr) {
+                console.warn('Alternate provider initial load note:', altLoadErr);
               }
+            }
+
+            try {
+              const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
+              await shakaPlayerRef.current.load(proxyUrl);
+              clearTimeout(stallTimer);
+              if (isMounted) {
+                await attemptAutoPlay();
+                return;
+              }
+            } catch (proxyErr) {
+              console.warn('Proxy fallback note:', proxyErr);
             }
           }
           clearTimeout(stallTimer);
           if (isMounted) {
             setIsBuffering(false);
-            setErrorMessage('Inaunganisha matangazo ya moja kwa moja...');
+            setErrorMessage('Mkondo una msongamano kwa sasa. Bofya Jaribu Tena.');
           }
         }
       }
