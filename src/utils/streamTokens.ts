@@ -9,123 +9,157 @@ export interface CdnTokenData {
   fetchedAt?: number;
 }
 
-const FALLBACK_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkzMzM5NjIwIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMGM5MzI1NTExZmRlYjE2MyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDciLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.V72IVAu-hcQN1a6onYrH7eHY8ACNdEibg7w2c_q1JVaAl-kZxrjCTKVOu07UOP9C2W0a6NmjO3TTWB7lKgNyUA==";
+const FALLBACK_TOKEN =
+  "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA";
+const FALLBACK_CDN_HOST = "https://cdnedgch2.azamtvltd.co.tz";
+const FALLBACK_EXP = 1795172631;
 
-let inMemoryToken: CdnTokenData | null = {
-  token: FALLBACK_TOKEN,
-  cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
-  exp: 1793339620,
-  source: "prewarmed_instant",
-  fetchedAt: Date.now()
-};
-let lastFetchTime = Date.now();
-const TOKEN_CACHE_DURATION = 3 * 60 * 1000; // 3 minutes
+let inMemoryToken: CdnTokenData | null = null;
+let lastFetchTime = 0;
+let inFlightPromise: Promise<CdnTokenData> | null = null;
+const TOKEN_CACHE_DURATION = 90 * 1000; // 90 seconds live cache
+
+function decodeJwtExp(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const exp = Number(payload?.exp);
+    return Number.isFinite(exp) && exp > 0 ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFromLocalApi(forceRefresh: boolean): Promise<CdnTokenData | null> {
+  try {
+    const url = forceRefresh
+      ? `/baynithalex/api/cdn-token?refresh=true&_t=${Date.now()}`
+      : `/baynithalex/api/cdn-token`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2200);
+
+    const res = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getAppAuthHeaders(),
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.token) return null;
+
+    const exp = Number(data.exp) || decodeJwtExp(data.token);
+    return {
+      token: data.token,
+      cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
+      exp,
+      source: data.source || 'server_api',
+      fetchedAt: Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFromStreamzone(forceRefresh: boolean): Promise<CdnTokenData | null> {
+  try {
+    const url = forceRefresh
+      ? `https://streamzone.fun/api/cdn-token?refresh=true&_t=${Date.now()}`
+      : `https://streamzone.fun/api/cdn-token`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.token) return null;
+
+    const exp = Number(data.exp) || decodeJwtExp(data.token);
+    return {
+      token: data.token,
+      cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
+      exp,
+      source: data.source || 'direct_streamzone',
+      fetchedAt: Date.now(),
+    };
+  } catch (err) {
+    console.warn('Direct streamzone token fetch fallback note:', err);
+    return null;
+  }
+}
 
 // Fetch latest valid token from server or direct live CDN endpoint
 export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenData> {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000);
 
-  // If we already have a valid in-memory token that is NOT expired (keep at least 90s buffer)
+  // Return short-lived in-memory live token if still fresh and valid
   if (
     !forceRefresh &&
     inMemoryToken &&
-    (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 90)
+    nowMs - lastFetchTime < TOKEN_CACHE_DURATION &&
+    (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 60)
   ) {
-    // If cache is older than 3 minutes, refresh silently in background without blocking player
-    if (nowMs - lastFetchTime > TOKEN_CACHE_DURATION) {
-      setTimeout(() => {
-        fetch('/baynithalex/api/cdn-token', { headers: getAppAuthHeaders() })
-          .then(r => r.json())
-          .then(d => {
-            if (d?.token) {
-              inMemoryToken = {
-                token: d.token,
-                cdnHost: d.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
-                exp: d.exp || null,
-                source: 'server_api_bg',
-                fetchedAt: Date.now()
-              };
-              lastFetchTime = Date.now();
-              updateGlobalAzamToken(d.token);
-            }
-          })
-          .catch(() => {});
-      }, 0);
-    }
     return inMemoryToken;
   }
 
-  // 1. Try local server API endpoint (/baynithalex/api/cdn-token) - fast 1.5s timeout
-  try {
-    const url = forceRefresh ? '/baynithalex/api/cdn-token?refresh=true' : '/baynithalex/api/cdn-token';
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: getAppAuthHeaders()
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.token && (!data.exp || data.exp > nowSec + 30)) {
-        inMemoryToken = {
-          token: data.token,
-          cdnHost: data.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
-          exp: data.exp || null,
-          source: data.source || 'server_api',
-          fetchedAt: nowMs
-        };
-        lastFetchTime = nowMs;
-        updateGlobalAzamToken(data.token);
-        return inMemoryToken;
-      }
-    }
-  } catch {
-    // Local endpoint unavailable (e.g. running statically or serverless cold start)
+  if (!forceRefresh && inFlightPromise) {
+    return inFlightPromise;
   }
 
-  // 2. Direct fallback to streamzone.fun/api/cdn-token (supports CORS access-control-allow-origin: *)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const directRes = await fetch('https://streamzone.fun/api/cdn-token', {
-      headers: { 'Accept': 'application/json' },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+  const runFetch = async (): Promise<CdnTokenData> => {
+    // Query direct streamzone endpoint and local backend in parallel, picking freshest token
+    const [directCandidate, localCandidate] = await Promise.all([
+      fetchFromStreamzone(forceRefresh),
+      fetchFromLocalApi(forceRefresh),
+    ]);
 
-    if (directRes.ok) {
-      const data = await directRes.json();
-      if (data && data.token && (!data.exp || data.exp > nowSec + 30)) {
-        inMemoryToken = {
-          token: data.token,
-          cdnHost: data.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
-          exp: data.exp || null,
-          source: 'direct_streamzone',
-          fetchedAt: nowMs
-        };
-        lastFetchTime = nowMs;
-        updateGlobalAzamToken(data.token);
-        return inMemoryToken;
-      }
+    const candidates = [directCandidate, localCandidate].filter(
+      (c): c is CdnTokenData => Boolean(c && c.token)
+    );
+
+    // Filter out tokens clearly expired by >30s if we have an alternative
+    const validCandidates = candidates.filter(
+      (c) => !c.exp || c.exp > nowSec + 30
+    );
+    const pool = validCandidates.length > 0 ? validCandidates : candidates;
+
+    if (pool.length > 0) {
+      pool.sort((a, b) => (b.exp || 0) - (a.exp || 0));
+      const best = pool[0];
+      inMemoryToken = best;
+      lastFetchTime = Date.now();
+      updateGlobalAzamToken(best.token, best.cdnHost);
+      return best;
     }
-  } catch (directErr) {
-    console.warn('Direct streamzone token fetch fallback note:', directErr);
-  }
 
-  // 3. Fallback to active valid token
-  inMemoryToken = {
-    token: FALLBACK_TOKEN,
-    cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
-    exp: 1792521597,
-    source: "static_active",
-    fetchedAt: nowMs
+    // Fallback to latest active token provided by streamzone
+    const fallback: CdnTokenData = {
+      token: FALLBACK_TOKEN,
+      cdnHost: FALLBACK_CDN_HOST,
+      exp: FALLBACK_EXP,
+      source: "static_active",
+      fetchedAt: Date.now(),
+    };
+    inMemoryToken = fallback;
+    lastFetchTime = Date.now();
+    updateGlobalAzamToken(fallback.token, fallback.cdnHost);
+    return fallback;
   };
-  updateGlobalAzamToken(FALLBACK_TOKEN);
-  return inMemoryToken;
+
+  inFlightPromise = runFetch().finally(() => {
+    inFlightPromise = null;
+  });
+
+  return inFlightPromise;
 }
 
 // Generate the exact playable URL for any channel

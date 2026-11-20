@@ -620,15 +620,19 @@ async function getOrFetchCdnToken(force = false) {
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
 
-  // If cached and has more than 90 seconds before expiry
-  if (!force && cachedCdnToken && (now - lastCdnTokenFetch < 3 * 60 * 1000) && (!cachedCdnToken.exp || cachedCdnToken.exp > nowSec + 90)) {
+  // If cached within last 90 seconds and still has >90 seconds before expiry
+  if (!force && cachedCdnToken && (now - lastCdnTokenFetch < 90 * 1000) && (!cachedCdnToken.exp || cachedCdnToken.exp > nowSec + 90)) {
     return cachedCdnToken;
   }
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch('https://streamzone.fun/api/cdn-token', {
+    const endpoint = force
+      ? `https://streamzone.fun/api/cdn-token?refresh=true&_t=${now}`
+      : 'https://streamzone.fun/api/cdn-token';
+    const resp = await fetch(endpoint, {
+      cache: 'no-store',
       headers: { 'Accept': 'application/json' },
       signal: controller.signal
     });
@@ -641,7 +645,7 @@ async function getOrFetchCdnToken(force = false) {
           token: data.token,
           cdnHost: data.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
           exp: data.exp || null,
-          source: 'streamzone'
+          source: data.source || 'streamzone'
         };
         lastCdnTokenFetch = now;
         console.log('[CDN Token] Fresh token fetched successfully, length:', data.token.length, 'exp:', data.exp);
@@ -657,18 +661,18 @@ async function getOrFetchCdnToken(force = false) {
   }
 
   cachedCdnToken = {
-    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJleHAiOiIxNzkzMzM5NjIwIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMGM5MzI1NTExZmRlYjE2MyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODQwODMyIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJzZXNzaW9uX2R1cmF0aW9uIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDciLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.V72IVAu-hcQN1a6onYrH7eHY8ACNdEibg7w2c_q1JVaAl-kZxrjCTKVOu07UOP9C2W0a6NmjO3TTWB7lKgNyUA==",
-    exp: 1793339620,
+    token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA",
+    exp: 1795172631,
     cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
     source: "static_active"
   };
   return cachedCdnToken;
 }
 
-// Background auto-refresh every 3 minutes
+// Background auto-refresh every 90 seconds
 setInterval(() => {
   getOrFetchCdnToken(true).catch(() => {});
-}, 3 * 60 * 1000);
+}, 90 * 1000);
 
 // InMobi authorized digital sellers (ads.txt) endpoint
 const INMOBI_ADS_TXT_FALLBACK = `inmobi.com, 6db4aff5416d4bb7b0ba0b274749cc7c, DIRECT, 83e75a7ae333ca9d
@@ -793,11 +797,11 @@ app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, r
   });
 });
 
-// 1.2 Fast CDN Token Endpoint for Client VideoPlayer (instant sub-millisecond response)
+// 1.2 Fast CDN Token Endpoint for Client VideoPlayer (instant response, no stale HTTP caching)
 app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
-  res.setHeader('Cache-Control', 'public, max-age=120');
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
     success: true,
     token: tokenData.token,

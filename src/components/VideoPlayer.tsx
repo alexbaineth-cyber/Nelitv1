@@ -440,6 +440,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             request.uris = request.uris.map((uri: string) => {
               let updatedUri = uri;
+              if (updatedUri.includes('/api/proxy-stream')) {
+                return updatedUri;
+              }
               if (updatedUri.includes('azamtvltd') || updatedUri.includes('azam')) {
                 // 1. Force hostname to active CDN host
                 try {
@@ -574,14 +577,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               return;
             }
 
-            // 2. Handle CDN Token expiration / Network 1003 / 1001 / 1002 / 403 / 401
+            // 2. Handle CDN Token expiration / Network 1003 / 1001 / 1002 / 429 / 403 / 401
             const httpCode = err?.data?.[1];
-            if (isAzam || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
+            if (isAzam || httpCode === 429 || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
               try {
                 const freshToken = await getLiveCdnToken(true);
                 activeTokenRef.current = freshToken.token;
                 activeCdnHostRef.current = freshToken.cdnHost;
                 const freshUrl = buildPlayableStreamUrl(channel, freshToken);
+                targetUrl = freshUrl;
                 await player.load(freshUrl);
                 setIsBuffering(false);
                 await video.play();
@@ -624,6 +628,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               activeTokenRef.current = freshToken.token;
               activeCdnHostRef.current = freshToken.cdnHost;
               const freshUrl = buildPlayableStreamUrl(channel, freshToken);
+              targetUrl = freshUrl;
               await shakaPlayerRef.current.load(freshUrl);
               clearTimeout(stallTimer);
               if (isMounted) {
