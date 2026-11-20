@@ -2,10 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Play, Tv, Check } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
-import {
-  AdsterraBanner,
-  AdsterraNativeBanner,
-} from '../components/AdsterraAds.tsx';
+import { AdsterraNativeBanner } from '../components/AdsterraAds.tsx';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 
 interface HomePageProps {
@@ -319,9 +316,9 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* TOP RESPONSIVE BANNER (auto-collapses if no-fill) */}
-      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-4">
-        <AdBanner />
+      {/* SLIM TOP RESPONSIVE BANNER (auto-collapses if no-fill) */}
+      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 pt-3">
+        <AdBanner mode="compact" />
       </div>
 
       {/* CLEAN HULU / DISNEY+ CATEGORY BAR */}
@@ -395,64 +392,55 @@ export const HomePage: React.FC<HomePageProps> = ({
           </h1>
         </div>
 
-        {/* Flex layout collapses right skyscraper column cleanly to 0px when no skyscraper ads fill */}
-        <div className="flex flex-col xl:flex-row items-start gap-6">
-          <div className="flex-1 min-w-0 w-full space-y-8">
-            {(() => {
-              let runningFlatIdx = 0;
-              return channelGroups.map((group, groupIdx) => (
-                <React.Fragment key={group.id}>
-                  <div className="space-y-3.5">
-                    <div className="flex items-center justify-between border-b border-white/[0.07] pb-2">
-                      <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
-                        {group.title}
-                      </h2>
-                      <span className="text-xs text-slate-400 tabular-nums">
-                        Vituo {group.items.length}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
-                      {group.items.map((channel) => {
-                        const flatIdx = runningFlatIdx++;
-                        const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
-                        const isFocused = focusedTargetChannel?.id === channel.id;
-
-                        return (
-                          <ChannelCard
-                            key={channel.id}
-                            domId={`channel-card-${flatIdx}`}
-                            channel={channel}
-                            channelNumber={channelNumber > 0 ? channelNumber : flatIdx + 1}
-                            isFocused={isFocused}
-                            onSelectChannel={onSelectChannel}
-                          />
-                        );
-                      })}
-                    </div>
+        <div className="w-full space-y-8">
+          {(() => {
+            let runningFlatIdx = 0;
+            return channelGroups.map((group, groupIdx) => (
+              <React.Fragment key={group.id}>
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-white/[0.07] pb-2">
+                    <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                      {group.title}
+                    </h2>
+                    <span className="text-xs text-slate-400 tabular-nums">
+                      Vituo {group.items.length}
+                    </span>
                   </div>
 
-                  {/* Balanced Native 4:1 divider between major channel groups (no ad spam) */}
-                  {(groupIdx === 0 || groupIdx === 2) &&
-                    groupIdx < channelGroups.length - 1 && (
-                      <div className="pt-1">
-                        <AdsterraNativeBanner mode="iframe" />
-                      </div>
-                    )}
-                </React.Fragment>
-              ));
-            })()}
-          </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                    {group.items.map((channel) => {
+                      const flatIdx = runningFlatIdx++;
+                      const channelNumber = channels.findIndex(c => c.id === channel.id) + 1;
+                      const isFocused = focusedTargetChannel?.id === channel.id;
 
-          <aside className="hidden xl:flex flex-col items-center gap-4 shrink-0 sticky top-20 empty:hidden">
-            <AdsterraBanner variant="160x600" />
-            <AdsterraBanner variant="160x300" />
-          </aside>
+                      return (
+                        <ChannelCard
+                          key={channel.id}
+                          domId={`channel-card-${flatIdx}`}
+                          channel={channel}
+                          channelNumber={channelNumber > 0 ? channelNumber : flatIdx + 1}
+                          isFocused={isFocused}
+                          onSelectChannel={onSelectChannel}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Single clean mid-page Native 4:1 divider after group 2 */}
+                {groupIdx === 1 && groupIdx < channelGroups.length - 1 && (
+                  <div className="pt-1">
+                    <AdsterraNativeBanner mode="iframe" />
+                  </div>
+                )}
+              </React.Fragment>
+            ));
+          })()}
         </div>
 
-        {/* BOTTOM RESPONSIVE BANNER (auto-collapses if no-fill) */}
+        {/* SLIM BOTTOM RESPONSIVE BANNER (auto-collapses if no-fill) */}
         <div className="pt-8">
-          <AdBanner />
+          <AdBanner mode="compact" />
         </div>
       </section>
     </div>

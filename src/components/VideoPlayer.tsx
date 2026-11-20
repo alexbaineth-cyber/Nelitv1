@@ -390,24 +390,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               servers: {}
             },
             streaming: {
-              bufferingGoal: 4,          // 4s buffer reservoir for instant live start without delay
-              rebufferingGoal: 0.5,      // Quick resume in 0.5s after pause or network dip
-              bufferBehind: 10,          // Keeps 10s behind in memory (saves RAM & mobile battery)
-              safeSeekOffset: 2.5,       // Fast 2.5s delay from live encoder edge
+              bufferingGoal: 2.5,        // Fast 2.5s initial buffer for near-instant live start
+              rebufferingGoal: 0.4,      // Snappy resume after pause or network dip
+              bufferBehind: 8,           // Keeps 8s behind in memory (saves RAM & battery)
+              safeSeekOffset: 2,         // Tight live encoder offset
               gapDetectionThreshold: 0.5, // Silently skips timestamp micro-gaps
               stallEnabled: true,        // Detects browser decoder stalls
-              stallThreshold: 0.8,
+              stallThreshold: 0.6,
               stallSkip: 0.2,
               segmentPrefetchLimit: 2,   // Pre-fetches next 2 segments ahead of time
               ignoreTextStreamFailures: true,
               retryParameters: {
-                maxAttempts: 5,
-                baseDelay: 150,
+                maxAttempts: 4,
+                baseDelay: 120,
                 backoffFactor: 1.2
               }
             },
             manifest: {
-              defaultPresentationDelay: 4, // 4 seconds delay behind live TV broadcast for instant start
+              defaultPresentationDelay: 3, // Fast 3s presentation delay for instant startup
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
@@ -415,17 +415,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 clockSyncUri: ''
               },
               retryParameters: {
-                maxAttempts: 5,
-                baseDelay: 150,
+                maxAttempts: 4,
+                baseDelay: 120,
                 backoffFactor: 1.2
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 350000,   // Low-bandwidth initial estimate (350kbps) for instant startup in Tanzania
-              switchInterval: 5,                  // Responsive 5s observation window
-              bandwidthDowngradeTarget: 0.95,     // Instant downshift on mobile network dip
-              bandwidthUpgradeTarget: 0.65        // Conservative upgrade target to prevent buffering
+              defaultBandwidthEstimate: 350000,   // Low-bandwidth initial estimate for instant startup
+              switchInterval: 4,                  // Responsive 4s observation window
+              bandwidthDowngradeTarget: 0.95,
+              bandwidthUpgradeTarget: 0.65
             }
           });
 

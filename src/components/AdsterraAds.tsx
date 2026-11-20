@@ -185,7 +185,7 @@ export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({
     window.addEventListener('message', onMessage);
     const fallbackTimeout = setTimeout(() => {
       setStatus((prev) => (prev === 'probing' ? 'empty' : prev));
-    }, 6800);
+    }, 4500);
 
     return () => {
       window.removeEventListener('message', onMessage);
@@ -707,23 +707,13 @@ export const AdsterraFullscreenBanner: React.FC<AdsterraFullscreenBannerProps> =
   const [cycleKey, setCycleKey] = useState(0);
   const [bannerStatus, setBannerStatus] = useState<'probing' | 'filled' | 'empty'>('probing');
   const [variant, setVariant] = useState<AdsterraBannerVariant>(() => {
-    if (typeof window === 'undefined') return '728x90';
-    const w = window.innerWidth;
-    if (w >= 740) return '728x90';
-    if (w >= 490) return '468x60';
-    return '320x50';
+    if (typeof window === 'undefined') return '468x60';
+    return window.innerWidth >= 490 ? '468x60' : '320x50';
   });
 
   useEffect(() => {
     const updateVariant = () => {
-      const w = window.innerWidth;
-      if (w >= 740) {
-        setVariant('728x90');
-      } else if (w >= 490) {
-        setVariant('468x60');
-      } else {
-        setVariant('320x50');
-      }
+      setVariant(window.innerWidth >= 490 ? '468x60' : '320x50');
     };
     updateVariant();
     window.addEventListener('resize', updateVariant);
@@ -802,6 +792,7 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
   enabled = true,
 }) => {
   const [adBlockerDetected, setAdBlockerDetected] = useState(false);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
   const [retrySeed, setRetrySeed] = useState(0);
 
   useEffect(() => {
@@ -810,100 +801,111 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
     if (path.startsWith('/embed') || path.startsWith('/api')) return;
 
     let blockedByNetwork = false;
+    let checkTimer: ReturnType<typeof setTimeout> | null = null;
+    let bait: HTMLDivElement | null = null;
 
-    const existingPop = document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`);
-    if (existingPop && retrySeed > 0) existingPop.remove();
-    if (!document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`)) {
-      const popunder = document.createElement('script');
-      popunder.setAttribute('data-cfasync', 'false');
-      popunder.src =
-        retrySeed > 0 ? `${ADSTERRA_POPUNDER_SRC}?r=${retrySeed}` : ADSTERRA_POPUNDER_SRC;
-      popunder.async = true;
-      popunder.onerror = () => {
-        blockedByNetwork = true;
-        setAdBlockerDetected(true);
-      };
-      document.body.appendChild(popunder);
-    }
-
-    const existingSocial = document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`);
-    if (existingSocial && retrySeed > 0) existingSocial.remove();
-    if (!document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`)) {
-      const socialBar = document.createElement('script');
-      socialBar.setAttribute('data-cfasync', 'false');
-      socialBar.src =
-        retrySeed > 0 ? `${ADSTERRA_SOCIAL_BAR_SRC}?r=${retrySeed}` : ADSTERRA_SOCIAL_BAR_SRC;
-      socialBar.async = true;
-      socialBar.onerror = () => {
-        blockedByNetwork = true;
-        setAdBlockerDetected(true);
-      };
-      document.body.appendChild(socialBar);
-    }
-
-    // Cosmetic filter bait check to detect active AdBlock extensions
-    const bait = document.createElement('div');
-    bait.className = 'adsbox ad-banner pub_300x250 pub_728x90 text-ad';
-    bait.style.cssText =
-      'width:1px;height:1px;position:absolute;left:-9999px;top:-9999px;pointer-events:none;';
-    bait.innerHTML = '&nbsp;';
-    document.body.appendChild(bait);
-
-    const checkTimer = setTimeout(() => {
-      try {
-        const computed = window.getComputedStyle(bait);
-        const hiddenByBlocker =
-          bait.offsetHeight === 0 ||
-          computed.display === 'none' ||
-          computed.visibility === 'hidden';
-        if (hiddenByBlocker || blockedByNetwork) {
+    // Defer ad script injection slightly so initial page & video stream load first without delay
+    const bootTimer = setTimeout(() => {
+      const existingPop = document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`);
+      if (existingPop && retrySeed > 0) existingPop.remove();
+      if (!document.querySelector(`script[src^="${ADSTERRA_POPUNDER_SRC}"]`)) {
+        const popunder = document.createElement('script');
+        popunder.setAttribute('data-cfasync', 'false');
+        popunder.src =
+          retrySeed > 0 ? `${ADSTERRA_POPUNDER_SRC}?r=${retrySeed}` : ADSTERRA_POPUNDER_SRC;
+        popunder.async = true;
+        popunder.onerror = () => {
+          blockedByNetwork = true;
           setAdBlockerDetected(true);
-        } else {
-          setAdBlockerDetected(false);
-        }
-      } catch {}
-      if (bait.parentNode) {
-        bait.parentNode.removeChild(bait);
+        };
+        document.body.appendChild(popunder);
       }
-    }, 1100);
+
+      const existingSocial = document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`);
+      if (existingSocial && retrySeed > 0) existingSocial.remove();
+      if (!document.querySelector(`script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`)) {
+        const socialBar = document.createElement('script');
+        socialBar.setAttribute('data-cfasync', 'false');
+        socialBar.src =
+          retrySeed > 0 ? `${ADSTERRA_SOCIAL_BAR_SRC}?r=${retrySeed}` : ADSTERRA_SOCIAL_BAR_SRC;
+        socialBar.async = true;
+        socialBar.onerror = () => {
+          blockedByNetwork = true;
+          setAdBlockerDetected(true);
+        };
+        document.body.appendChild(socialBar);
+      }
+
+      // Cosmetic filter bait check to detect active AdBlock extensions
+      bait = document.createElement('div');
+      bait.className = 'adsbox ad-banner pub_300x250 pub_728x90 text-ad';
+      bait.style.cssText =
+        'width:1px;height:1px;position:absolute;left:-9999px;top:-9999px;pointer-events:none;';
+      bait.innerHTML = '&nbsp;';
+      document.body.appendChild(bait);
+
+      checkTimer = setTimeout(() => {
+        try {
+          if (!bait) return;
+          const computed = window.getComputedStyle(bait);
+          const hiddenByBlocker =
+            bait.offsetHeight === 0 ||
+            computed.display === 'none' ||
+            computed.visibility === 'hidden';
+          if (hiddenByBlocker || blockedByNetwork) {
+            setAdBlockerDetected(true);
+          } else {
+            setAdBlockerDetected(false);
+          }
+        } catch {}
+        if (bait?.parentNode) {
+          bait.parentNode.removeChild(bait);
+        }
+      }, 1100);
+    }, 450);
 
     return () => {
-      clearTimeout(checkTimer);
-      if (bait.parentNode) bait.parentNode.removeChild(bait);
+      clearTimeout(bootTimer);
+      if (checkTimer) clearTimeout(checkTimer);
+      if (bait?.parentNode) bait.parentNode.removeChild(bait);
     };
   }, [enabled, retrySeed]);
 
-  if (!enabled || !adBlockerDetected) {
+  if (!enabled || !adBlockerDetected || noticeDismissed) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0b0e14]/95 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="max-w-md w-full rounded-2xl bg-[#141923] border border-white/15 p-6 text-center shadow-2xl space-y-4">
-        <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
-          <ShieldAlert className="w-6 h-6" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-lg font-bold text-white">
-            Tafadhali Zima AdBlocker
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            NeliTv inakuletea vituo vyote vya Live TV, Michezo na Sinema <strong>BURE 100%</strong> kwa msaada wa matangazo. Zima AdBlocker yako kwenye kivinjari hiki ili kuendelea kutazama.
-          </p>
+    <div className="fixed bottom-16 sm:bottom-4 right-3 sm:right-4 z-50 max-w-xs w-[calc(100vw-24px)] rounded-xl bg-[#141923]/95 backdrop-blur-md border border-white/15 p-3.5 shadow-2xl space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 text-amber-400">
+          <ShieldAlert className="w-4 h-4 shrink-0" />
+          <span className="text-xs font-bold text-white">Ruhusu Matangazo (AdBlocker)</span>
         </div>
         <button
           type="button"
-          onClick={() => {
-            setAdBlockerDetected(false);
-            setRetrySeed((s) => s + 1);
-            window.location.reload();
-          }}
-          className="w-full py-3 px-5 rounded-xl bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+          onClick={() => setNoticeDismissed(true)}
+          aria-label="Funga"
+          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
         >
-          <RefreshCw className="w-4 h-4" />
-          <span>Nimezima AdBlocker — Onyesha Matangazo</span>
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
+      <p className="text-[11px] text-slate-300 leading-relaxed">
+        NeliTv inakuletea vituo vyote <strong>BURE 100%</strong>. Zima AdBlocker ili tusaidie kuendelea bila malipo.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          setAdBlockerDetected(false);
+          setRetrySeed((s) => s + 1);
+          window.location.reload();
+        }}
+        className="w-full py-2 px-3 rounded-lg bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+        <span>Nimezima — Onyesha Matangazo</span>
+      </button>
     </div>
   );
 };

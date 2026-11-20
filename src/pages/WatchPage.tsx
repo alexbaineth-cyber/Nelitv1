@@ -159,10 +159,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
         <div className={isFullViewport ? 'w-full h-full' : 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6'}>
           {/* Main Player Column */}
           <div className={isFullViewport ? 'w-full h-full' : 'lg:col-span-8 space-y-4'}>
-            {/* Responsive Banner ABOVE Video Player (auto-hides if no-fill) */}
-            {!isFullViewport && <AdBanner />}
-
-            {/* VideoPlayer Frame */}
+            {/* VideoPlayer Frame immediately at top — zero ad pushing player down */}
             <div
               className={
                 isFullViewport
@@ -278,15 +275,13 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               </div>
             )}
 
-            {/* Responsive Banner BELOW Video Player (auto-hides if no-fill) */}
-            {!isFullViewport && <AdBanner />}
+            {/* Single Compact Banner BELOW Video Player & Details (auto-hides if no-fill) */}
+            {!isFullViewport && <AdBanner mode="compact" />}
           </div>
 
-          {/* Right Column: Auto-hiding 300x250 + Live Channels List + Auto-hiding 160x300 */}
+          {/* Right Column: Live Channels List first + single 300x250 cleanly below */}
           {!isFullViewport && (
             <div className="lg:col-span-4 space-y-4">
-              <AdsterraBanner variant="300x250" />
-
               <div className="p-4 rounded-xl bg-[#141923] border border-white/[0.08]">
                 <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-white/[0.08]">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
@@ -341,9 +336,7 @@ export const WatchPage: React.FC<WatchPageProps> = ({
                 </div>
               </div>
 
-              <div className="hidden lg:flex justify-center">
-                <AdsterraBanner variant="160x300" />
-              </div>
+              <AdsterraBanner variant="300x250" />
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { CHANNELS_DATA, Channel } from './data/channels.ts';
 import { findChannelFromRoute, getChannelRouteSlug } from './utils/channelRoute.ts';
+import { warmLiveCdnToken } from './utils/streamTokens.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { HomePage } from './pages/HomePage.tsx';
 import { WatchPage } from './pages/WatchPage.tsx';
@@ -115,6 +116,10 @@ function MainApp() {
       return false;
     }
   });
+
+  useEffect(() => {
+    warmLiveCdnToken();
+  }, []);
 
   const handleSplashComplete = useCallback(() => {
     setShowSplash(false);

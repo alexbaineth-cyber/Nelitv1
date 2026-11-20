@@ -15,7 +15,7 @@ export const CinematicSplash: React.FC<CinematicSplashProps> = ({
   useEffect(() => {
     const timer = setTimeout(() => {
       onComplete();
-    }, 850);
+    }, 400);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {

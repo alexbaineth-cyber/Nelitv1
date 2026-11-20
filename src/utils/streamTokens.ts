@@ -37,7 +37,7 @@ async function fetchFromLocalApi(forceRefresh: boolean): Promise<CdnTokenData | 
       ? `/baynithalex/api/cdn-token?refresh=true&_t=${Date.now()}`
       : `/baynithalex/api/cdn-token`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2200);
+    const timeoutId = setTimeout(() => controller.abort(), 1600);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -69,7 +69,7 @@ async function fetchFromStreamzone(forceRefresh: boolean): Promise<CdnTokenData 
       ? `https://streamzone.fun/api/cdn-token?refresh=true&_t=${Date.now()}`
       : `https://streamzone.fun/api/cdn-token`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const timeoutId = setTimeout(() => controller.abort(), 2800);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -96,7 +96,41 @@ async function fetchFromStreamzone(forceRefresh: boolean): Promise<CdnTokenData 
   }
 }
 
-// Fetch latest valid token from server or direct live CDN endpoint
+function firstValidToken(
+  promises: Promise<CdnTokenData | null>[],
+  nowSec: number
+): Promise<CdnTokenData | null> {
+  return new Promise((resolve) => {
+    let remaining = promises.length;
+    let settled = false;
+    let firstExpiredCandidate: CdnTokenData | null = null;
+
+    promises.forEach((p) => {
+      p.then((res) => {
+        if (settled) return;
+        if (res && res.token) {
+          if (!res.exp || res.exp > nowSec + 30) {
+            settled = true;
+            resolve(res);
+            return;
+          }
+          if (!firstExpiredCandidate) firstExpiredCandidate = res;
+        }
+        remaining -= 1;
+        if (remaining === 0 && !settled) {
+          resolve(firstExpiredCandidate);
+        }
+      }).catch(() => {
+        remaining -= 1;
+        if (remaining === 0 && !settled) {
+          resolve(firstExpiredCandidate);
+        }
+      });
+    });
+  });
+}
+
+// Fetch latest valid token from server or direct live CDN endpoint (returns fastest valid response)
 export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenData> {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000);
@@ -116,29 +150,17 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
   }
 
   const runFetch = async (): Promise<CdnTokenData> => {
-    // Query direct streamzone endpoint and local backend in parallel, picking freshest token
-    const [directCandidate, localCandidate] = await Promise.all([
-      fetchFromStreamzone(forceRefresh),
-      fetchFromLocalApi(forceRefresh),
-    ]);
-
-    const candidates = [directCandidate, localCandidate].filter(
-      (c): c is CdnTokenData => Boolean(c && c.token)
+    // Race local API and direct streamzone endpoint; resolve immediately on first valid token
+    const winner = await firstValidToken(
+      [fetchFromLocalApi(forceRefresh), fetchFromStreamzone(forceRefresh)],
+      nowSec
     );
 
-    // Filter out tokens clearly expired by >30s if we have an alternative
-    const validCandidates = candidates.filter(
-      (c) => !c.exp || c.exp > nowSec + 30
-    );
-    const pool = validCandidates.length > 0 ? validCandidates : candidates;
-
-    if (pool.length > 0) {
-      pool.sort((a, b) => (b.exp || 0) - (a.exp || 0));
-      const best = pool[0];
-      inMemoryToken = best;
+    if (winner) {
+      inMemoryToken = winner;
       lastFetchTime = Date.now();
-      updateGlobalAzamToken(best.token, best.cdnHost);
-      return best;
+      updateGlobalAzamToken(winner.token, winner.cdnHost);
+      return winner;
     }
 
     // Fallback to latest active token provided by streamzone
@@ -160,6 +182,11 @@ export async function getLiveCdnToken(forceRefresh = false): Promise<CdnTokenDat
   });
 
   return inFlightPromise;
+}
+
+/** Silently pre-warm CDN token in the background on app mount for 0ms playback startup */
+export function warmLiveCdnToken(): void {
+  getLiveCdnToken(false).catch(() => {});
 }
 
 // Generate the exact playable URL for any channel
