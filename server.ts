@@ -6,9 +6,9 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import { CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
+import { ALL_KNOWN_CLEAR_KEYS, CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './src/utils/channelRoute.ts';
-import { requireChannelAuth, signClientToken, verifyClientToken } from './src/server/authMiddleware.ts';
+import { NELI_API_KEY, signClientToken, verifyClientToken } from './src/server/authMiddleware.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
@@ -744,17 +744,63 @@ app.all([
   return res.status(404).send('Not Found');
 });
 
-// 0. Internal index blocked from public scraping; direct callers to Free Content & Player API
-app.get(['/baynithalex/api', '/baynithalex/api/'], requireChannelAuth, (_req: Request, res: Response) => {
+function buildLiveAzamChannelForApp(
+  ch: typeof CHANNELS_DATA[number],
+  tokenData: { token: string; cdnHost: string; exp: number | null; source: string },
+  proxyTicket: string
+) {
+  const slug = getChannelRouteSlug(ch);
+  const host = tokenData.cdnHost.replace(/\/+$/, '');
+  const isAzam = Boolean(ch.isAzam || ch.streamUrl.includes('azamtvltd.co.tz'));
+
+  if (!isAzam) {
+    return {
+      ...ch,
+      slug,
+      drmScheme: ch.clearKeys ? 'clearkey' : 'none',
+      proxyStreamUrl: `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(ch.streamUrl)}&pt=${encodeURIComponent(proxyTicket)}`
+    };
+  }
+
+  let p = ch.streamUrl;
+  try {
+    const u = new URL(ch.streamUrl);
+    p = u.pathname.replace(/^\/tok_[^/]+/, '');
+  } catch {}
+  if (!p.startsWith('/')) p = `/${p}`;
+
+  const freshUrl = `${host}/tok_${tokenData.token}${p}?cdntoken=${encodeURIComponent(tokenData.token)}`;
+  return {
+    ...ch,
+    slug,
+    streamUrl: freshUrl,
+    tokenizedUrl: freshUrl,
+    drmScheme: ch.clearKeys ? 'clearkey' : 'none',
+    proxyStreamUrl: `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(freshUrl)}&pt=${encodeURIComponent(proxyTicket)}`
+  };
+}
+
+// 0. NeliTv App Server Index
+app.get(['/baynithalex/api', '/baynithalex/api/'], async (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  const tokenData = await getOrFetchCdnToken(false);
   res.json({
     success: true,
-    name: 'NeliTv Content & Player API',
+    name: 'NeliTv App Server',
     status: 'online',
     pricing: 'free',
     baseUrl: PUBLIC_SITE_URL,
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: tokenData.exp,
+    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
     endpoints: {
+      serverConsole: `${PUBLIC_SITE_URL}/server`,
+      cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
+      channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
+      appSync: `${PUBLIC_SITE_URL}/baynithalex/api/app`,
+      proxyStream: `${PUBLIC_SITE_URL}/api/proxy-stream`,
       apiIndex: `${PUBLIC_SITE_URL}/api/v1`,
       contentApi: `${PUBLIC_SITE_URL}/api/v1/content`,
       playerApi: `${PUBLIC_SITE_URL}/api/v1/player/azam-sports-1-hd`,
@@ -765,53 +811,84 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], requireChannelAuth, (_req: Re
   });
 });
 
-// 1. Protected channels endpoint with Token-based / API Key authentication
-app.get('/baynithalex/api/channels', requireChannelAuth, async (_req: Request, res: Response) => {
-  const tokenData = await getOrFetchCdnToken();
-  const host = tokenData.cdnHost.replace(/\/+$/, '');
+// 1. NeliTv App Server Channels Endpoint (Fresh tokenized URLs + ClearKeys + Proxy URLs)
+app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
+  const force = req.query.refresh === 'true' || req.query.fresh === '1';
+  const tokenData = await getOrFetchCdnToken(force);
+  const proxyTicket = signClientToken({ scope: 'player-proxy', client: 'nelitv-app' }, 6 * 3600);
+  const liveChannels = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
 
-  const liveChannels = CHANNELS_DATA.map(ch => {
-    const isAzam = ch.isAzam || ch.streamUrl.includes('azamtvltd.co.tz');
-    if (!isAzam) return ch;
-
-    // Extract path e.g. /live/eds/AzamSport1/DASH/AzamSport1.mpd
-    let p = ch.streamUrl;
-    try {
-      const u = new URL(ch.streamUrl);
-      p = u.pathname.replace(/^\/tok_[^/]+/, '');
-    } catch {}
-    if (!p.startsWith('/')) p = `/${p}`;
-
-    const freshUrl = `${host}/tok_${tokenData.token}${p}?cdntoken=${encodeURIComponent(tokenData.token)}`;
-    return {
-      ...ch,
-      streamUrl: freshUrl,
-      tokenizedUrl: freshUrl
-    };
-  });
-
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
     success: true,
+    server: 'NeliTv App Server',
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: tokenData.exp,
+    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    source: tokenData.source,
     total: liveChannels.length,
     data: liveChannels
   });
 });
 
-// 1.2 Fast CDN Token Endpoint for Client VideoPlayer (instant response, no stale HTTP caching)
-app.get('/baynithalex/api/cdn-token', requireChannelAuth, async (req: Request, res: Response) => {
+// 1.1 Dedicated NeliTv App Server All-in-One Bootstrap / Sync Endpoint
+app.get(['/baynithalex/api/app', '/baynithalex/api/bootstrap'], async (req: Request, res: Response) => {
+  const force = req.query.refresh === 'true' || req.query.fresh === '1';
+  const tokenData = await getOrFetchCdnToken(force);
+  const proxyTicket = signClientToken({ scope: 'player-proxy', client: 'nelitv-app' }, 6 * 3600);
+  const liveChannels = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
+
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.json({
+    success: true,
+    server: 'NeliTv App Server',
+    version: '2.0',
+    baseUrl: PUBLIC_SITE_URL,
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: tokenData.exp,
+    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    source: tokenData.source,
+    provider: 'NeliTv Server',
+    refreshIntervalSeconds: 90,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Referer': `${PUBLIC_SITE_URL}/`
+    },
+    clearKeys: ALL_KNOWN_CLEAR_KEYS,
+    totalChannels: liveChannels.length,
+    channels: liveChannels,
+    endpoints: {
+      serverConsole: `${PUBLIC_SITE_URL}/server`,
+      cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
+      channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
+      appSync: `${PUBLIC_SITE_URL}/baynithalex/api/app`,
+      proxyStream: `${PUBLIC_SITE_URL}/api/proxy-stream`,
+      playerEmbed: `${PUBLIC_SITE_URL}/embed/{slug}`
+    }
+  });
+});
+
+// 1.2 Fast Live CDN Token Endpoint (Direct access for NeliTv App, Client VideoPlayer & Browser Verification)
+app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
     success: true,
+    server: 'NeliTv Server',
     token: tokenData.token,
     cdnHost: tokenData.cdnHost,
     exp: tokenData.exp,
-    source: tokenData.source
+    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    source: tokenData.source,
+    provider: 'NeliTv Server',
+    refreshIntervalSeconds: 90
   });
 });
 
-// 1.5 Protected Streaming Proxy (Strictly restricted to NeliTv Own Player / signed player ticket)
+// 1.5 Streaming Proxy (Supports NeliTv Web Player & Official NeliTv App / Signed Tickets)
 app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -822,7 +899,7 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     return res.status(204).end();
   }
 
-  // Block direct browser navigation or external downloading outside NeliTv Player
+  // Block direct browser page navigation while allowing NeliTv Web Player and NeliTv Mobile/TV App
   const isDirectNavigation =
     req.get('sec-fetch-mode') === 'navigate' ||
     req.get('sec-fetch-dest') === 'document' ||
@@ -833,9 +910,20 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   const host = req.get('host') || '';
   const pt = typeof req.query.pt === 'string' ? req.query.pt : '';
   const validTicket = pt ? verifyClientToken(pt) : null;
+  const reqApiKey = extractApiKeyFromReq(req);
+  const clientHeader = (req.get('X-Neli-Client') || '').toLowerCase();
+  const userAgent = (req.get('user-agent') || '').toLowerCase();
+  const isNeliAppClient =
+    clientHeader === 'nelitv-app' ||
+    clientHeader === 'nelitv-web' ||
+    req.query.app === 'nelitv' ||
+    reqApiKey === NELI_API_KEY ||
+    Boolean(reqApiKey && getDeveloperByApiKey(reqApiKey)) ||
+    /nelitv|exoplayer|media3|dalvik|okhttp|dart|flutter/i.test(userAgent);
 
   const isTrustedPlayerContext =
     Boolean(validTicket && validTicket.scope === 'player-proxy') ||
+    isNeliAppClient ||
     secFetchSite === 'same-origin' ||
     secFetchSite === 'same-site' ||
     referer.includes('nelitv.online') ||
@@ -846,8 +934,8 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   if (isDirectNavigation || !isTrustedPlayerContext) {
     return res.status(403).json({
       success: false,
-      error: 'Access denied. Media streams are only accessible inside the official NeliTv Player.',
-      playerUrl: `${PUBLIC_SITE_URL}/api`
+      error: 'Access denied. Media streams are only accessible inside the official NeliTv Player or NeliTv App.',
+      playerUrl: `${PUBLIC_SITE_URL}/server`
     });
   }
 
@@ -2347,6 +2435,22 @@ async function setupApp() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
+
+    app.get('/server.ts', (_req: Request, res: Response) => {
+      res.status(404).send('Not Found');
+    });
+
+    app.get(['/server', '/server/', '/nelitv-server', '/nelitv-server/'], async (req: Request, res: Response, next) => {
+      try {
+        const indexPath = path.join(__dirname, 'index.html');
+        let html = fs.readFileSync(indexPath, 'utf-8');
+        html = await vite.transformIndexHtml(req.originalUrl, html);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');

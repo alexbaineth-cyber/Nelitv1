@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Search, User, LogIn, Download, Home, Tv, Compass } from 'lucide-react';
+import { Search, User, LogIn, Download, Home, Tv, Compass, Server } from 'lucide-react';
 import { NeliTvBrandMark } from './NeliTvBrandMark.tsx';
 
 interface NavbarProps {
@@ -63,6 +63,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Tv className="w-4 h-4" />
             <span>Vituo</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('server')}
+            className={`px-3.5 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap shrink-0 transition cursor-pointer ${
+              activeTab === 'server' || activeTab === 'api'
+                ? 'text-white bg-white/[0.09]'
+                : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
+            <Server className="w-4 h-4" />
+            <span>Server</span>
           </button>
 
           <button

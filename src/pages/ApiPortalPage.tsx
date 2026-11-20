@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Code, Key, ShieldCheck, Copy, Check, Terminal,
   ArrowLeft, RefreshCw, AlertTriangle, Play, Layers,
-  LogOut, CheckCircle2, Eye, EyeOff, Tv, Sparkles
+  LogOut, CheckCircle2, Eye, EyeOff, Tv, Server
 } from 'lucide-react';
 import { CHANNELS_DATA } from '../data/channels.ts';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 import { useAuth } from '../context/AuthContext.tsx';
+import { NeliTvServerPanel } from '../components/NeliTvServerPanel.tsx';
 
 interface DeveloperSession {
   id: string;
@@ -19,17 +20,34 @@ interface DeveloperSession {
 }
 
 interface ApiPortalPageProps {
+  initialView?: 'server' | 'api';
   onBack?: () => void;
   onNavigateToEmbed?: () => void;
+  onChangeRouteTab?: (tab: 'server' | 'api') => void;
 }
 
 const BASE_LINK = 'https://nelitv.online';
 
 export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
+  initialView = 'server',
   onBack,
-  onNavigateToEmbed
+  onNavigateToEmbed,
+  onChangeRouteTab
 }) => {
   const { user: appUser, loginWithGoogle } = useAuth();
+
+  const [workspaceView, setWorkspaceView] = useState<'server' | 'api'>(initialView);
+
+  useEffect(() => {
+    setWorkspaceView(initialView);
+  }, [initialView]);
+
+  const handleSwitchView = (nextView: 'server' | 'api') => {
+    setWorkspaceView(nextView);
+    if (onChangeRouteTab) {
+      onChangeRouteTab(nextView);
+    }
+  };
 
   const [session, setSession] = useState<DeveloperSession | null>(() => {
     try {
@@ -75,7 +93,6 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     } catch {}
   };
 
-  // Sign in / Register developer (100% Free Unlimited)
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim()) return;
@@ -167,7 +184,6 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     }
   };
 
-  // Instant Free API Key generator (works even without logging in first!)
   const handleInstantFreeKey = async () => {
     setIsGeneratingKey(true);
     setKeySuccessMsg(null);
@@ -224,52 +240,76 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#050611] text-slate-200 py-8 px-4 sm:px-8 pb-24 md:pb-14">
-      <div className="max-w-6xl mx-auto space-y-7">
-        {/* Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-purple-500/20">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#0b0e14] text-slate-200 py-8 px-4 sm:px-8 pb-24 md:pb-14">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Console Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
+          <div className="flex items-start sm:items-center gap-3">
             {onBack && (
               <button
                 onClick={onBack}
-                className="p-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/30 text-slate-200 hover:text-white transition cursor-pointer"
+                className="p-2.5 rounded-lg bg-[#141923] hover:bg-white/[0.08] border border-white/[0.08] text-slate-200 hover:text-white transition cursor-pointer shrink-0"
                 aria-label="Rudi Nyuma"
               >
-                <ArrowLeft className="w-5 h-5 text-cyan-400" />
+                <ArrowLeft className="w-4 h-4" />
               </button>
             )}
             <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Terminal className="w-6 h-6 text-cyan-400" />
-                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  NeliTv <span className="neli-gradient-text">Content &amp; Player API</span>
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[11px] font-extrabold">
-                  100% BURE
-                </span>
-              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                {workspaceView === 'server'
+                  ? 'NeliTv App Server'
+                  : 'NeliTv Content & Player API'}
+              </h1>
               <p className="text-xs text-slate-400 mt-1">
-                Content API, Official Player API &amp; SDK — endpoint zote zinatumia{' '}
-                <strong className="text-cyan-300">{BASE_LINK}</strong> na stream zinacheza kupitia NeliTv Player pekee.
+                {workspaceView === 'server'
+                  ? `Unganisha NeliTv App yako na token hai, orodha ya vituo, na ClearKeys kutoka ${BASE_LINK}`
+                  : `Content API, Official Player API & SDK (${BASE_LINK}) — 100% bure`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Workspace Segmented Toggle */}
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#141923] border border-white/[0.08]">
+              <button
+                onClick={() => handleSwitchView('server')}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  workspaceView === 'server'
+                    ? 'bg-[#1ce783] text-[#04120b] font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>NeliTv App Server</span>
+              </button>
+
+              <button
+                onClick={() => handleSwitchView('api')}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  workspaceView === 'api'
+                    ? 'bg-[#1ce783] text-[#04120b] font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Public Player API</span>
+              </button>
+            </div>
+
             {onNavigateToEmbed && (
               <button
                 onClick={onNavigateToEmbed}
-                className="px-4 py-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/35 hover:border-cyan-400/60 text-white font-bold text-xs flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer"
+                className="px-3.5 py-2 rounded-lg bg-[#141923] hover:bg-white/[0.08] border border-white/[0.08] text-white font-semibold text-xs flex items-center gap-1.5 transition whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <Code className="w-3.5 h-3.5 text-[#ffb020]" />
-                <span>Embed Studio →</span>
+                <Code className="w-3.5 h-3.5 text-[#1ce783]" />
+                <span>Embed Studio</span>
               </button>
             )}
 
-            {session && (
+            {session && workspaceView === 'api' && (
               <button
                 onClick={() => updateSession(null)}
-                className="px-3.5 py-2.5 rounded-xl bg-[#0b0e24] hover:bg-rose-950/60 border border-purple-500/30 text-slate-300 hover:text-rose-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                className="px-3.5 py-2 rounded-lg bg-[#141923] hover:bg-rose-950/60 border border-white/[0.08] text-slate-300 hover:text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Toka</span>
@@ -278,396 +318,377 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
           </div>
         </div>
 
-        {/* Security & Protection Rule Highlight */}
-        <div className="relative overflow-hidden p-5 rounded-2xl neli-card-surface border border-purple-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="pointer-events-none absolute -top-16 -left-16 w-48 h-48 rounded-full bg-[#ff1e8a]/15 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-16 right-0 w-48 h-48 rounded-full bg-[#00d4ff]/15 blur-3xl" />
-
-          <div className="relative z-10 flex items-start gap-3.5">
-            <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-400 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-sm sm:text-base font-black text-white">
-                API ni Bure Sasa — Stream Zimefungwa Nje ya NeliTv Player
-              </h2>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-                Unaweza kuchukua orodha yote ya vituo kupitia <strong>Content API</strong> na kupata{' '}
-                <strong>Player API / SDK</strong> bila malipo yoyote. Viungo halisi vya video (<code>.mpd</code>,{' '}
-                <code>.m3u8</code>, ClearKeys &amp; CDN tokens) havipo hadharani na havikubali kucheza nje ya NeliTv Player (<code>403 Forbidden</code>).
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={handleInstantFreeKey}
-            disabled={isGeneratingKey}
-            className="relative z-10 px-5 py-3 rounded-xl neli-gradient-bg text-white font-extrabold text-xs shadow-[0_0_24px_rgba(255,30,138,0.4)] hover:brightness-110 flex items-center justify-center gap-2 transition active:scale-95 shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{session ? 'Tengeneza API Key Mpya' : 'Pata Free API Key Papo Hapo'}</span>
-          </button>
-        </div>
-
-        {/* Free API Key Box + Optional Developer Account */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: API Key Display */}
-          <div className="lg:col-span-7 p-6 rounded-3xl neli-card-surface border border-purple-500/30 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  {session ? `API Key Yako (${session.email})` : 'API Key ya Bure (Public / Developer)'}
-                </h3>
+        {/* Active View: NeliTv App Server Console OR Public Content & Player API */}
+        {workspaceView === 'server' ? (
+          <NeliTvServerPanel />
+        ) : (
+          <div className="space-y-6">
+            {/* Security & Free Access Banner */}
+            <div className="p-5 rounded-xl bg-[#141923] border border-white/[0.08] flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 rounded-lg bg-[#1ce783]/10 border border-[#1ce783]/25 text-[#1ce783] shrink-0">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-sm sm:text-base font-bold text-white">
+                    Public API ni Bure — Stream za Watu Wengine Zinachezwa Kupitia NeliTv Player
+                  </h2>
+                  <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
+                    Kwa tovuti za nje au blog, tumia <strong>Content API</strong> na <strong>Player API / SDK</strong>.
+                    Kama unaunganisha <strong>NeliTv App</strong> yako binafsi kupata live token na streams, fungua tab ya{' '}
+                    <button
+                      onClick={() => handleSwitchView('server')}
+                      className="text-[#1ce783] hover:underline font-semibold cursor-pointer"
+                    >
+                      NeliTv App Server
+                    </button>
+                    .
+                  </p>
+                </div>
               </div>
 
               <button
-                onClick={() => setShowKeySecret(!showKeySecret)}
-                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                onClick={handleInstantFreeKey}
+                disabled={isGeneratingKey}
+                className="px-4 py-2.5 rounded-lg bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-xs flex items-center justify-center gap-2 transition shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
-                {showKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                <span>{showKeySecret ? 'Ficha' : 'Onyesha'}</span>
+                <Key className="w-3.5 h-3.5" />
+                <span>{session ? 'Tengeneza API Key Mpya' : 'Pata Free API Key'}</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex-1 px-4 py-3 rounded-xl bg-[#04050e] border border-purple-500/25 font-mono text-xs sm:text-sm text-cyan-300 overflow-x-auto select-all">
-                {showKeySecret ? activeApiKey : '••••••••••••••••••••••••••••••••••••••••'}
-              </div>
-              <button
-                onClick={copyKeyToClipboard}
-                className="px-4 py-3 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-purple-500/35 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-              >
-                {copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedKey ? 'Imenakiliwa' : 'Nakili'}</span>
-              </button>
-            </div>
-
-            {keySuccessMsg && (
-              <div className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{keySuccessMsg}</span>
-              </div>
-            )}
-
-            {/* Endpoints Quick Table (All using https://nelitv.online) */}
-            <div className="pt-2 space-y-2">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Endpoints Zote ({BASE_LINK})
-              </div>
-              <div className="grid grid-cols-1 gap-2 text-xs font-mono">
-                {[
-                  { tag: 'INDEX', color: 'text-slate-300 bg-white/5', url: `${BASE_LINK}/api/v1` },
-                  { tag: 'CONTENT', color: 'text-emerald-300 bg-emerald-500/15', url: `${BASE_LINK}/api/v1/content` },
-                  { tag: 'PLAYER', color: 'text-cyan-300 bg-cyan-500/15', url: `${BASE_LINK}/api/v1/player/${sandboxChannelSlug}` },
-                  { tag: 'SDK.JS', color: 'text-purple-300 bg-purple-500/20', url: `${BASE_LINK}/api/v1/player/sdk.js` },
-                  { tag: 'EMBED', color: 'text-[#ffb020] bg-amber-500/15', url: `${BASE_LINK}/embed/${sandboxChannelSlug}` },
-                ].map((ep) => (
-                  <div
-                    key={ep.tag}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#04050e] border border-purple-500/20 overflow-x-auto"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${ep.color}`}>
-                        {ep.tag}
-                      </span>
-                      <code className="text-[11px] text-slate-200 truncate">{ep.url}</code>
-                    </div>
+            {/* API Key + Developer Account */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-7 p-6 rounded-xl bg-[#141923] border border-white/[0.08] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-[#1ce783]" />
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                      {session ? `API Key Yako (${session.email})` : 'API Key ya Bure (Public / Developer)'}
+                    </h3>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Developer Account (Optional Sign-In for Saved Key) */}
-          <div className="lg:col-span-5 p-6 rounded-3xl neli-card-surface border border-purple-500/30 flex flex-col justify-between space-y-4">
-            {session ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl neli-gradient-bg flex items-center justify-center text-white font-black text-base">
-                    {(session.name || session.email).charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-black text-white truncate">{session.name || session.email}</h3>
-                    <p className="text-xs text-slate-400 truncate">{session.email}</p>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-400/30 text-xs text-emerald-300 space-y-1">
-                  <div className="font-extrabold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Akaunti ya Bure (Unlimited Free API)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300">
-                    Una ufikiaji kamili wa Content API na Player API bila kikomo cha muda wala maombi.
-                  </p>
-                </div>
-
-                <button
-                  onClick={handleInstantFreeKey}
-                  disabled={isGeneratingKey}
-                  className="w-full py-2.5 rounded-xl bg-[#0b0e24] hover:bg-[#14183b] border border-cyan-400/45 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingKey ? 'animate-spin' : ''}`} />
-                  <span>Badilisha / Zalisha Key Mpya</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-black text-white">Hifadhi API Key Yako (Hiari)</h3>
-                  <p className="text-[11px] text-slate-400">
-                    Ingia kwa Google au barua pepe ili kuhifadhi API Key yako binafsi bure.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={isAuthLoading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-neutral-900 font-bold text-xs flex items-center justify-center gap-2 shadow transition cursor-pointer disabled:opacity-50"
-                >
-                  <span>Ingia kwa Google</span>
-                </button>
-
-                <form onSubmit={handleAuthSubmit} className="space-y-2.5">
-                  <div className="flex rounded-xl bg-[#04050e] p-1 border border-purple-500/20">
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('login')}
-                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        authMode === 'login' ? 'bg-[#5b21b6] text-white' : 'text-slate-400'
-                      }`}
-                    >
-                      Ingia
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('register')}
-                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                        authMode === 'register' ? 'bg-[#5b21b6] text-white' : 'text-slate-400'
-                      }`}
-                    >
-                      Jisajili Bure
-                    </button>
-                  </div>
-
-                  {authMode === 'register' && (
-                    <input
-                      type="text"
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      placeholder="Jina au Tovuti yako"
-                      className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
-                    />
-                  )}
-
-                  <input
-                    type="email"
-                    required
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="developer@example.com"
-                    className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
-                  />
-
-                  <input
-                    type="password"
-                    required
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Nenosiri"
-                    className="w-full px-3.5 py-2 rounded-xl bg-[#04050e] border border-purple-500/25 focus:border-cyan-400 focus:outline-none text-white text-xs"
-                  />
-
-                  {authError && (
-                    <div className="p-2.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-[11px] flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{authError}</span>
-                    </div>
-                  )}
 
                   <button
-                    type="submit"
-                    disabled={isAuthLoading}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#5b21b6] to-[#0891b2] hover:brightness-110 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                    onClick={() => setShowKeySecret(!showKeySecret)}
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer whitespace-nowrap"
                   >
-                    {isAuthLoading ? 'Inapakia...' : authMode === 'login' ? 'Ingia & Pata Key' : 'Jisajili Bure'}
+                    {showKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showKeySecret ? 'Ficha' : 'Onyesha'}</span>
                   </button>
-                </form>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Live Sandbox + Live NeliTv Player Preview */}
-        <div className="p-6 rounded-3xl neli-card-surface border border-purple-500/30 space-y-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-base font-black text-white flex items-center gap-2">
-                <Play className="w-4 h-4 text-cyan-400" />
-                <span>Jaribu Content API, Player API &amp; NeliTv Player Moja kwa Moja</span>
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Chagua kituo kupima majibu ya API na kuona jinsi player inavyocheza kupitia mfumo wa NeliTv pekee.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={sandboxChannelSlug}
-                onChange={(e) => setSandboxChannelSlug(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-[#04050e] border border-purple-500/35 text-xs text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
-              >
-                {CHANNELS_DATA.map((ch) => {
-                  const slug = getChannelRouteSlug(ch);
-                  return (
-                    <option key={ch.id} value={slug}>
-                      {ch.name}
-                    </option>
-                  );
-                })}
-              </select>
-
-              <button
-                onClick={() => handleTestSandbox('content')}
-                disabled={isSandboxTesting}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer"
-              >
-                Test Content API
-              </button>
-
-              <button
-                onClick={() => handleTestSandbox('player')}
-                disabled={isSandboxTesting}
-                className="px-3.5 py-2 rounded-xl bg-[#5b21b6] hover:bg-[#6d28d9] text-white font-bold text-xs transition cursor-pointer"
-              >
-                Test Player API
-              </button>
-
-              <button
-                onClick={() => setShowPlayerPreview((p) => !p)}
-                className="px-3.5 py-2 rounded-xl bg-[#0b0e24] border border-cyan-400/40 text-cyan-300 font-bold text-xs transition cursor-pointer"
-              >
-                {showPlayerPreview ? 'Ficha Player' : 'Onyesha Player'}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {showPlayerPreview && (
-              <div className="lg:col-span-6 space-y-2">
-                <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                  <Tv className="w-3.5 h-3.5 text-[#ffb020]" />
-                  <span>NeliTv Official Player Preview ({BASE_LINK}/embed/{sandboxChannelSlug})</span>
                 </div>
-                <div className="aspect-video w-full rounded-2xl overflow-hidden border border-purple-500/35 bg-black shadow-xl">
-                  <iframe
-                    key={sandboxChannelSlug}
-                    src={`/embed/${sandboxChannelSlug}?autoplay=1`}
-                    title={sandboxChannelSlug}
-                    className="w-full h-full border-0"
-                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                    allowFullScreen
-                  />
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3.5 py-2.5 rounded-lg bg-[#090c11] border border-white/[0.08] font-mono text-xs sm:text-sm text-[#1ce783] overflow-x-auto select-all">
+                    {showKeySecret ? activeApiKey : '••••••••••••••••••••••••••••••••••••••••'}
+                  </div>
+                  <button
+                    onClick={copyKeyToClipboard}
+                    className="px-4 py-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.08] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {copiedKey ? <Check className="w-3.5 h-3.5 text-[#1ce783]" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedKey ? 'Imenakiliwa' : 'Nakili'}</span>
+                  </button>
+                </div>
+
+                {keySuccessMsg && (
+                  <div className="text-xs text-[#1ce783] font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{keySuccessMsg}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 space-y-2">
+                  <div className="text-xs font-semibold text-slate-400">
+                    Endpoints za Public API ({BASE_LINK})
+                  </div>
+                  <div className="divide-y divide-white/[0.06] rounded-lg border border-white/[0.08] bg-[#090c11] text-xs font-mono">
+                    {[
+                      { tag: 'INDEX', url: `${BASE_LINK}/api/v1` },
+                      { tag: 'CONTENT', url: `${BASE_LINK}/api/v1/content` },
+                      { tag: 'PLAYER', url: `${BASE_LINK}/api/v1/player/${sandboxChannelSlug}` },
+                      { tag: 'SDK.JS', url: `${BASE_LINK}/api/v1/player/sdk.js` },
+                      { tag: 'EMBED', url: `${BASE_LINK}/embed/${sandboxChannelSlug}` }
+                    ].map((ep) => (
+                      <div key={ep.tag} className="flex items-center gap-3 px-3 py-2.5 overflow-x-auto">
+                        <span className="text-[11px] font-bold text-[#1ce783] w-16 shrink-0">{ep.tag}</span>
+                        <code className="text-xs text-slate-200 truncate">{ep.url}</code>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            )}
 
-            <div className={showPlayerPreview ? 'lg:col-span-6 space-y-2' : 'lg:col-span-12 space-y-2'}>
-              <div className="text-[11px] font-bold text-slate-300">
-                API JSON Output ({BASE_LINK}/api/v1/{sandboxEndpoint === 'player' ? `player/${sandboxChannelSlug}` : `content/${sandboxChannelSlug}`})
+              <div className="lg:col-span-5 p-6 rounded-xl bg-[#141923] border border-white/[0.08] flex flex-col justify-between space-y-4">
+                {session ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-[#1ce783] flex items-center justify-center text-[#04120b] font-bold text-base shrink-0">
+                        {(session.name || session.email).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-white truncate">{session.name || session.email}</h3>
+                        <p className="text-xs text-slate-400 truncate">{session.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-lg bg-[#090c11] border border-white/[0.08] text-xs text-slate-300 space-y-1">
+                      <div className="font-semibold text-[#1ce783] flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Akaunti ya Bure (Unlimited Free API)</span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Una ufikiaji kamili wa Content API na Player API bila kikomo.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleInstantFreeKey}
+                      disabled={isGeneratingKey}
+                      className="w-full py-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.08] text-white font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingKey ? 'animate-spin' : ''}`} />
+                      <span>Badilisha / Zalisha Key Mpya</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Hifadhi API Key Yako (Hiari)</h3>
+                      <p className="text-xs text-slate-400">
+                        Ingia kwa Google au barua pepe ili kuhifadhi API Key yako binafsi bure.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleSignIn}
+                      disabled={isAuthLoading}
+                      className="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-slate-100 text-neutral-900 font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <span>Ingia kwa Google</span>
+                    </button>
+
+                    <form onSubmit={handleAuthSubmit} className="space-y-2.5">
+                      <div className="flex rounded-lg bg-[#090c11] p-1 border border-white/[0.08]">
+                        <button
+                          type="button"
+                          onClick={() => setAuthMode('login')}
+                          className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                            authMode === 'login' ? 'bg-[#1ce783] text-[#04120b] font-bold' : 'text-slate-400'
+                          }`}
+                        >
+                          Ingia
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthMode('register')}
+                          className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                            authMode === 'register' ? 'bg-[#1ce783] text-[#04120b] font-bold' : 'text-slate-400'
+                          }`}
+                        >
+                          Jisajili Bure
+                        </button>
+                      </div>
+
+                      {authMode === 'register' && (
+                        <input
+                          type="text"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value)}
+                          placeholder="Jina au Tovuti yako"
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#090c11] border border-white/[0.08] focus:border-[#1ce783] focus:outline-none text-white text-xs"
+                        />
+                      )}
+
+                      <input
+                        type="email"
+                        required
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        placeholder="developer@example.com"
+                        className="w-full px-3.5 py-2 rounded-lg bg-[#090c11] border border-white/[0.08] focus:border-[#1ce783] focus:outline-none text-white text-xs"
+                      />
+
+                      <input
+                        type="password"
+                        required
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="Nenosiri"
+                        className="w-full px-3.5 py-2 rounded-lg bg-[#090c11] border border-white/[0.08] focus:border-[#1ce783] focus:outline-none text-white text-xs"
+                      />
+
+                      {authError && (
+                        <div className="p-2.5 rounded-lg bg-rose-950/50 border border-rose-500/35 text-rose-300 text-xs flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{authError}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isAuthLoading}
+                        className="w-full py-2.5 rounded-lg bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isAuthLoading ? 'Inapakia...' : authMode === 'login' ? 'Ingia & Pata Key' : 'Jisajili Bure'}
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
-              <pre className="p-4 rounded-2xl bg-[#04050e] border border-purple-500/25 text-[11px] font-mono text-cyan-300 overflow-x-auto max-h-72 leading-relaxed">
-                {sandboxResult
-                  ? JSON.stringify(sandboxResult, null, 2)
-                  : `Bofya "Test Content API" au "Test Player API" kuona majibu halisi ya JSON yenye link za ${BASE_LINK} (bila kufichua stream links).`}
-              </pre>
-            </div>
-          </div>
-        </div>
-
-        {/* Documentation: Content API & Player API */}
-        <div className="p-6 sm:p-8 rounded-3xl neli-card-surface border border-purple-500/30 space-y-6">
-          <div>
-            <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-              <Layers className="w-5 h-5 text-cyan-400" />
-              <span>Nyaraka za API (Content API &amp; Player API)</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Miongozo ya kuunganisha vituo vya NeliTv kwenye tovuti au app yako kwa kutumia link ya{' '}
-              <strong className="text-white">{BASE_LINK}</strong>.
-            </p>
-          </div>
-
-          {/* 1. Content API */}
-          <div className="p-5 rounded-2xl bg-[#04050e] border border-purple-500/20 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-xs font-black">
-                GET
-              </span>
-              <code className="text-xs font-mono text-white break-all">
-                {BASE_LINK}/api/v1/content
-              </code>
-            </div>
-            <p className="text-xs text-slate-400">
-              Inaleta orodha ya vituo vyote, picha (logo), kategoria, vipindi vya sasa, na viungo vya <strong>Player API</strong> na <strong>Embed URL</strong> (bila kutoa stream links nje).
-            </p>
-
-            <div className="flex flex-wrap items-center gap-2 border-b border-purple-500/20 pb-2 text-[11px] font-bold">
-              {(['curl', 'js', 'python', 'php'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveCodeTab(tab)}
-                  className={`px-3 py-1 rounded-lg transition cursor-pointer ${
-                    activeCodeTab === tab ? 'bg-[#5b21b6] text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {tab.toUpperCase()}
-                </button>
-              ))}
             </div>
 
-            <pre className="p-3.5 rounded-xl bg-[#070918] border border-purple-500/20 text-[11px] font-mono text-slate-200 overflow-x-auto leading-relaxed select-all">
-              {activeCodeTab === 'curl' && `curl -X GET "${BASE_LINK}/api/v1/content" \\\n  -H "X-Neli-Api-Key: ${activeApiKey}"`}
-              {activeCodeTab === 'js' && `const res = await fetch("${BASE_LINK}/api/v1/content", {\n  headers: { "X-Neli-Api-Key": "${activeApiKey}" }\n});\nconst { channels } = await res.json();\n// Kila kituo kina endpoints.playerApi na endpoints.playerEmbed`}
-              {activeCodeTab === 'python' && `import requests\n\nr = requests.get("${BASE_LINK}/api/v1/content", headers={"X-Neli-Api-Key": "${activeApiKey}"})\nprint(r.json()["channels"])`}
-              {activeCodeTab === 'php' && `<?php\n$ch = curl_init("${BASE_LINK}/api/v1/content");\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ["X-Neli-Api-Key: ${activeApiKey}"]);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$data = json_decode(curl_exec($ch), true);`}
-            </pre>
-          </div>
+            {/* Sandbox + NeliTv Player Preview */}
+            <div className="p-6 rounded-xl bg-[#141923] border border-white/[0.08] space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Play className="w-4 h-4 text-[#1ce783]" />
+                    <span>Jaribu Content API, Player API &amp; NeliTv Player</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Chagua kituo kupima majibu ya JSON na preview ya player.
+                  </p>
+                </div>
 
-          {/* 2. Player API & SDK */}
-          <div className="p-5 rounded-2xl bg-[#04050e] border border-purple-500/20 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-1 rounded-md bg-cyan-500/20 text-cyan-300 font-mono text-xs font-black">
-                PLAYER API &amp; SDK
-              </span>
-              <code className="text-xs font-mono text-white break-all">
-                {BASE_LINK}/api/v1/player/{'{slug}'}
-              </code>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={sandboxChannelSlug}
+                    onChange={(e) => setSandboxChannelSlug(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-[#090c11] border border-white/[0.08] text-xs text-white focus:outline-none focus:border-[#1ce783] cursor-pointer"
+                  >
+                    {CHANNELS_DATA.map((ch) => {
+                      const slug = getChannelRouteSlug(ch);
+                      return (
+                        <option key={ch.id} value={slug}>
+                          {ch.name}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <button
+                    onClick={() => handleTestSandbox('content')}
+                    disabled={isSandboxTesting}
+                    className="px-3.5 py-2 rounded-lg bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-xs transition cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    Test Content API
+                  </button>
+
+                  <button
+                    onClick={() => handleTestSandbox('player')}
+                    disabled={isSandboxTesting}
+                    className="px-3.5 py-2 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.08] text-white font-semibold text-xs transition cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    Test Player API
+                  </button>
+
+                  <button
+                    onClick={() => setShowPlayerPreview((p) => !p)}
+                    className="px-3.5 py-2 rounded-lg bg-[#090c11] border border-white/[0.08] text-slate-300 hover:text-white font-semibold text-xs transition cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {showPlayerPreview ? 'Ficha Player' : 'Onyesha Player'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {showPlayerPreview && (
+                  <div className="lg:col-span-6 space-y-2">
+                    <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Tv className="w-3.5 h-3.5 text-[#1ce783]" />
+                      <span>NeliTv Player Preview ({BASE_LINK}/embed/{sandboxChannelSlug})</span>
+                    </div>
+                    <div className="aspect-video w-full rounded-lg overflow-hidden border border-white/[0.08] bg-black">
+                      <iframe
+                        key={sandboxChannelSlug}
+                        src={`/embed/${sandboxChannelSlug}?autoplay=1`}
+                        title={sandboxChannelSlug}
+                        className="w-full h-full border-0"
+                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className={showPlayerPreview ? 'lg:col-span-6 space-y-2' : 'lg:col-span-12 space-y-2'}>
+                  <div className="text-xs font-semibold text-slate-300 font-mono">
+                    {BASE_LINK}/api/v1/{sandboxEndpoint === 'player' ? `player/${sandboxChannelSlug}` : `content/${sandboxChannelSlug}`}
+                  </div>
+                  <pre className="p-4 rounded-lg bg-[#090c11] border border-white/[0.08] text-xs font-mono text-slate-200 overflow-x-auto max-h-72 leading-relaxed">
+                    {sandboxResult
+                      ? JSON.stringify(sandboxResult, null, 2)
+                      : `Bofya "Test Content API" au "Test Player API" kuona majibu halisi ya JSON yenye link za ${BASE_LINK}.`}
+                  </pre>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-slate-400">
-              Inarudisha msimbo wa NeliTv Player tayari kwa kucheza kwenye tovuti yako. Video zote zinachezwa moja kwa moja ndani ya NeliTv Player:
-            </p>
 
-            <pre className="p-3.5 rounded-xl bg-[#070918] border border-purple-500/20 text-[11px] font-mono text-purple-300 overflow-x-auto leading-relaxed select-all">
-{`<!-- Njia 1: NeliTv Official Player SDK -->
-<script src="${BASE_LINK}/api/v1/player/sdk.js"></script>
+            {/* Docs: Content API & Player API */}
+            <div className="p-6 rounded-xl bg-[#141923] border border-white/[0.08] space-y-5">
+              <div>
+                <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-[#1ce783]" />
+                  <span>Nyaraka za Content API &amp; Player API</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Miongozo ya kuunganisha vituo vya NeliTv kwenye tovuti au blog yako.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                  <span className="font-bold text-[#1ce783]">GET</span>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <code className="text-white break-all">{BASE_LINK}/api/v1/content</code>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#090c11] border border-white/[0.08] w-fit text-xs font-semibold">
+                  {(['curl', 'js', 'python', 'php'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveCodeTab(tab)}
+                      className={`px-3 py-1 rounded-md transition cursor-pointer ${
+                        activeCodeTab === tab ? 'bg-[#1ce783] text-[#04120b] font-bold' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {tab.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                <pre className="p-4 rounded-lg bg-[#090c11] border border-white/[0.08] text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed select-all">
+                  {activeCodeTab === 'curl' && `curl -X GET "${BASE_LINK}/api/v1/content" \\\n  -H "X-Neli-Api-Key: ${activeApiKey}"`}
+                  {activeCodeTab === 'js' && `const res = await fetch("${BASE_LINK}/api/v1/content", {\n  headers: { "X-Neli-Api-Key": "${activeApiKey}" }\n});\nconst { channels } = await res.json();`}
+                  {activeCodeTab === 'python' && `import requests\n\nr = requests.get("${BASE_LINK}/api/v1/content", headers={"X-Neli-Api-Key": "${activeApiKey}"})\nprint(r.json()["channels"])`}
+                  {activeCodeTab === 'php' && `<?php\n$ch = curl_init("${BASE_LINK}/api/v1/content");\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ["X-Neli-Api-Key: ${activeApiKey}"]);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$data = json_decode(curl_exec($ch), true);`}
+                </pre>
+              </div>
+
+              <div className="pt-4 border-t border-white/[0.08] space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                  <span className="font-bold text-[#1ce783]">PLAYER SDK</span>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <code className="text-white break-all">{BASE_LINK}/api/v1/player/{'{slug}'}</code>
+                </div>
+
+                <pre className="p-4 rounded-lg bg-[#090c11] border border-white/[0.08] text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed select-all">
+{`<script src="${BASE_LINK}/api/v1/player/sdk.js"></script>
 <div id="nelitv-player"></div>
 <script>
-  const player = new NeliTvPlayer('#nelitv-player', {
+  new NeliTvPlayer('#nelitv-player', {
     channel: '${sandboxChannelSlug}',
     width: '100%',
     height: '480px',
     apiKey: '${activeApiKey}'
   });
-</script>
-
-<!-- Njia 2: iFrame ya Moja kwa Moja -->
-<iframe src="${BASE_LINK}/embed/${sandboxChannelSlug}?autoplay=1" width="100%" height="480px" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`}
-            </pre>
+</script>`}
+                </pre>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

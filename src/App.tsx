@@ -39,6 +39,7 @@ type ActiveRouteTab =
   | 'terms'
   | 'contact'
   | 'api'
+  | 'server'
   | 'embed'
   | 'download'
   | 'embed-player';
@@ -80,6 +81,7 @@ function resolveCurrentRoute(): RouteResolution {
   if (lowerPath === '/terms') return { tab: 'terms', channel: null };
   if (lowerPath === '/contact') return { tab: 'contact', channel: null };
   if (lowerPath === '/api') return { tab: 'api', channel: null };
+  if (lowerPath === '/server' || lowerPath === '/nelitv-server') return { tab: 'server', channel: null };
   if (lowerPath === '/embed') return { tab: 'embed', channel: null };
   if (lowerPath === '/privacy') return { tab: 'home', channel: null, openPrivacyModal: true };
 
@@ -192,6 +194,10 @@ function MainApp() {
       document.title = 'Wasiliana Nasi | NeliTv';
     } else if (activeTab === 'account') {
       document.title = 'Akaunti Yangu | NeliTv';
+    } else if (activeTab === 'server') {
+      document.title = 'NeliTv Server — Live Token & App Sync | NeliTv';
+    } else if (activeTab === 'api') {
+      document.title = 'NeliTv API & SDK | NeliTv';
     }
   }, [activeTab, selectedChannel]);
 
@@ -219,7 +225,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 selection:bg-[#1ce783] selection:text-[#04120b] flex flex-col">
       <AdsterraGlobalScripts
-        enabled={activeTab !== 'api' && activeTab !== 'embed'}
+        enabled={activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'embed'}
       />
       {showSplash && <CinematicSplash onComplete={handleSplashComplete} />}
 
@@ -289,10 +295,12 @@ function MainApp() {
           <ContactPage onBack={() => navigateToTab('home')} />
         )}
 
-        {activeTab === 'api' && (
+        {(activeTab === 'api' || activeTab === 'server') && (
           <ApiPortalPage
+            initialView={activeTab === 'server' ? 'server' : 'api'}
             onBack={() => navigateToTab('home')}
             onNavigateToEmbed={() => navigateToTab('embed')}
+            onChangeRouteTab={(nextTab) => navigateToTab(nextTab)}
           />
         )}
 
@@ -306,7 +314,7 @@ function MainApp() {
       </main>
 
       {/* Clean Footer Navigation for Legal, Privacy & Tools */}
-      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'embed' && (
+      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'embed' && (
         <footer className="border-t border-white/[0.08] bg-[#090c11] text-slate-400 pb-24 md:pb-8 pt-7 px-4 sm:px-8">
           <div className="max-w-[1680px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <div className="text-center sm:text-left">
@@ -345,6 +353,12 @@ function MainApp() {
                 className="hover:text-white transition cursor-pointer"
               >
                 Mawasiliano
+              </button>
+              <button
+                onClick={() => navigateToTab('server')}
+                className="hover:text-[#1ce783] text-slate-300 font-semibold transition cursor-pointer"
+              >
+                NeliTv Server
               </button>
               <button
                 onClick={() => navigateToTab('embed')}
