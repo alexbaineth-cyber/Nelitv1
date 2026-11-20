@@ -68,10 +68,12 @@ function resolveCurrentRoute(): RouteResolution {
     return { tab: 'embed-player', channel: ch };
   }
 
-  // Explicit APK download landing route
+  // Explicit APK / API / Server view query routes
   if (lowerPath === '/download' || lowerPath === '/apk' || queryView === 'apk') {
     return { tab: 'download', channel: null };
   }
+  if (queryView === 'api') return { tab: 'api', channel: null };
+  if (queryView === 'server') return { tab: 'server', channel: null };
 
   // Static app & legal routes
   if (lowerPath === '/search') return { tab: 'search', channel: null };

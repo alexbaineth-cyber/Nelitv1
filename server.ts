@@ -2423,6 +2423,23 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
   res.send(`User-agent: *\nAllow: /\n\nSitemap: https://nelitv.online/sitemap.xml\n`);
 });
 
+// 13. Ensure /api and /api/ open the NeliTv API Portal page in production / Vercel
+if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+  app.get(['/api', '/api/', '/server', '/server/', '/nelitv-server', '/nelitv-server/'], (req: Request, res: Response) => {
+    const candidates = [
+      path.join(__dirname, 'dist', 'index.html'),
+      path.join(process.cwd(), 'dist', 'index.html')
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return res.sendFile(candidate);
+      }
+    }
+    const targetView = req.path.toLowerCase().includes('server') ? 'server' : 'api';
+    return res.redirect(302, `/?view=${targetView}`);
+  });
+}
+
 // -------------------------------------------------------------
 // Vite middleware in dev or static files in production
 // -------------------------------------------------------------
@@ -2436,11 +2453,11 @@ async function setupApp() {
       appType: 'spa',
     });
 
-    app.get('/server.ts', (_req: Request, res: Response) => {
+    app.get(['/server.ts', '/api/index', '/api/index.ts'], (_req: Request, res: Response) => {
       res.status(404).send('Not Found');
     });
 
-    app.get(['/server', '/server/', '/nelitv-server', '/nelitv-server/'], async (req: Request, res: Response, next) => {
+    app.get(['/api', '/api/', '/server', '/server/', '/nelitv-server', '/nelitv-server/'], async (req: Request, res: Response, next) => {
       try {
         const indexPath = path.join(__dirname, 'index.html');
         let html = fs.readFileSync(indexPath, 'utf-8');

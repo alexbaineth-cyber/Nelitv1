@@ -33,10 +33,23 @@
       ]
     }
   ],
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/baynithalex/(.*)",
       "destination": "/api/index"
+    },
+    {
+      "source": "/api",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/api/",
+      "destination": "/index.html"
     },
     {
       "source": "/api/(.*)",
