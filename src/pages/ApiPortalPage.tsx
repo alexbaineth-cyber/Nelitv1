@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Code, Key, ShieldCheck, Copy, Check, Terminal,
   ArrowLeft, RefreshCw, AlertTriangle, Play, Layers,
-  LogOut, CheckCircle2, Eye, EyeOff, Tv, Server
+  LogOut, CheckCircle2, Eye, EyeOff, Tv, Server, Lock
 } from 'lucide-react';
 import { CHANNELS_DATA } from '../data/channels.ts';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
@@ -27,6 +27,7 @@ interface ApiPortalPageProps {
 }
 
 const BASE_LINK = 'https://nelitv.online';
+const PORTAL_TOKEN_STORAGE_KEY = 'nelitv_portal_token';
 
 export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   initialView = 'server',
@@ -37,6 +38,87 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
   const { user: appUser, loginWithGoogle } = useAuth();
 
   const [workspaceView, setWorkspaceView] = useState<'server' | 'api'>(initialView);
+
+  // Server-verified access lock for /api and /server pages
+  const [isPortalUnlocked, setIsPortalUnlocked] = useState<boolean>(false);
+  const [isCheckingPortal, setIsCheckingPortal] = useState<boolean>(true);
+  const [portalPassword, setPortalPassword] = useState<string>('');
+  const [showPortalPassword, setShowPortalPassword] = useState<boolean>(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [isUnlockingPortal, setIsUnlockingPortal] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    const checkSavedPortalToken = async () => {
+      try {
+        const savedToken = sessionStorage.getItem(PORTAL_TOKEN_STORAGE_KEY);
+        if (!savedToken) {
+          if (active) setIsCheckingPortal(false);
+          return;
+        }
+        const res = await fetch('/api/portal/verify', {
+          headers: {
+            'Authorization': `Bearer ${savedToken}`,
+            'X-Portal-Token': savedToken
+          }
+        });
+        const data = await res.json();
+        if (active) {
+          if (res.ok && data?.unlocked) {
+            setIsPortalUnlocked(true);
+          } else {
+            sessionStorage.removeItem(PORTAL_TOKEN_STORAGE_KEY);
+            setIsPortalUnlocked(false);
+          }
+        }
+      } catch {
+        if (active) setIsPortalUnlocked(false);
+      } finally {
+        if (active) setIsCheckingPortal(false);
+      }
+    };
+    void checkSavedPortalToken();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handlePortalUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!portalPassword) return;
+    setIsUnlockingPortal(true);
+    setPortalError(null);
+    try {
+      const res = await fetch('/api/portal/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: portalPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data?.unlocked && data?.portalToken) {
+        try {
+          sessionStorage.setItem(PORTAL_TOKEN_STORAGE_KEY, data.portalToken);
+        } catch {}
+        setIsPortalUnlocked(true);
+        setPortalPassword('');
+      } else {
+        setPortalError(data?.error || 'Nenosiri si sahihi. Jaribu tena.');
+      }
+    } catch {
+      setPortalError('Hitilafu ya mtandao. Jaribu tena.');
+    } finally {
+      setIsUnlockingPortal(false);
+    }
+  };
+
+  const handlePortalLock = () => {
+    try {
+      sessionStorage.removeItem(PORTAL_TOKEN_STORAGE_KEY);
+    } catch {}
+    setIsPortalUnlocked(false);
+    setPortalPassword('');
+    setPortalError(null);
+  };
 
   useEffect(() => {
     setWorkspaceView(initialView);
@@ -239,6 +321,97 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     setTimeout(() => setCopiedKey(false), 2500);
   };
 
+  if (isCheckingPortal) {
+    return (
+      <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center px-4">
+        <div className="flex items-center gap-3 text-slate-300 text-sm">
+          <RefreshCw className="w-4 h-4 animate-spin text-[#1ce783]" />
+          <span>Inakagua uhalali wa kuingia...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isPortalUnlocked) {
+    return (
+      <div className="min-h-screen bg-[#0b0e14] text-slate-200 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md rounded-2xl bg-[#141923] border border-white/[0.08] p-7 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-xl bg-[#1ce783]/10 border border-[#1ce783]/30 flex items-center justify-center text-[#1ce783]">
+              <Lock className="w-5 h-5" />
+            </div>
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="px-3 py-1.5 rounded-lg bg-[#090c11] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Rudi</span>
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-bold text-white tracking-tight">
+              Ukurasa Umefungwa
+            </h1>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Sehemu ya {workspaceView === 'server' ? 'NeliTv Server' : 'API Console'} inahitaji nenosiri maalum la usalama ili kufunguliwa.
+            </p>
+          </div>
+
+          <form onSubmit={handlePortalUnlock} className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="neli-portal-pass" className="block text-xs font-semibold text-slate-300">
+                Nenosiri Maalum
+              </label>
+              <div className="relative">
+                <input
+                  id="neli-portal-pass"
+                  type={showPortalPassword ? 'text' : 'password'}
+                  autoComplete="off"
+                  autoFocus
+                  required
+                  value={portalPassword}
+                  onChange={(e) => {
+                    setPortalPassword(e.target.value);
+                    if (portalError) setPortalError(null);
+                  }}
+                  placeholder="Ingiza nenosiri..."
+                  className="w-full pl-3.5 pr-10 py-2.5 rounded-lg bg-[#090c11] border border-white/[0.1] focus:border-[#1ce783] focus:outline-none text-white text-sm font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPortalPassword((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 cursor-pointer"
+                  aria-label={showPortalPassword ? 'Ficha nenosiri' : 'Onyesha nenosiri'}
+                >
+                  {showPortalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {portalError && (
+              <div className="p-3 rounded-lg bg-rose-950/50 border border-rose-500/35 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{portalError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isUnlockingPortal || !portalPassword}
+              className="w-full py-2.5 px-4 rounded-lg bg-[#1ce783] hover:bg-[#19d377] text-[#04120b] font-bold text-sm flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{isUnlockingPortal ? 'Inahakiki...' : 'Fungua Ukurasa'}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-200 py-8 px-4 sm:px-8 pb-24 md:pb-14">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -315,6 +488,15 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
                 <span className="hidden sm:inline">Toka</span>
               </button>
             )}
+
+            <button
+              onClick={handlePortalLock}
+              className="px-3.5 py-2 rounded-lg bg-[#141923] hover:bg-amber-950/50 border border-white/[0.08] text-slate-300 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 cursor-pointer"
+              title="Funga ukurasa huu"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Funga</span>
+            </button>
           </div>
         </div>
 

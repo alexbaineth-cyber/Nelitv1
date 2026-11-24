@@ -72,9 +72,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
   const hlsAudioPlayerRef = useRef<any>(null);
-  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA');
+  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g');
   const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
-  const activeProviderRef = useRef<string>('mpingo');
+  const activeProviderRef = useRef<string>('aztv');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
@@ -244,6 +244,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [channel.audioUrl]);
 
   const isEmbedded = channel.streamFormat === 'embed' || Boolean(channel.embedUrl);
+
+  // Continuous token keeper for Azam channels so live streams never hit token expiration
+  useEffect(() => {
+    const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
+    if (!isAzam) return;
+
+    const keeper = setInterval(async () => {
+      try {
+        const fresh = await getLiveCdnToken(false);
+        if (fresh?.token) {
+          activeTokenRef.current = fresh.token;
+          activeCdnHostRef.current = fresh.cdnHost || activeCdnHostRef.current;
+          activeProviderRef.current = fresh.provider || activeProviderRef.current;
+        }
+      } catch {}
+    }, 45 * 1000);
+
+    return () => clearInterval(keeper);
+  }, [channel.id, channel.isAzam, channel.streamUrl]);
 
   // Main Stream Loader - fast startup, auto ABR, live sync
   useEffect(() => {

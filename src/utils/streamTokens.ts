@@ -11,14 +11,15 @@ export interface CdnTokenData {
 }
 
 const FALLBACK_TOKEN =
-  "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA";
+  "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g";
 const FALLBACK_CDN_HOST = "https://cdnedgch2.azamtvltd.co.tz";
-const FALLBACK_EXP = 1795172631;
+const FALLBACK_EXP = 1795569225;
 
 let inMemoryToken: CdnTokenData | null = null;
 let lastFetchTime = 0;
 let inFlightPromise: Promise<CdnTokenData> | null = null;
-const TOKEN_CACHE_DURATION = 90 * 1000; // 90 seconds live cache
+let keeperStarted = false;
+const TOKEN_CACHE_DURATION = 45 * 1000; // 45 seconds fresh cache
 
 function cleanTokenValue(token: string): string {
   return String(token || '').trim().replace(/^(?:tok_)+/, '');
@@ -51,7 +52,7 @@ async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string
     const url = qs ? `/baynithalex/api/cdn-token?${qs}` : `/baynithalex/api/cdn-token`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2400);
+    const timeoutId = setTimeout(() => controller.abort(), 2200);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -65,7 +66,7 @@ async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string
     if (!data?.token) return null;
 
     const cleanTok = cleanTokenValue(data.token);
-    const provider = data.upstreamProvider || (data.provider !== 'NeliTv Server' ? data.provider : undefined) || 'mpingo';
+    const provider = data.upstreamProvider || (data.provider !== 'NeliTv Server' ? data.provider : undefined) || 'aztv';
     if (excludeProvider && provider === excludeProvider) {
       return null;
     }
@@ -99,7 +100,7 @@ async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: stri
     const url = qs ? `https://streamzone.fun/api/cdn-token?${qs}` : `https://streamzone.fun/api/cdn-token`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3200);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -113,7 +114,7 @@ async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: stri
     if (!data?.token) return null;
 
     const cleanTok = cleanTokenValue(data.token);
-    const provider = data.provider || 'mpingo';
+    const provider = data.provider || 'aztv';
     if (excludeProvider && provider === excludeProvider) {
       return null;
     }
@@ -146,7 +147,7 @@ function firstValidToken(
       p.then((res) => {
         if (settled) return;
         if (res && res.token) {
-          if (!res.exp || res.exp > nowSec + 30) {
+          if (!res.exp || res.exp > nowSec + 60) {
             settled = true;
             resolve(res);
             return;
@@ -167,18 +168,18 @@ function firstValidToken(
   });
 }
 
-// Fetch latest valid token from server or direct live CDN endpoint (returns fastest valid response)
+// Fetch latest valid token from server or direct live CDN endpoint (never returns stale expired cache if live available)
 export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: string): Promise<CdnTokenData> {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000);
 
-  // Return short-lived in-memory live token if still fresh and valid
+  // Return short-lived in-memory live token if still fresh and has >10 minutes before expiry
   if (
     !forceRefresh &&
     !excludeProvider &&
     inMemoryToken &&
     nowMs - lastFetchTime < TOKEN_CACHE_DURATION &&
-    (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 60)
+    (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 600)
   ) {
     return inMemoryToken;
   }
@@ -203,13 +204,17 @@ export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: st
       return winner;
     }
 
-    // Fallback to latest active token provided by streamzone
+    // Keep last inMemoryToken if still valid in future
+    if (inMemoryToken && (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 30)) {
+      return inMemoryToken;
+    }
+
     const fallback: CdnTokenData = {
       token: FALLBACK_TOKEN,
       cdnHost: FALLBACK_CDN_HOST,
       exp: FALLBACK_EXP,
-      source: "static_active",
-      provider: "mpingo",
+      source: "aztv-service",
+      provider: "aztv",
       fetchedAt: Date.now(),
     };
     inMemoryToken = fallback;
@@ -229,7 +234,7 @@ export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: st
   return inFlightPromise;
 }
 
-/** Switch to alternate upstream CDN token provider (e.g. mpingo <-> aztv) on 429/403 errors */
+/** Switch to alternate upstream CDN token provider (mpingo <-> aztv) on 429/403 errors */
 export async function recoverAlternateCdnToken(failedProvider?: string): Promise<CdnTokenData> {
   const targetExclude = failedProvider || inMemoryToken?.provider || 'mpingo';
   const nowSec = Math.floor(Date.now() / 1000);
@@ -251,9 +256,17 @@ export async function recoverAlternateCdnToken(failedProvider?: string): Promise
   return getLiveCdnToken(true);
 }
 
-/** Silently pre-warm CDN token in the background on app mount for 0ms playback startup */
+/** Pre-warm CDN token and keep background auto-refresh active so tokens never expire */
 export function warmLiveCdnToken(): void {
   getLiveCdnToken(false).catch(() => {});
+  if (!keeperStarted && typeof window !== 'undefined') {
+    keeperStarted = true;
+    setInterval(() => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const nearExpiry = Boolean(inMemoryToken?.exp && inMemoryToken.exp - nowSec < 600);
+      getLiveCdnToken(nearExpiry).catch(() => {});
+    }, 45 * 1000);
+  }
 }
 
 // Generate the exact playable URL for any channel
@@ -264,7 +277,6 @@ export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData
     return channel.streamUrl;
   }
 
-  // Extract the live path (e.g. /live/eds/AzamSport1/DASH/AzamSport1.mpd)
   let path = '';
   try {
     const parsed = new URL(channel.streamUrl);
@@ -279,6 +291,5 @@ export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData
   const cleanHost = host.replace(/\/+$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Clean path-tokenized URL (matches streamzone working format without duplicate ?cdntoken=)
   return `${cleanHost}/tok_${cleanToken}${cleanPath}`;
 }

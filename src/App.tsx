@@ -356,24 +356,6 @@ function MainApp() {
               >
                 Mawasiliano
               </button>
-              <button
-                onClick={() => navigateToTab('server')}
-                className="hover:text-[#1ce783] text-slate-300 font-semibold transition cursor-pointer"
-              >
-                NeliTv Server
-              </button>
-              <button
-                onClick={() => navigateToTab('embed')}
-                className="hover:text-white transition cursor-pointer"
-              >
-                Embed Studio
-              </button>
-              <button
-                onClick={() => navigateToTab('api')}
-                className="hover:text-white transition cursor-pointer"
-              >
-                API
-              </button>
             </nav>
           </div>
         </footer>

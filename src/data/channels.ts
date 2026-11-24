@@ -75,7 +75,7 @@ export interface Channel {
   bandwidthSaverSupported?: boolean;
 }
 
-export let ACTIVE_AZAM_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1MTcyNjMxIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiZTZjOTExNDJjYWVkZjJkMiIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI0ODUxNDgzIiwiZGV2aWNlX2lkIjoiIiwibWF4X3Nlc3Npb25zIjowLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.M0qxGnpi1jmW_zSFwxhs2YUIvf7kgQuLRb3frhOzWiYEA1gZRTpEntZeuDCDQVzwSQ993Uk_t3kLuZp3MwD-jA";
+export let ACTIVE_AZAM_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g";
 export let ACTIVE_AZAM_HOST = "https://cdnedgch2.azamtvltd.co.tz";
 
 export function updateGlobalAzamToken(newToken: string, newHost?: string) {
@@ -88,7 +88,7 @@ export function updateGlobalAzamToken(newToken: string, newHost?: string) {
 }
 
 export const makeAzamUrl = (slug: string) =>
-  `${ACTIVE_AZAM_HOST}/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd?cdntoken=${encodeURIComponent(ACTIVE_AZAM_TOKEN)}`;
+  `${ACTIVE_AZAM_HOST}/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd`;
 
 
 export const CHANNELS_DATA: Channel[] = [
