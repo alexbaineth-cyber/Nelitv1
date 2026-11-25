@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
 import { Channel, ALL_KNOWN_CLEAR_KEYS } from '../data/channels.ts';
-import { getLiveCdnToken, recoverAlternateCdnToken, buildPlayableStreamUrl } from '../utils/streamTokens.ts';
+import { getLiveCdnToken, getInstantCdnToken, recoverAlternateCdnToken, buildPlayableStreamUrl, prewarmChannelConnection } from '../utils/streamTokens.ts';
 import {
   Volume2, Volume1, VolumeX, Maximize2, Minimize2,
   RefreshCw, AlertTriangle, Sparkles,
@@ -72,12 +72,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
   const hlsAudioPlayerRef = useRef<any>(null);
-  const activeTokenRef = useRef<string>('eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g');
-  const activeCdnHostRef = useRef<string>('https://cdnedgch2.azamtvltd.co.tz');
-  const activeProviderRef = useRef<string>('aztv');
+  const initialToken = getInstantCdnToken();
+  const activeTokenRef = useRef<string>(initialToken.token);
+  const activeCdnHostRef = useRef<string>(initialToken.cdnHost);
+  const activeProviderRef = useRef<string>(initialToken.provider || 'aztv');
+  const hasFirstFrameRef = useRef<boolean>(false);
+  const useSegmentProxyRef = useRef<boolean>(false);
+  const lastDownshiftAtRef = useRef<number>(0);
+  const loadPercentRef = useRef<number>(12);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isBuffering, setIsBuffering] = useState<boolean>(true);
+  const [hasFirstFrame, setHasFirstFrame] = useState<boolean>(false);
+  const [loadPercent, setLoadPercent] = useState<number>(12);
+  const [isBuffering, setIsBuffering] = useState<boolean>(false);
   const [isUserPaused, setIsUserPaused] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(() => {
@@ -264,17 +271,75 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(keeper);
   }, [channel.id, channel.isAzam, channel.streamUrl]);
 
-  // Main Stream Loader - fast startup, auto ABR, live sync
+  // Main Stream Loader - 0ms instant startup, background loading, live-edge safe, zero 1-min black screen
   useEffect(() => {
     let isMounted = true;
-    let autoTokenRetried = false;
     const video = videoRef.current;
     if (!video) return;
 
+    hasFirstFrameRef.current = false;
+    useSegmentProxyRef.current = false;
+    loadPercentRef.current = 12;
+    setLoadPercent(12);
+    setHasFirstFrame(false);
     setErrorMessage(null);
-    setIsBuffering(true);
+    setIsBuffering(false);
+    prewarmChannelConnection(channel);
+
+    let earlyNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+    let fastProxyFailoverTimer: ReturnType<typeof setTimeout> | null = null;
+    let hardTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let progressTicker: ReturnType<typeof setInterval> | null = null;
+
+    const advanceProgress = (minPct: number) => {
+      if (!isMounted) return;
+      if (minPct > loadPercentRef.current) {
+        loadPercentRef.current = Math.min(100, Math.round(minPct));
+        setLoadPercent(loadPercentRef.current);
+      }
+    };
+
+    const clearWatchdogs = () => {
+      if (earlyNudgeTimer) {
+        clearTimeout(earlyNudgeTimer);
+        earlyNudgeTimer = null;
+      }
+      if (fastProxyFailoverTimer) {
+        clearTimeout(fastProxyFailoverTimer);
+        fastProxyFailoverTimer = null;
+      }
+      if (hardTimeoutTimer) {
+        clearTimeout(hardTimeoutTimer);
+        hardTimeoutTimer = null;
+      }
+      if (progressTicker) {
+        clearInterval(progressTicker);
+        progressTicker = null;
+      }
+    };
+
+    // Smooth monotonic progress ticker while network packets & decoder warm up
+    progressTicker = setInterval(() => {
+      if (!isMounted || hasFirstFrameRef.current) return;
+      const cur = loadPercentRef.current;
+      const vid = videoRef.current;
+      if (vid && vid.readyState >= 2) {
+        advanceProgress(98);
+        return;
+      }
+      if (cur < 35) {
+        advanceProgress(cur + 6);
+      } else if (cur < 68) {
+        advanceProgress(cur + 4);
+      } else if (cur < 88) {
+        advanceProgress(cur + 2);
+      } else if (cur < 96) {
+        advanceProgress(cur + 1);
+      }
+    }, 180);
 
     const cleanup = async () => {
+      clearWatchdogs();
       if (shakaPlayerRef.current) {
         try {
           await shakaPlayerRef.current.destroy();
@@ -305,79 +370,103 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       } catch {}
     };
 
+    const markFrameReady = () => {
+      if (!isMounted) return;
+      advanceProgress(100);
+      if (!hasFirstFrameRef.current) {
+        hasFirstFrameRef.current = true;
+        setHasFirstFrame(true);
+      }
+      setIsBuffering(false);
+      clearWatchdogs();
+    };
+
     const loadStream = async () => {
-      await cleanup();
+      // Only await cleanup when switching away from an already-initialized player
+      if (shakaPlayerRef.current || hlsPlayerRef.current || hlsAudioPlayerRef.current) {
+        await cleanup();
+      } else {
+        if (earlyNudgeTimer) { clearTimeout(earlyNudgeTimer); earlyNudgeTimer = null; }
+        if (fastProxyFailoverTimer) { clearTimeout(fastProxyFailoverTimer); fastProxyFailoverTimer = null; }
+        if (hardTimeoutTimer) { clearTimeout(hardTimeoutTimer); hardTimeoutTimer = null; }
+      }
       if (!isMounted) return;
       setIsUserPaused(false);
+      advanceProgress(24);
 
       // Automated instant play with muted policy fallback
       const attemptAutoPlay = async () => {
         if (!isMounted) return;
-        setIsBuffering(false);
         const vid = videoRef.current;
         if (!vid) return;
+        if (vid.readyState >= 2) {
+          markFrameReady();
+        }
         try {
-          // Attempt unmuted play first
           vid.muted = false;
           await vid.play();
           setIsPlaying(true);
           setIsMuted(false);
+          if (vid.readyState >= 2) markFrameReady();
         } catch {
-          // If browser blocks unmuted audio, play muted without stopping
           try {
             vid.muted = true;
             setIsMuted(true);
             await vid.play();
             setIsPlaying(true);
-          } catch (pErr) {
-            console.warn('AutoPlay muted fallback note:', pErr);
-          }
+            if (vid.readyState >= 2) markFrameReady();
+          } catch {}
         }
 
-        // Auto-play synced audio stream for ESPN 7 if present
         if (channel.audioUrl && audioRef.current) {
           try {
             audioRef.current.muted = vid.muted;
             audioRef.current.volume = vid.muted ? 0 : (volume || 1);
             await audioRef.current.play();
-          } catch (aErr) {
-            console.warn('Audio auto play fallback note:', aErr);
-          }
+          } catch {}
         }
       };
 
       const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
       let targetUrl = channel.streamUrl;
-
       let hasTriedAlternateProvider = false;
+      let hasTriedProxyFallback = false;
 
-      // Always resolve latest valid CDN token for Azam TV to guarantee active playback
+      // 0ms Instant Token Resolution + Silent Background Refresh (never blocks player startup!)
       if (isAzam) {
-        try {
-          const tokenData = await getLiveCdnToken(retryCount > 0);
-          activeTokenRef.current = tokenData.token;
-          activeCdnHostRef.current = tokenData.cdnHost;
-          activeProviderRef.current = tokenData.provider || 'mpingo';
-          targetUrl = buildPlayableStreamUrl(channel, tokenData);
-        } catch (e) {
-          console.warn('Token resolution fallback:', e);
-          targetUrl = channel.streamUrl;
-        }
-      }
+        const instantToken = getInstantCdnToken();
+        activeTokenRef.current = instantToken.token;
+        activeCdnHostRef.current = instantToken.cdnHost;
+        activeProviderRef.current = instantToken.provider || 'aztv';
+        targetUrl = buildPlayableStreamUrl(channel, instantToken);
 
-      // Fast startup nudge only if media data has already reached HAVE_CURRENT_DATA
-      const stallTimer = setTimeout(async () => {
-        if (isMounted && videoRef.current && videoRef.current.readyState >= 2 && videoRef.current.paused) {
-          await attemptAutoPlay();
-        }
-      }, 3500);
+        // Background token refresh — updates activeTokenRef seamlessly without delaying startup
+        void getLiveCdnToken(retryCount > 0)
+          .then((freshToken) => {
+            if (!isMounted || !freshToken?.token) return;
+            activeTokenRef.current = freshToken.token;
+            activeCdnHostRef.current = freshToken.cdnHost || activeCdnHostRef.current;
+            activeProviderRef.current = freshToken.provider || activeProviderRef.current;
+          })
+          .catch(() => {});
+      }
 
       // 0. EMBEDDED STREAM (Baynith Sports 1 & 2, etc.)
       if (channel.streamFormat === 'embed' || channel.embedUrl) {
-        setIsBuffering(false);
+        markFrameReady();
         setIsPlaying(true);
         return;
       }
+
+      // Background watchdogs to prevent 1-minute black screens
+      earlyNudgeTimer = setTimeout(() => {
+        if (isMounted && videoRef.current && videoRef.current.readyState >= 2) {
+          markFrameReady();
+          if (videoRef.current.paused) {
+            void attemptAutoPlay();
+          }
+        }
+      }, 1500);
 
       // 1. DASH STREAM (Shaka Player)
       if (channel.streamFormat === 'dash') {
@@ -400,8 +489,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           for (const [k, v] of Object.entries(rawKeyMap)) {
             const cleanK = k.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
             const cleanV = v.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
-
-            // Only exact 32-character hex pairs are valid for W3C ClearKey EME
             if (cleanK.length === 32 && cleanV.length === 32) {
               clearKeysConfig[cleanK] = cleanV;
             }
@@ -410,50 +497,56 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           player.configure({
             drm: {
               clearKeys: clearKeysConfig,
-              servers: {}
-            },
-            streaming: {
-              bufferingGoal: 2.5,        // Fast 2.5s initial buffer for near-instant live start
-              rebufferingGoal: 0.4,      // Snappy resume after pause or network dip
-              bufferBehind: 8,           // Keeps 8s behind in memory (saves RAM & battery)
-              safeSeekOffset: 2,         // Tight live encoder offset
-              gapDetectionThreshold: 0.5, // Silently skips timestamp micro-gaps
-              stallEnabled: true,        // Detects browser decoder stalls
-              stallThreshold: 0.6,
-              stallSkip: 0.2,
-              segmentPrefetchLimit: 2,   // Pre-fetches next 2 segments ahead of time
-              ignoreTextStreamFailures: true,
+              servers: {},
               retryParameters: {
-                maxAttempts: 4,
-                baseDelay: 120,
+                maxAttempts: 2,
+                baseDelay: 100,
                 backoffFactor: 1.2
               }
             },
+            streaming: {
+              bufferingGoal: 1.5,        // Minimal initial buffer for near-instant frame render
+              rebufferingGoal: 0.25,     // Sub-second resume
+              bufferBehind: 8,           // Keeps 8s behind in memory
+              safeSeekOffset: 6,         // Safe offset behind live edge so segments already exist on CDN
+              gapDetectionThreshold: 0.5,
+              stallEnabled: true,
+              stallThreshold: 0.5,
+              stallSkip: 0.25,
+              segmentPrefetchLimit: 2,
+              ignoreTextStreamFailures: true,
+              retryParameters: {
+                maxAttempts: 2,          // Fail fast (~1.5s) instead of 40-60s black retry loops
+                baseDelay: 100,
+                backoffFactor: 1.3,
+                timeout: 6500
+              }
+            },
             manifest: {
-              defaultPresentationDelay: 3, // Fast 3s presentation delay for instant startup
+              defaultPresentationDelay: 8,
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
-                ignoreSuggestedPresentationDelay: true,
+                ignoreSuggestedPresentationDelay: false, // Respect origin's live edge delay so segments exist immediately!
                 clockSyncUri: ''
               },
               retryParameters: {
-                maxAttempts: 4,
-                baseDelay: 120,
-                backoffFactor: 1.2
+                maxAttempts: 2,
+                baseDelay: 100,
+                backoffFactor: 1.3,
+                timeout: 6500
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 350000,   // Low-bandwidth initial estimate for instant startup
-              switchInterval: 4,                  // Responsive 4s observation window
+              defaultBandwidthEstimate: 220000,   // Starts on lightest track (~0.5s first frame), upgrades in background
+              switchInterval: 3,
               bandwidthDowngradeTarget: 0.95,
               bandwidthUpgradeTarget: 0.65
             }
           });
 
-          // Register Shaka Request Filter for Azam TV:
-          // Injects active CDN host and active token on ALL MPD manifest & media segment chunks
+          // Register Shaka Request Filter for Azam TV & Proxy Failover
           player.getNetworkingEngine().clearAllRequestFilters();
           player.getNetworkingEngine().registerRequestFilter((_type: any, request: any) => {
             const currentToken = activeTokenRef.current;
@@ -467,7 +560,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 return updatedUri;
               }
               if (updatedUri.includes('azamtvltd') || updatedUri.includes('azam')) {
-                // 1. Force hostname to active CDN host
                 try {
                   const targetHostUrl = new URL(currentHost);
                   const reqUrl = new URL(updatedUri);
@@ -477,7 +569,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   updatedUri = reqUrl.toString();
                 } catch {}
 
-                // 2. Strip duplicate cdntoken query param and inject clean /tok_<token>/ path segment
                 try {
                   const u = new URL(updatedUri);
                   u.searchParams.delete('cdntoken');
@@ -495,13 +586,46 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     updatedUri = u.toString();
                   } catch {}
                 }
+
+                if (useSegmentProxyRef.current) {
+                  return `/api/proxy-stream?url=${encodeURIComponent(updatedUri)}&app=nelitv`;
+                }
               }
               return updatedUri;
             });
           });
 
-          // Track current active resolution when ABR changes
+          // Fast background failover if direct CDN stays black > 6.5s
+          fastProxyFailoverTimer = setTimeout(async () => {
+            if (!isMounted || hasFirstFrameRef.current || !shakaPlayerRef.current) return;
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+              markFrameReady();
+              return;
+            }
+            if (!hasTriedProxyFallback) {
+              hasTriedProxyFallback = true;
+              useSegmentProxyRef.current = true;
+              try {
+                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+                await shakaPlayerRef.current.load(proxyUrl);
+                if (isMounted) await attemptAutoPlay();
+              } catch {}
+            }
+          }, 6500);
+
+          // Prevent 1-minute dead black screen if upstream is unreachable
+          hardTimeoutTimer = setTimeout(() => {
+            if (!isMounted || hasFirstFrameRef.current) return;
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+              markFrameReady();
+              return;
+            }
+            setIsBuffering(false);
+            setErrorMessage('Mkondo umechelewesha majibu kutoka mtandaoni. Bofya Jaribu Tena.');
+          }, 16000);
+
           player.addEventListener('adaptation', () => {
+            advanceProgress(72);
             try {
               const tracks = player.getVariantTracks();
               const active = tracks.find((t: any) => t.active);
@@ -512,6 +636,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           });
 
           player.addEventListener('variantchanged', () => {
+            advanceProgress(78);
             try {
               const tracks = player.getVariantTracks();
               const active = tracks.find((t: any) => t.active);
@@ -521,8 +646,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Track available audio languages
           player.addEventListener('trackschanged', () => {
+            advanceProgress(55);
             try {
               const tracks = player.getVariantTracks();
               const langs = Array.from(new Set(tracks.map((t: any) => t.language).filter(Boolean))) as string[];
@@ -536,45 +661,64 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Adaptive buffering handling: downshift quality immediately on stall, do not chase live edge
+          // Only downshift quality mid-stream AFTER initial playback has started (never disrupt initial startup)
           player.addEventListener('buffering', (event: any) => {
             if (!isMounted) return;
-            setIsBuffering(event.buffering);
-
-            if (event.buffering) {
-              // Immediately step down to lighter track to resume playback smoothly without loading
-              try {
-                const tracks = player.getVariantTracks();
-                if (tracks && tracks.length > 0) {
-                  const sorted = [...tracks].sort((a: any, b: any) => (a.bandwidth || 0) - (b.bandwidth || 0));
-                  const lowest = sorted[0];
-                  if (lowest && lowest.id !== undefined) {
-                    player.selectVariantTrack(lowest, /* clearBuffer= */ false);
-                    if (lowest.height) setCurrentResolution(`${lowest.height}p`);
+            if (!event.buffering && videoRef.current && videoRef.current.readyState >= 2) {
+              markFrameReady();
+              return;
+            }
+            if (hasFirstFrameRef.current) {
+              setIsBuffering(Boolean(event.buffering));
+              const now = Date.now();
+              if (event.buffering && now - lastDownshiftAtRef.current > 3500) {
+                lastDownshiftAtRef.current = now;
+                try {
+                  const tracks = player.getVariantTracks();
+                  if (tracks && tracks.length > 1) {
+                    const sorted = [...tracks].sort((a: any, b: any) => (a.bandwidth || 0) - (b.bandwidth || 0));
+                    const lowest = sorted[0];
+                    if (lowest && !lowest.active && lowest.id !== undefined) {
+                      player.selectVariantTrack(lowest, false);
+                      if (lowest.height) setCurrentResolution(`${lowest.height}p`);
+                    }
                   }
-                }
-              } catch {}
+                } catch {}
+              }
             }
           });
 
-          // Error recovery with live token refresh and DRM auto-heal
+          const switchToProxyFast = async () => {
+            if (hasTriedProxyFallback || !shakaPlayerRef.current) return false;
+            hasTriedProxyFallback = true;
+            useSegmentProxyRef.current = true;
+            try {
+              const fresh = await getLiveCdnToken(false);
+              if (fresh?.token) {
+                activeTokenRef.current = fresh.token;
+                activeCdnHostRef.current = fresh.cdnHost || activeCdnHostRef.current;
+                targetUrl = buildPlayableStreamUrl(channel, fresh);
+              }
+              const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+              await shakaPlayerRef.current.load(proxyUrl);
+              setErrorMessage(null);
+              await attemptAutoPlay();
+              return true;
+            } catch {
+              return false;
+            }
+          };
+
+          // Fast Error Recovery (Proxy first with auto-heal, then alternate provider)
           player.addEventListener('error', async (event: any) => {
             const err = event.detail;
             if (!err) return;
-            // Mark error as handled so Shaka does not print unhandled error in console!
             err.handled = true;
 
-            // If it is a severity 1 (recoverable) error, Shaka Player recovers internally
-            if (err.severity === 1) {
-              return;
-            }
-
-            console.warn('Player handled critical error event code:', err.code, err.message);
-
+            if (err.severity === 1) return;
             if (!isMounted) return;
-            clearTimeout(stallTimer);
 
-            // 1. Handle DRM errors (Missing keys, 4012 in v4 or 6007/6008/6012 in v5) - auto heal
+            // 1. Handle DRM ClearKey missing keys
             if (err.code === 4012 || err.code === 6007 || err.code === 6008 || err.code === 6012) {
               const missingKeys = (Array.isArray(err?.data) ? err.data[0] : err?.data?.[0]?.missingKeys) as string[] | string | undefined;
               if (missingKeys && missingKeys.length > 0 && channel.clearKeys) {
@@ -592,22 +736,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   try {
                     player.configure({ drm: { clearKeys: updatedKeys } });
                     await player.load(targetUrl);
-                    setIsBuffering(false);
-                    await video.play();
-                    setIsPlaying(true);
+                    await attemptAutoPlay();
                     return;
-                  } catch (e) {
-                    console.warn('DRM key recovery attempt note:', e);
-                  }
+                  } catch {}
                 }
               }
-              setIsBuffering(false);
               return;
             }
 
-            // 2. Handle CDN Token expiration / 429 Too Many IPs / Network 1001 / 1002 / 1003
+            // 2. Fast proxy & token recovery on 429 / 403 / 401 / network error
             const httpCode = err?.data?.[1];
             if (isAzam || httpCode === 429 || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
+              if (await switchToProxyFast()) return;
+
               if (!hasTriedAlternateProvider) {
                 hasTriedAlternateProvider = true;
                 try {
@@ -615,50 +756,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   activeTokenRef.current = altToken.token;
                   activeCdnHostRef.current = altToken.cdnHost;
                   activeProviderRef.current = altToken.provider || activeProviderRef.current;
-                  const altUrl = buildPlayableStreamUrl(channel, altToken);
-                  targetUrl = altUrl;
-                  await player.load(altUrl);
+                  targetUrl = buildPlayableStreamUrl(channel, altToken);
+                  await player.load(targetUrl);
                   setErrorMessage(null);
-                  setIsBuffering(false);
-                  await video.play().catch(() => {});
-                  setIsPlaying(true);
+                  await attemptAutoPlay();
                   return;
-                } catch (altErr) {
-                  console.warn('Alternate provider rotation note:', altErr);
-                }
-              }
-
-              try {
-                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
-                await player.load(proxyUrl);
-                setErrorMessage(null);
-                setIsBuffering(false);
-                await video.play().catch(() => {});
-                setIsPlaying(true);
-                return;
-              } catch (proxyErr) {
-                console.warn('Proxy fallback note:', proxyErr);
+                } catch {}
               }
             }
 
-            // 3. Fallback streaming retry
             try {
               player.retryStreaming();
-              setIsBuffering(false);
-            } catch {
-              setIsBuffering(false);
-            }
+            } catch {}
           });
 
           await player.load(targetUrl);
-          clearTimeout(stallTimer);
-
           if (isMounted) {
             await attemptAutoPlay();
           }
-        } catch (error: any) {
-          console.warn('Shaka load initial note:', error);
-          if (shakaPlayerRef.current) {
+        } catch {
+          if (shakaPlayerRef.current && isMounted) {
+            if (!hasTriedProxyFallback) {
+              hasTriedProxyFallback = true;
+              useSegmentProxyRef.current = true;
+              try {
+                const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+                await shakaPlayerRef.current.load(proxyUrl);
+                if (isMounted) {
+                  await attemptAutoPlay();
+                  return;
+                }
+              } catch {}
+            }
+
             if (isAzam && !hasTriedAlternateProvider) {
               hasTriedAlternateProvider = true;
               try {
@@ -666,53 +796,43 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 activeTokenRef.current = altToken.token;
                 activeCdnHostRef.current = altToken.cdnHost;
                 activeProviderRef.current = altToken.provider || activeProviderRef.current;
-                const altUrl = buildPlayableStreamUrl(channel, altToken);
-                targetUrl = altUrl;
-                await shakaPlayerRef.current.load(altUrl);
-                clearTimeout(stallTimer);
+                targetUrl = buildPlayableStreamUrl(channel, altToken);
+                await shakaPlayerRef.current.load(targetUrl);
                 if (isMounted) {
                   await attemptAutoPlay();
                   return;
                 }
-              } catch (altLoadErr) {
-                console.warn('Alternate provider initial load note:', altLoadErr);
-              }
-            }
-
-            try {
-              const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}`;
-              await shakaPlayerRef.current.load(proxyUrl);
-              clearTimeout(stallTimer);
-              if (isMounted) {
-                await attemptAutoPlay();
-                return;
-              }
-            } catch (proxyErr) {
-              console.warn('Proxy fallback note:', proxyErr);
+              } catch {}
             }
           }
-          clearTimeout(stallTimer);
+
+          clearWatchdogs();
           if (isMounted) {
             setIsBuffering(false);
             setErrorMessage('Mkondo una msongamano kwa sasa. Bofya Jaribu Tena.');
           }
         }
       }
-      // 2. HLS STREAM (Low-latency startup)
+      // 2. HLS STREAM (Instant lowest-level startup + background ABR upgrade)
       else if (channel.streamFormat === 'hls') {
         if (Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
-            maxBufferLength: 12,
-            maxMaxBufferLength: 24,
-            liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 6,
+            startLevel: 0,                  // Immediate start on fastest level, auto-upgrade in background
+            maxBufferLength: 6,
+            maxMaxBufferLength: 16,
+            liveSyncDurationCount: 2,
+            liveMaxLatencyDurationCount: 5,
             lowLatencyMode: false,
-            backBufferLength: 10,
+            backBufferLength: 8,
             autoStartLoad: true,
             capLevelToPlayerSize: false,
             abrBandWidthFactor: 0.75,
-            abrBandWidthUpFactor: 0.60,
+            abrBandWidthUpFactor: 0.65,
+            manifestLoadingTimeOut: 6000,
+            manifestLoadingMaxRetry: 2,
+            fragLoadingTimeOut: 7000,
+            fragLoadingMaxRetry: 2,
           });
           hlsPlayerRef.current = hls;
 
@@ -721,8 +841,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           hls.on(Hls.Events.MANIFEST_PARSED, async () => {
             if (!isMounted) return;
+            advanceProgress(58);
             setErrorMessage(null);
             await attemptAutoPlay();
+          });
+
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            advanceProgress(88);
+            if (isMounted && videoRef.current && videoRef.current.readyState >= 2) {
+              markFrameReady();
+            }
           });
 
           hls.on(Hls.Events.BUFFER_STALLED, () => {
@@ -738,37 +866,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             if (data.fatal) {
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                  console.warn('HLS Network error, reloading...', data);
                   hls.startLoad();
                   break;
                 case Hls.ErrorTypes.MEDIA_ERROR:
-                  console.warn('HLS Media decode error, recovering...', data);
                   hls.recoverMediaError();
                   break;
                 default:
-                  console.warn('HLS Fatal error:', data);
                   try {
                     hls.destroy();
                   } catch {}
+                  if (isMounted && !hasFirstFrameRef.current) {
+                    setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
+                  }
                   break;
               }
             }
           });
 
-          // ESPN 7 & Dual-stream audio player loader
           if (channel.audioUrl && audioRef.current) {
             try {
               const audioHls = new Hls({
-                maxBufferLength: 8,
+                maxBufferLength: 6,
                 lowLatencyMode: true,
                 autoStartLoad: true
               });
               hlsAudioPlayerRef.current = audioHls;
               audioHls.loadSource(channel.audioUrl);
               audioHls.attachMedia(audioRef.current);
-            } catch (aErr) {
-              console.warn('Audio Hls attach note:', aErr);
-            }
+            } catch {}
           }
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = targetUrl;
@@ -787,55 +912,79 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.src = targetUrl;
         video.onloadeddata = async () => {
           if (isMounted) {
+            markFrameReady();
             await attemptAutoPlay();
           }
         };
         video.oncanplay = async () => {
-          if (isMounted && !isPlaying) {
-            await attemptAutoPlay();
+          if (isMounted) {
+            markFrameReady();
+            if (!isPlaying) await attemptAutoPlay();
           }
         };
       }
     };
 
-    loadStream();
+    void loadStream();
 
     return () => {
       isMounted = false;
-      cleanup();
+      void cleanup();
     };
   }, [channel.id, retryCount]);
 
-  // Video listeners
+  // Video frame & buffering state listeners (clears loading immediately on first frame)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    const handleFirstFrame = () => {
+      hasFirstFrameRef.current = true;
+      setHasFirstFrame(true);
+      setIsBuffering(false);
+    };
+
     const handlePlay = () => {
       setIsPlaying(true);
+      if (video.readyState >= 2) handleFirstFrame();
     };
 
     const handlePause = () => {
-      // If it paused due to buffer stall, try auto resuming to live edge
       if (!isPaywallTriggered) {
         setIsPlaying(false);
       }
     };
-    const handleWaiting = () => setIsBuffering(true);
-    const handlePlaying = () => setIsBuffering(false);
+    const handleWaiting = () => {
+      if (hasFirstFrameRef.current) setIsBuffering(true);
+    };
+    const handlePlaying = () => {
+      handleFirstFrame();
+      setIsPlaying(true);
+    };
+    const handleTimeUpdate = () => {
+      if (!hasFirstFrameRef.current && (video.currentTime > 0 || video.readyState >= 2)) {
+        handleFirstFrame();
+      }
+    };
 
+    video.addEventListener('loadeddata', handleFirstFrame);
+    video.addEventListener('canplay', handleFirstFrame);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('waiting', handleWaiting);
     video.addEventListener('playing', handlePlaying);
+    video.addEventListener('timeupdate', handleTimeUpdate);
 
     return () => {
+      video.removeEventListener('loadeddata', handleFirstFrame);
+      video.removeEventListener('canplay', handleFirstFrame);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('waiting', handleWaiting);
       video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [isPaywallTriggered]);
+  }, [isPaywallTriggered, channel.id]);
 
   // Quality Switcher with Automatic Internet Adaptation (Optimized for Tanzania Networks)
   const handleSelectQuality = (q: QualityOption) => {
@@ -1209,16 +1358,72 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         />
       ) : (
         <>
+          {/* Ambient Channel Backdrop with Live Filling Percentage while stream connects */}
+          {!hasFirstFrame && !errorMessage && !isOffline && (
+            <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#0a0f1a]">
+              {channel.thumbnailUrl && (
+                <img
+                  src={channel.thumbnailUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover opacity-20 blur-2xl scale-110"
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#060911]/95 via-[#0a0f1a]/60 to-[#060911]/85" />
+              <div className="relative h-full w-full flex flex-col items-center justify-center gap-3 px-6">
+                {channel.thumbnailUrl && (
+                  <img
+                    src={channel.thumbnailUrl}
+                    alt={channel.name}
+                    referrerPolicy="no-referrer"
+                    className="h-14 sm:h-16 w-auto max-w-[160px] object-contain opacity-95 drop-shadow-[0_4px_20px_rgba(0,0,0,0.65)]"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                )}
+                <span className="text-xs sm:text-sm font-bold text-white/95 tracking-tight">
+                  {channel.name}
+                </span>
+
+                {/* Filling Percentage Bar */}
+                <div className="w-44 sm:w-56 space-y-1.5 pt-0.5">
+                  <div className="flex items-center justify-between text-[11px] font-semibold">
+                    <span className="text-slate-300">Inapakia...</span>
+                    <span className="text-[#1ce783] font-bold tabular-nums">{loadPercent}%</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-white/15 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#1ce783] transition-all duration-200 ease-out"
+                      style={{ width: `${loadPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* Top synced hairline progress bar */}
+              <div className="absolute inset-x-0 top-0 h-[2px] bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-[#1ce783] transition-all duration-200 ease-out"
+                  style={{ width: `${loadPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <video
             ref={videoRef}
             playsInline
             autoPlay
-            className="w-full h-full object-contain bg-black"
+            preload="auto"
+            className={`relative z-[1] w-full h-full object-contain transition-opacity duration-300 ${
+              hasFirstFrame ? 'opacity-100 bg-black' : 'opacity-0 bg-transparent'
+            }`}
           />
           {channel.audioUrl && (
             <audio
               ref={audioRef}
               playsInline
+              preload="auto"
               className="hidden"
             />
           )}
@@ -1238,13 +1443,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Buffering Indicator - neon spectrum ring */}
-      {!isEmbedded && isBuffering && !errorMessage && !isPaywallTriggered && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#03040a]/55 backdrop-blur-[2px] pointer-events-none transition">
-          <div className="relative w-12 h-12 rounded-full p-[3px] neli-gradient-bg animate-spin mb-3 shadow-[0_0_24px_rgba(255,30,138,0.45)]">
-            <div className="w-full h-full rounded-full bg-[#050611]" />
+      {/* Compact mid-stream rebuffer indicator with live percentage if buffering happens during playback */}
+      {!isEmbedded && hasFirstFrame && isBuffering && !errorMessage && !isPaywallTriggered && !isOffline && (
+        <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-col gap-1 px-3 py-1.5 rounded-lg bg-black/75 border border-white/15 min-w-[130px]">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold">
+            <span className="text-slate-200">Inapakia...</span>
+            <span className="text-[#1ce783] font-bold tabular-nums">
+              {Math.min(98, Math.max(25, Math.round((bufferSeconds / 1.5) * 100)))}%
+            </span>
           </div>
-          <span className="text-xs text-slate-200 font-semibold tracking-wide">Inaunganisha TV...</span>
+          <div className="h-1 w-full rounded-full bg-white/15 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#1ce783] transition-all duration-200 ease-out"
+              style={{ width: `${Math.min(98, Math.max(25, Math.round((bufferSeconds / 1.5) * 100)))}%` }}
+            />
+          </div>
         </div>
       )}
 

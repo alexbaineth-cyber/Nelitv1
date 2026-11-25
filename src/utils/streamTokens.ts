@@ -15,11 +15,22 @@ const FALLBACK_TOKEN =
 const FALLBACK_CDN_HOST = "https://cdnedgch2.azamtvltd.co.tz";
 const FALLBACK_EXP = 1795569225;
 
-let inMemoryToken: CdnTokenData | null = null;
+let inMemoryToken: CdnTokenData | null =
+  FALLBACK_EXP > Math.floor(Date.now() / 1000) + 30
+    ? {
+        token: FALLBACK_TOKEN,
+        cdnHost: FALLBACK_CDN_HOST,
+        exp: FALLBACK_EXP,
+        source: "aztv-service",
+        provider: "aztv",
+        fetchedAt: 0,
+      }
+    : null;
 let lastFetchTime = 0;
 let inFlightPromise: Promise<CdnTokenData> | null = null;
 let keeperStarted = false;
 const TOKEN_CACHE_DURATION = 45 * 1000; // 45 seconds fresh cache
+const prewarmedOrigins = new Set<string>();
 
 function cleanTokenValue(token: string): string {
   return String(token || '').trim().replace(/^(?:tok_)+/, '');
@@ -52,7 +63,7 @@ async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string
     const url = qs ? `/baynithalex/api/cdn-token?${qs}` : `/baynithalex/api/cdn-token`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2200);
+    const timeoutId = setTimeout(() => controller.abort(), 1600);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -100,7 +111,7 @@ async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: stri
     const url = qs ? `https://streamzone.fun/api/cdn-token?${qs}` : `https://streamzone.fun/api/cdn-token`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
 
     const res = await fetch(url, {
       cache: 'no-store',
@@ -128,8 +139,7 @@ async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: stri
       provider,
       fetchedAt: Date.now(),
     };
-  } catch (err) {
-    console.warn('Direct streamzone token fetch fallback note:', err);
+  } catch {
     return null;
   }
 }
@@ -168,6 +178,22 @@ function firstValidToken(
   });
 }
 
+/** Synchronous 0ms token getter so video player starts immediately while refreshing in background */
+export function getInstantCdnToken(): CdnTokenData {
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (inMemoryToken && (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 30)) {
+    return inMemoryToken;
+  }
+  return {
+    token: FALLBACK_TOKEN,
+    cdnHost: FALLBACK_CDN_HOST,
+    exp: FALLBACK_EXP,
+    source: "aztv-service",
+    provider: "aztv",
+    fetchedAt: Date.now(),
+  };
+}
+
 // Fetch latest valid token from server or direct live CDN endpoint (never returns stale expired cache if live available)
 export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: string): Promise<CdnTokenData> {
   const nowMs = Date.now();
@@ -178,6 +204,7 @@ export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: st
     !forceRefresh &&
     !excludeProvider &&
     inMemoryToken &&
+    lastFetchTime > 0 &&
     nowMs - lastFetchTime < TOKEN_CACHE_DURATION &&
     (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 600)
   ) {
@@ -240,8 +267,8 @@ export async function recoverAlternateCdnToken(failedProvider?: string): Promise
   const nowSec = Math.floor(Date.now() / 1000);
   const alt = await firstValidToken(
     [
-      fetchFromStreamzone(true, targetExclude),
       fetchFromLocalApi(true, targetExclude),
+      fetchFromStreamzone(true, targetExclude),
     ],
     nowSec
   );
@@ -254,6 +281,23 @@ export async function recoverAlternateCdnToken(failedProvider?: string): Promise
   }
 
   return getLiveCdnToken(true);
+}
+
+/** Quietly preconnect to channel CDN origin & warm token in background on hover/focus */
+export function prewarmChannelConnection(channel: Channel): void {
+  warmLiveCdnToken();
+  if (typeof document === 'undefined' || !channel?.streamUrl) return;
+  try {
+    const origin = new URL(channel.streamUrl).origin;
+    if (!prewarmedOrigins.has(origin)) {
+      prewarmedOrigins.add(origin);
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      link.crossOrigin = 'anonymous';
+      document.head.appendChild(link);
+    }
+  } catch {}
 }
 
 /** Pre-warm CDN token and keep background auto-refresh active so tokens never expire */

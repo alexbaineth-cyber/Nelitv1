@@ -4,6 +4,7 @@ import { Play, Tv, Check } from 'lucide-react';
 import { AdBanner } from '../components/AdBanner';
 import { AdsterraNativeBanner } from '../components/AdsterraAds.tsx';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
+import { prewarmChannelConnection } from '../utils/streamTokens.ts';
 
 interface HomePageProps {
   channels?: Channel[];
@@ -471,6 +472,9 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
       tabIndex={0}
       role="button"
       aria-label={`Tazama kituo cha ${channel.name}`}
+      onMouseEnter={() => prewarmChannelConnection(channel)}
+      onFocus={() => prewarmChannelConnection(channel)}
+      onTouchStart={() => prewarmChannelConnection(channel)}
       onClick={(e) => {
         if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
           e.preventDefault();
