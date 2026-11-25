@@ -19,7 +19,7 @@ const BASE_URL = 'https://nelitv.online';
 const APP_AUTH_KEY = 'neli_sec_9971ab4f7831d8e0e5c9429b9f71c';
 
 function formatCountdown(expSeconds: number | null, nowSec: number): string {
-  if (!expSeconds) return 'Bila kikomo';
+  if (!expSeconds || expSeconds - nowSec > 365 * 86400) return 'Milele (Haiishi Muda)';
   const diff = expSeconds - nowSec;
   if (diff <= 0) return 'Imekwisha (Refresh)';
   const days = Math.floor(diff / 86400);
@@ -313,7 +313,7 @@ curl -s "${BASE_URL}/baynithalex/api/app" \\
           <div className="p-4 space-y-1">
             <div className="text-xs text-slate-400">CDN Host Active</div>
             <div className="text-xs sm:text-sm font-semibold text-slate-200 font-mono truncate" title={tokenInfo?.cdnHost || ''}>
-              {isLoadingToken ? '...' : tokenInfo?.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz'}
+              {isLoadingToken ? '...' : tokenInfo?.cdnHost || 'https://1445733302.rsc.cdn77.org'}
             </div>
           </div>
 
@@ -329,7 +329,7 @@ curl -s "${BASE_URL}/baynithalex/api/app" \\
         <div className="px-5 py-4 bg-[#0b0e14]/70 border-t border-white/[0.08] space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold text-slate-300">
-              Active Azam CDN Token (Auto-refresh kila sekunde 90)
+              Active Permanent CDN Token (Haishi Muda)
             </span>
             {tokenInfo?.exp && (
               <span className="text-xs text-slate-400 font-mono tabular-nums">

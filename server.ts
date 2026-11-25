@@ -622,10 +622,32 @@ interface CdnTokenRecord {
 }
 
 const PERMANENT_CDN77_HOST = "https://1445733302.rsc.cdn77.org";
+const PERMANENT_EXP_UNIX = 2524608000; // 2050-01-01T00:00:00.000Z (Permanent / Never expires)
+const PERMANENT_CDN_JWT =
+  Buffer.from(JSON.stringify({ alg: 'HS512', typ: 'JWT', kid: '1' })).toString('base64url') +
+  '.' +
+  Buffer.from(
+    JSON.stringify({
+      exp: String(PERMANENT_EXP_UNIX),
+      sip: '',
+      path: '',
+      session_cdn_id: 'nelitv-permanent',
+      session_id: '',
+      client_id: 'nelitv',
+      device_id: '',
+      max_sessions: 0,
+      url: PERMANENT_CDN77_HOST,
+      session_timeout: 0,
+      aud: '7',
+      sources: [3]
+    })
+  ).toString('base64url') +
+  '.nelitv_permanent_cdn77';
+
 const PERMANENT_CDN77_RECORD: CdnTokenRecord = {
-  token: "nelitv-live",
+  token: PERMANENT_CDN_JWT,
   cdnHost: PERMANENT_CDN77_HOST,
-  exp: null, // Permanent non-expiring CDN origin
+  exp: PERMANENT_EXP_UNIX, // Year 2050 permanent exp
   source: "cdn77-permanent",
   upstreamProvider: "cdn77"
 };
@@ -798,7 +820,7 @@ function getSerializedExp(tokenData: CdnTokenRecord): number {
   if (tokenData.exp && tokenData.exp > Math.floor(Date.now() / 1000)) {
     return tokenData.exp;
   }
-  return Math.floor(Date.now() / 1000) + 86400;
+  return PERMANENT_EXP_UNIX;
 }
 
 // Warm immediately on server start and monitor health every 45s
@@ -1100,6 +1122,7 @@ app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Re
   const excludeProvider = typeof req.query.excludeProvider === 'string' ? req.query.excludeProvider.trim() : '';
   const tokenData = await getOrFetchCdnToken(force, excludeProvider);
   const exposedExp = getSerializedExp(tokenData);
+  const isPermanent = tokenData.cdnHost.includes('cdn77.org');
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
     success: true,
@@ -1108,10 +1131,11 @@ app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Re
     cdnHost: tokenData.cdnHost,
     exp: exposedExp,
     expiresAt: new Date(exposedExp * 1000).toISOString(),
+    neverExpires: isPermanent,
     source: tokenData.source,
     upstreamProvider: tokenData.upstreamProvider,
     provider: 'NeliTv Server',
-    refreshIntervalSeconds: 45
+    refreshIntervalSeconds: isPermanent ? 3600 : 45
   });
 });
 

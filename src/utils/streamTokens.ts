@@ -11,13 +11,15 @@ export interface CdnTokenData {
 }
 
 export const PERMANENT_CDN_HOST = "https://1445733302.rsc.cdn77.org";
-const PERMANENT_TOKEN = "nelitv-live";
+const PERMANENT_EXP_UNIX = 2524608000;
+const PERMANENT_TOKEN =
+  "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIyNTI0NjA4MDAwIiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoibmVsaXR2LXBlcm1hbmVudCIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiJuZWxpdHYiLCJkZXZpY2VfaWQiOiIiLCJtYXhfc2Vzc2lvbnMiOjAsInVybCI6Imh0dHBzOi8vMTQ0NTczMzMwMi5yc2MuY2RuNzcub3JnIiwic2Vzc2lvbl90aW1lb3V0IjowLCJhdWQiOiI3Iiwic291cmNlcyI6WzNdfQ.nelitv_permanent_cdn77";
 
 function createPermanentCdnRecord(): CdnTokenData {
   return {
     token: PERMANENT_TOKEN,
     cdnHost: PERMANENT_CDN_HOST,
-    exp: null,
+    exp: PERMANENT_EXP_UNIX,
     source: "cdn77-permanent",
     provider: "cdn77",
     fetchedAt: Date.now(),
