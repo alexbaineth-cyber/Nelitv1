@@ -790,6 +790,8 @@ function triggerBackgroundTokenRefresh(cleanExclude = ''): Promise<CdnTokenRecor
   return inFlightTokenFetch;
 }
 
+const FORCE_REFRESH_COOLDOWN_MS = 15 * 1000;
+
 async function getOrFetchCdnToken(force = false, excludeProvider = ''): Promise<CdnTokenRecord> {
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
@@ -797,7 +799,13 @@ async function getOrFetchCdnToken(force = false, excludeProvider = ''): Promise<
   const isPermanent = cachedCdnToken.cdnHost.includes('cdn77.org');
   const currentValid = isPermanent || (cachedCdnToken.exp !== null && cachedCdnToken.exp > nowSec + 60);
   const nearExpiry = !isPermanent && Boolean(cachedCdnToken.exp && cachedCdnToken.exp <= nowSec + TOKEN_PRE_EXPIRY_SEC);
-  const isStale = (now - lastCdnTokenFetch) >= TOKEN_SOFT_TTL_MS || nearExpiry;
+  const sinceLastFetch = now - lastCdnTokenFetch;
+  const isStale = sinceLastFetch >= TOKEN_SOFT_TTL_MS || nearExpiry;
+
+  // Prevent stampeding upstream when hundreds of APK users click channels concurrently
+  if (!cleanExclude && currentValid && sinceLastFetch < FORCE_REFRESH_COOLDOWN_MS) {
+    return cachedCdnToken;
+  }
 
   if (!force && !cleanExclude && currentValid) {
     if (isStale) {
@@ -996,17 +1004,21 @@ function buildLiveAzamChannelForApp(
   };
 }
 
-// Fast memoized cache for /baynithalex/api/app & /baynithalex/api/channels (<5ms response)
+// Fast pre-serialized cache for /baynithalex/api/app & /baynithalex/api/channels (<1ms response under heavy load)
 let cachedLiveChannelsMemo: {
   key: string;
   builtAt: number;
   proxyTicket: string;
   liveChannels: ReturnType<typeof buildLiveAzamChannelForApp>[];
+  appJson: string;
+  channelsJson: string;
 } | null = null;
 
 function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
   const now = Date.now();
-  const key = `${tokenData.token}|${tokenData.cdnHost}`;
+  const exposedExp = getSerializedExp(tokenData);
+  const isPermanent = tokenData.cdnHost.includes('cdn77.org');
+  const key = `${tokenData.token}|${tokenData.cdnHost}|${exposedExp}`;
   if (
     cachedLiveChannelsMemo &&
     cachedLiveChannelsMemo.key === key &&
@@ -1015,13 +1027,60 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
     return cachedLiveChannelsMemo;
   }
 
-  const proxyTicket = signClientToken({ scope: 'player-proxy', client: 'nelitv-app' }, 6 * 3600);
+  const proxyTicket = signClientToken({ scope: 'player-proxy', client: 'nelitv-app' }, 12 * 3600);
   const liveChannels = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
+
+  const channelsJson = JSON.stringify({
+    success: true,
+    server: 'NeliTv App Server',
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
+    neverExpires: isPermanent,
+    source: tokenData.source,
+    total: liveChannels.length,
+    data: liveChannels,
+    channels: liveChannels
+  });
+
+  const appJson = JSON.stringify({
+    success: true,
+    server: 'NeliTv App Server',
+    version: '2.0',
+    baseUrl: PUBLIC_SITE_URL,
+    token: tokenData.token,
+    cdnHost: tokenData.cdnHost,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
+    neverExpires: isPermanent,
+    source: tokenData.source,
+    provider: 'NeliTv Server',
+    refreshIntervalSeconds: isPermanent ? 3600 : 45,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Referer': `${PUBLIC_SITE_URL}/`
+    },
+    clearKeys: ALL_KNOWN_CLEAR_KEYS,
+    totalChannels: liveChannels.length,
+    channels: liveChannels,
+    data: liveChannels,
+    endpoints: {
+      cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
+      channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
+      appSync: `${PUBLIC_SITE_URL}/baynithalex/api/app`,
+      proxyStream: `${PUBLIC_SITE_URL}/api/proxy-stream`,
+      playerEmbed: `${PUBLIC_SITE_URL}/embed/{slug}`
+    }
+  });
+
   cachedLiveChannelsMemo = {
     key,
     builtAt: now,
     proxyTicket,
-    liveChannels
+    liveChannels,
+    appJson,
+    channelsJson
   };
   return cachedLiveChannelsMemo;
 }
@@ -1030,9 +1089,10 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
 app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
   const tokenData = await getOrFetchCdnToken(force);
   const exposedExp = getSerializedExp(tokenData);
+  const isPermanent = tokenData.cdnHost.includes('cdn77.org');
   res.json({
     success: true,
     name: 'NeliTv App Server',
@@ -1043,6 +1103,7 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Res
     cdnHost: tokenData.cdnHost,
     exp: exposedExp,
     expiresAt: new Date(exposedExp * 1000).toISOString(),
+    neverExpires: isPermanent,
     endpoints: {
       cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
       channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
@@ -1058,62 +1119,26 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Res
   });
 });
 
-// 1. NeliTv App Server Channels Endpoint (Fresh tokenized URLs + ClearKeys + Proxy URLs)
+// 1. NeliTv App Server Channels Endpoint (Pre-serialized <1ms response + ClearKeys + Proxy URLs)
 app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
-  const { liveChannels } = getMemoizedLiveChannels(tokenData);
-  const exposedExp = getSerializedExp(tokenData);
+  const { channelsJson } = getMemoizedLiveChannels(tokenData);
 
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-  res.json({
-    success: true,
-    server: 'NeliTv App Server',
-    token: tokenData.token,
-    cdnHost: tokenData.cdnHost,
-    exp: exposedExp,
-    expiresAt: new Date(exposedExp * 1000).toISOString(),
-    source: tokenData.source,
-    total: liveChannels.length,
-    data: liveChannels
-  });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+  res.send(channelsJson);
 });
 
 // 1.1 Dedicated NeliTv App Server All-in-One Bootstrap / Sync Endpoint
 app.get(['/baynithalex/api/app', '/baynithalex/api/bootstrap'], async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
-  const { liveChannels } = getMemoizedLiveChannels(tokenData);
-  const exposedExp = getSerializedExp(tokenData);
+  const { appJson } = getMemoizedLiveChannels(tokenData);
 
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-  res.json({
-    success: true,
-    server: 'NeliTv App Server',
-    version: '2.0',
-    baseUrl: PUBLIC_SITE_URL,
-    token: tokenData.token,
-    cdnHost: tokenData.cdnHost,
-    exp: exposedExp,
-    expiresAt: new Date(exposedExp * 1000).toISOString(),
-    source: tokenData.source,
-    provider: 'NeliTv Server',
-    refreshIntervalSeconds: 45,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Referer': `${PUBLIC_SITE_URL}/`
-    },
-    clearKeys: ALL_KNOWN_CLEAR_KEYS,
-    totalChannels: liveChannels.length,
-    channels: liveChannels,
-    endpoints: {
-      cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
-      channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
-      appSync: `${PUBLIC_SITE_URL}/baynithalex/api/app`,
-      proxyStream: `${PUBLIC_SITE_URL}/api/proxy-stream`,
-      playerEmbed: `${PUBLIC_SITE_URL}/embed/{slug}`
-    }
-  });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+  res.send(appJson);
 });
 
 // 1.2 Fast Live CDN Token Endpoint (Direct access for NeliTv App, Client VideoPlayer & Browser Verification)
@@ -1123,7 +1148,7 @@ app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Re
   const tokenData = await getOrFetchCdnToken(force, excludeProvider);
   const exposedExp = getSerializedExp(tokenData);
   const isPermanent = tokenData.cdnHost.includes('cdn77.org');
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
   res.json({
     success: true,
     server: 'NeliTv Server',
@@ -1139,7 +1164,44 @@ app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Re
   });
 });
 
-// 1.5 Streaming Proxy (Supports NeliTv Web Player & Official NeliTv App / Signed Tickets)
+// Dynamic allowlist covering every channel CDN host in CHANNELS_DATA + permanent DASH origins
+const ALLOWED_PROXY_DOMAINS = Array.from(
+  new Set([
+    'cdn77.org',
+    'azamtvltd.co.tz',
+    'streamzone.fun',
+    'zapitv.com',
+    'skygo.mn',
+    'cloudfront.net',
+    'akamaized.net',
+    'warnermediacdn.com',
+    'castr.net',
+    'amagi.tv',
+    'wurl.com',
+    'amazonaws.com',
+    'brightcove.com',
+    'persiana.live',
+    'bozztv.com',
+    'smartplaytv.in',
+    'aynaott.com',
+    'cinerama.uz',
+    'mangomolo.com',
+    'freevisiontv.co.za',
+    'wowza.com',
+    'srvif.com',
+    'boldmss.com',
+    'wns.live',
+    ...CHANNELS_DATA.flatMap((c) => {
+      try {
+        return c.streamUrl ? [new URL(c.streamUrl).hostname] : [];
+      } catch {
+        return [];
+      }
+    })
+  ])
+);
+
+// 1.5 Streaming Proxy (Supports NeliTv Web Player, Official NeliTv APK & ExoPlayer/Media3/WebView)
 app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -1150,11 +1212,10 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     return res.status(204).end();
   }
 
-  // Block direct browser page navigation while allowing NeliTv Web Player and NeliTv Mobile/TV App
-  const isDirectNavigation =
-    req.get('sec-fetch-mode') === 'navigate' ||
-    req.get('sec-fetch-dest') === 'document' ||
-    Boolean(req.headers.accept && req.headers.accept.includes('text/html'));
+  // Only block explicit browser top-level address-bar HTML page navigation
+  const isBrowserAddressBarNav =
+    req.get('sec-fetch-mode') === 'navigate' &&
+    req.get('sec-fetch-dest') === 'document';
 
   const secFetchSite = req.get('sec-fetch-site') || '';
   const referer = req.get('referer') || req.get('origin') || '';
@@ -1170,19 +1231,22 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     req.query.app === 'nelitv' ||
     reqApiKey === NELI_API_KEY ||
     Boolean(reqApiKey && getDeveloperByApiKey(reqApiKey)) ||
-    /nelitv|exoplayer|media3|dalvik|okhttp|dart|flutter/i.test(userAgent);
+    /nelitv|exoplayer|media3|dalvik|okhttp|dart|flutter|android|ktor|retrofit|lavf|vlc|applecoremedia/i.test(userAgent);
 
   const isTrustedPlayerContext =
-    Boolean(validTicket && validTicket.scope === 'player-proxy') ||
-    isNeliAppClient ||
-    secFetchSite === 'same-origin' ||
-    secFetchSite === 'same-site' ||
-    referer.includes('nelitv.online') ||
-    referer.includes('.run.app') ||
-    referer.includes('localhost') ||
-    (host && referer.includes(host));
+    !isBrowserAddressBarNav && (
+      Boolean(validTicket && validTicket.scope === 'player-proxy') ||
+      isNeliAppClient ||
+      secFetchSite === 'same-origin' ||
+      secFetchSite === 'same-site' ||
+      referer.includes('nelitv.online') ||
+      referer.includes('.run.app') ||
+      referer.includes('localhost') ||
+      (host && referer.includes(host)) ||
+      !req.headers.accept?.includes('text/html')
+    );
 
-  if (isDirectNavigation || !isTrustedPlayerContext) {
+  if (!isTrustedPlayerContext) {
     return res.status(403).json({
       success: false,
       error: 'Access denied. Media streams are only accessible inside the official NeliTv Player or NeliTv App.',
@@ -1197,8 +1261,7 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
 
   try {
     const parsed = new URL(targetUrl);
-    const allowed = ['cdn77.org', 'azamtvltd.co.tz', 'streamzone.fun', 'zapitv.com', 'skygo.mn', 'cloudfront.net', 'akamaized.net', 'warnermediacdn.com', 'castr.net'];
-    if (!allowed.some(domain => parsed.hostname.includes(domain))) {
+    if (!ALLOWED_PROXY_DOMAINS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain) || parsed.hostname.includes(domain))) {
       return res.status(403).json({ error: 'Host not allowed' });
     }
 
@@ -1246,10 +1309,18 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
 
     res.status(response.status);
 
-    const contentType = response.headers.get('content-type');
+    const contentType = response.headers.get('content-type') || '';
     if (contentType) res.setHeader('Content-Type', contentType);
-    const contentLength = response.headers.get('content-length');
-    if (contentLength) res.setHeader('Content-Length', contentLength);
+    const isMpdManifest = contentType.includes('dash+xml') || activeTargetUrl.includes('.mpd');
+    const isHlsManifest =
+      contentType.includes('mpegurl') ||
+      contentType.includes('x-mpegurl') ||
+      activeTargetUrl.includes('.m3u8');
+
+    if (!isMpdManifest && !isHlsManifest) {
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+    }
     const contentRange = response.headers.get('content-range');
     if (contentRange) res.setHeader('Content-Range', contentRange);
     const acceptRanges = response.headers.get('accept-ranges');
@@ -1259,7 +1330,7 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
       return res.end();
     }
 
-    if (contentType && (contentType.includes('dash+xml') || activeTargetUrl.includes('.mpd'))) {
+    if (isMpdManifest) {
       res.setHeader('Cache-Control', 'no-store, max-age=0');
       let text = await response.text();
       if (!text.includes('<BaseURL>')) {
@@ -1267,6 +1338,34 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
         text = text.replace(/<MPD([^>]*)>/, `<MPD$1>\n  <BaseURL>${baseDir}</BaseURL>`);
       }
       return res.send(text);
+    }
+
+    if (isHlsManifest) {
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
+      const rawText = await response.text();
+      const baseOriginUrl = response.url || activeTargetUrl;
+      const rewritten = rawText
+        .split('\n')
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+          if (trimmed.startsWith('#')) {
+            return line.replace(/URI="([^"]+)"/g, (_m, rel) => {
+              try {
+                return `URI="${new URL(rel, baseOriginUrl).toString()}"`;
+              } catch {
+                return `URI="${rel}"`;
+              }
+            });
+          }
+          try {
+            return new URL(trimmed, baseOriginUrl).toString();
+          } catch {
+            return line;
+          }
+        })
+        .join('\n');
+      return res.send(rewritten);
     }
 
     if (response.body) {
