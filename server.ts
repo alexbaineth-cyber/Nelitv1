@@ -612,7 +612,7 @@ async function fetchUserPayments(identifier: string): Promise<PaymentRecord[]> {
 // API Endpoints
 // -------------------------------------------------------------
 
-// Live CDN token cache (Stale-While-Revalidate + Multi-provider fallback)
+// Live CDN host & token manager (Permanent non-expiring cdn77 primary + strictly verified backup)
 interface CdnTokenRecord {
   token: string;
   cdnHost: string;
@@ -621,19 +621,50 @@ interface CdnTokenRecord {
   upstreamProvider: string;
 }
 
-const DEFAULT_FALLBACK_CDN_TOKEN: CdnTokenRecord = {
-  token: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g",
-  exp: 1795569225,
-  cdnHost: "https://cdnedgch2.azamtvltd.co.tz",
-  source: "aztv-service",
-  upstreamProvider: "aztv"
+const PERMANENT_CDN77_HOST = "https://1445733302.rsc.cdn77.org";
+const PERMANENT_CDN77_RECORD: CdnTokenRecord = {
+  token: "nelitv-live",
+  cdnHost: PERMANENT_CDN77_HOST,
+  exp: null, // Permanent non-expiring CDN origin
+  source: "cdn77-permanent",
+  upstreamProvider: "cdn77"
 };
 
-let cachedCdnToken: CdnTokenRecord = { ...DEFAULT_FALLBACK_CDN_TOKEN };
+let cachedCdnToken: CdnTokenRecord = { ...PERMANENT_CDN77_RECORD };
 let lastCdnTokenFetch = 0;
 let inFlightTokenFetch: Promise<CdnTokenRecord> | null = null;
 const TOKEN_SOFT_TTL_MS = 45 * 1000;
-const TOKEN_PRE_EXPIRY_SEC = 900; // Refresh proactively 15 mins before expiry
+const TOKEN_PRE_EXPIRY_SEC = 900;
+
+function decodeJwtExpSeconds(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const exp = Number(payload?.exp);
+    return Number.isFinite(exp) && exp > 0 ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
+async function probeStreamUrl200(url: string, timeoutMs = 2200): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(url, {
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
 
 async function fetchFromStreamzoneCandidate(endpoint: string, nowSec: number): Promise<CdnTokenRecord | null> {
   try {
@@ -651,15 +682,33 @@ async function fetchFromStreamzoneCandidate(endpoint: string, nowSec: number): P
 
     if (!resp.ok) return null;
     const data = await resp.json();
-    const rawToken = typeof data?.token === 'string' ? data.token.trim().replace(/^(?:tok_)+/, '') : '';
-    const expNum = typeof data?.exp === 'number' ? data.exp : (data?.exp ? Number(data.exp) : null);
+    const source = String(data?.source || '');
+    if (source === 'db-fallback' || source === 'unavailable') {
+      return null;
+    }
 
-    if (rawToken.length > 20 && (!expNum || expNum > nowSec + 30)) {
+    const rawToken = typeof data?.token === 'string' ? data.token.trim().replace(/^(?:tok_)+/, '') : '';
+    const outerExp = typeof data?.exp === 'number' ? data.exp : (data?.exp ? Number(data.exp) : 0);
+    const jwtExp = decodeJwtExpSeconds(rawToken);
+    if (outerExp === 0 || (jwtExp !== null && jwtExp <= nowSec + 60)) {
+      return null;
+    }
+    const effectiveExp = jwtExp || (Number.isFinite(outerExp) && outerExp > 0 ? outerExp : 0);
+    if (rawToken.length > 20 && effectiveExp > nowSec + 60) {
+      const cdnHost = (typeof data?.cdnHost === 'string' && data.cdnHost.trim())
+        ? data.cdnHost.trim().replace(/\/+$/, '')
+        : 'https://cdnedgch2.azamtvltd.co.tz';
+      const probeOk = await probeStreamUrl200(
+        `${cdnHost}/tok_${rawToken}/live/eds/AzamSport1/DASH/AzamSport1.mpd`,
+        2000
+      );
+      if (!probeOk) return null;
+
       return {
         token: rawToken,
-        cdnHost: (typeof data?.cdnHost === 'string' && data.cdnHost.trim()) ? data.cdnHost.trim().replace(/\/+$/, '') : 'https://cdnedgch2.azamtvltd.co.tz',
-        exp: expNum,
-        source: String(data?.source || 'streamzone'),
+        cdnHost,
+        exp: effectiveExp,
+        source: source || 'streamzone',
         upstreamProvider: String(data?.provider || 'aztv')
       };
     }
@@ -673,7 +722,20 @@ async function fetchFreshCdnTokenUpstream(cleanExclude = ''): Promise<CdnTokenRe
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
 
-  const candidates = cleanExclude
+  // If not explicitly excluding cdn77, verify permanent cdn77 origin first (zero expiry, zero 429)
+  if (cleanExclude !== 'cdn77') {
+    const cdn77Healthy = await probeStreamUrl200(
+      `${PERMANENT_CDN77_HOST}/live/eds/AzamSport1/DASH/AzamSport1.mpd`,
+      2200
+    );
+    if (cdn77Healthy) {
+      cachedCdnToken = { ...PERMANENT_CDN77_RECORD };
+      lastCdnTokenFetch = Date.now();
+      return cachedCdnToken;
+    }
+  }
+
+  const candidates = cleanExclude && cleanExclude !== 'cdn77'
     ? [`https://streamzone.fun/api/cdn-token?fresh=1&excludeProvider=${encodeURIComponent(cleanExclude)}&_t=${now}`]
     : [
         `https://streamzone.fun/api/cdn-token?_t=${now}`,
@@ -686,21 +748,14 @@ async function fetchFreshCdnTokenUpstream(cleanExclude = ''): Promise<CdnTokenRe
     if (record) {
       cachedCdnToken = record;
       lastCdnTokenFetch = Date.now();
-      console.log('[CDN Token] Refreshed provider:', record.upstreamProvider, 'exp:', record.exp);
+      console.log('[CDN Token] Refreshed backup provider:', record.upstreamProvider, 'exp:', record.exp);
       return record;
     }
   }
 
-  // Keep existing valid token in memory if still unexpired
-  if (cachedCdnToken && (!cachedCdnToken.exp || cachedCdnToken.exp > nowSec + 30)) {
-    lastCdnTokenFetch = now;
-    return cachedCdnToken;
-  }
-
-  // Final safety fallback if non-expired
-  if (!DEFAULT_FALLBACK_CDN_TOKEN.exp || DEFAULT_FALLBACK_CDN_TOKEN.exp > nowSec + 30) {
-    cachedCdnToken = { ...DEFAULT_FALLBACK_CDN_TOKEN };
-  }
+  // Fallback to permanent cdn77 record (never return an expired 403 token)
+  cachedCdnToken = { ...PERMANENT_CDN77_RECORD };
+  lastCdnTokenFetch = Date.now();
   return cachedCdnToken;
 }
 
@@ -717,11 +772,11 @@ async function getOrFetchCdnToken(force = false, excludeProvider = ''): Promise<
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
   const cleanExclude = String(excludeProvider || '').trim();
-  const currentValid = cachedCdnToken && (!cachedCdnToken.exp || cachedCdnToken.exp > nowSec + 30);
-  const nearExpiry = Boolean(cachedCdnToken?.exp && cachedCdnToken.exp <= nowSec + TOKEN_PRE_EXPIRY_SEC);
+  const isPermanent = cachedCdnToken.cdnHost.includes('cdn77.org');
+  const currentValid = isPermanent || (cachedCdnToken.exp !== null && cachedCdnToken.exp > nowSec + 60);
+  const nearExpiry = !isPermanent && Boolean(cachedCdnToken.exp && cachedCdnToken.exp <= nowSec + TOKEN_PRE_EXPIRY_SEC);
   const isStale = (now - lastCdnTokenFetch) >= TOKEN_SOFT_TTL_MS || nearExpiry;
 
-  // Fast non-blocking Stale-While-Revalidate path (<1ms for NeliTv App & Players)
   if (!force && !cleanExclude && currentValid) {
     if (isStale) {
       void triggerBackgroundTokenRefresh('');
@@ -739,7 +794,14 @@ async function getOrFetchCdnToken(force = false, excludeProvider = ''): Promise<
   return cachedCdnToken;
 }
 
-// Warm immediately on server start and keep alive continuously every 45s
+function getSerializedExp(tokenData: CdnTokenRecord): number {
+  if (tokenData.exp && tokenData.exp > Math.floor(Date.now() / 1000)) {
+    return tokenData.exp;
+  }
+  return Math.floor(Date.now() / 1000) + 86400;
+}
+
+// Warm immediately on server start and monitor health every 45s
 void triggerBackgroundTokenRefresh('').catch(() => {});
 setInterval(() => {
   void triggerBackgroundTokenRefresh('').catch(() => {});
@@ -875,7 +937,11 @@ function buildLiveAzamChannelForApp(
 ) {
   const slug = getChannelRouteSlug(ch);
   const host = tokenData.cdnHost.replace(/\/+$/, '');
-  const isAzam = Boolean(ch.isAzam || ch.streamUrl.includes('azamtvltd.co.tz'));
+  const isAzam = Boolean(
+    ch.isAzam ||
+    ch.streamUrl.includes('azamtvltd.co.tz') ||
+    ch.streamUrl.includes('cdn77.org')
+  );
 
   if (!isAzam) {
     return {
@@ -893,7 +959,11 @@ function buildLiveAzamChannelForApp(
   } catch {}
   if (!p.startsWith('/')) p = `/${p}`;
 
-  const freshUrl = `${host}/tok_${tokenData.token}${p}`;
+  const freshUrl =
+    host.includes('azamtvltd') && tokenData.token.includes('.')
+      ? `${host}/tok_${tokenData.token}${p}`
+      : `${host}${p}`;
+
   return {
     ...ch,
     slug,
@@ -940,6 +1010,7 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Res
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   const tokenData = await getOrFetchCdnToken(force);
+  const exposedExp = getSerializedExp(tokenData);
   res.json({
     success: true,
     name: 'NeliTv App Server',
@@ -948,8 +1019,8 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Res
     baseUrl: PUBLIC_SITE_URL,
     token: tokenData.token,
     cdnHost: tokenData.cdnHost,
-    exp: tokenData.exp,
-    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
     endpoints: {
       cdnToken: `${PUBLIC_SITE_URL}/baynithalex/api/cdn-token`,
       channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
@@ -970,6 +1041,7 @@ app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   const { liveChannels } = getMemoizedLiveChannels(tokenData);
+  const exposedExp = getSerializedExp(tokenData);
 
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
@@ -977,8 +1049,8 @@ app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
     server: 'NeliTv App Server',
     token: tokenData.token,
     cdnHost: tokenData.cdnHost,
-    exp: tokenData.exp,
-    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
     source: tokenData.source,
     total: liveChannels.length,
     data: liveChannels
@@ -990,6 +1062,7 @@ app.get(['/baynithalex/api/app', '/baynithalex/api/bootstrap'], async (req: Requ
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const tokenData = await getOrFetchCdnToken(force);
   const { liveChannels } = getMemoizedLiveChannels(tokenData);
+  const exposedExp = getSerializedExp(tokenData);
 
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
@@ -999,8 +1072,8 @@ app.get(['/baynithalex/api/app', '/baynithalex/api/bootstrap'], async (req: Requ
     baseUrl: PUBLIC_SITE_URL,
     token: tokenData.token,
     cdnHost: tokenData.cdnHost,
-    exp: tokenData.exp,
-    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
     source: tokenData.source,
     provider: 'NeliTv Server',
     refreshIntervalSeconds: 45,
@@ -1026,14 +1099,15 @@ app.get(['/baynithalex/api/cdn-token', '/baynithalex/api/token'], async (req: Re
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
   const excludeProvider = typeof req.query.excludeProvider === 'string' ? req.query.excludeProvider.trim() : '';
   const tokenData = await getOrFetchCdnToken(force, excludeProvider);
+  const exposedExp = getSerializedExp(tokenData);
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   res.json({
     success: true,
     server: 'NeliTv Server',
     token: tokenData.token,
     cdnHost: tokenData.cdnHost,
-    exp: tokenData.exp,
-    expiresAt: tokenData.exp ? new Date(tokenData.exp * 1000).toISOString() : null,
+    exp: exposedExp,
+    expiresAt: new Date(exposedExp * 1000).toISOString(),
     source: tokenData.source,
     upstreamProvider: tokenData.upstreamProvider,
     provider: 'NeliTv Server',
@@ -1099,7 +1173,7 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
 
   try {
     const parsed = new URL(targetUrl);
-    const allowed = ['azamtvltd.co.tz', 'streamzone.fun', 'zapitv.com', 'skygo.mn', 'cloudfront.net', 'akamaized.net', 'warnermediacdn.com'];
+    const allowed = ['cdn77.org', 'azamtvltd.co.tz', 'streamzone.fun', 'zapitv.com', 'skygo.mn', 'cloudfront.net', 'akamaized.net', 'warnermediacdn.com', 'castr.net'];
     if (!allowed.some(domain => parsed.hostname.includes(domain))) {
       return res.status(403).json({ error: 'Host not allowed' });
     }
@@ -1130,19 +1204,17 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     let activeTargetUrl = targetUrl;
     let response = await fetchWithTimeout(activeTargetUrl);
 
-    // Seamless auto-healing: if upstream rejects old Azam token with 401/403/429, swap to fresh live token & retry once
+    // Seamless auto-healing: if upstream rejects legacy Azam token with 401/403/429, swap to permanent cdn77 or fresh token & retry
     if (
       (response.status === 401 || response.status === 403 || response.status === 429) &&
-      parsed.hostname.includes('azamtvltd.co.tz') &&
-      /\/tok_[^/]+/.test(activeTargetUrl)
+      parsed.hostname.includes('azamtvltd.co.tz')
     ) {
-      const tokMatch = activeTargetUrl.match(/\/tok_([^/]+)/);
-      const oldTok = tokMatch ? tokMatch[1] : '';
-      let freshData = await getOrFetchCdnToken(true);
-      if (freshData.token === oldTok) {
-        freshData = await getOrFetchCdnToken(true, freshData.upstreamProvider === 'aztv' ? 'aztv' : 'mpingo');
-      }
-      if (freshData?.token && freshData.token !== oldTok) {
+      const freshData = await getOrFetchCdnToken(true);
+      if (freshData.cdnHost.includes('cdn77.org')) {
+        const cleanPath = parsed.pathname.replace(/^\/tok_[^/]+/, '');
+        activeTargetUrl = `${PERMANENT_CDN77_HOST}${cleanPath}${parsed.search}`;
+        response = await fetchWithTimeout(activeTargetUrl);
+      } else if (freshData?.token && /\/tok_[^/]+/.test(activeTargetUrl)) {
         activeTargetUrl = activeTargetUrl.replace(/\/tok_[^/]+/, `/tok_${freshData.token}`);
         response = await fetchWithTimeout(activeTargetUrl);
       }

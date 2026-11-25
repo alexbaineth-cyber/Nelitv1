@@ -75,20 +75,25 @@ export interface Channel {
   bandwidthSaverSupported?: boolean;
 }
 
-export let ACTIVE_AZAM_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g";
-export let ACTIVE_AZAM_HOST = "https://cdnedgch2.azamtvltd.co.tz";
+export let ACTIVE_AZAM_TOKEN = "nelitv-live";
+export let ACTIVE_AZAM_HOST = "https://1445733302.rsc.cdn77.org";
 
 export function updateGlobalAzamToken(newToken: string, newHost?: string) {
-  if (newToken && newToken.length > 20) {
-    ACTIVE_AZAM_TOKEN = newToken;
+  if (newToken && newToken.trim().length > 0) {
+    ACTIVE_AZAM_TOKEN = newToken.trim();
   }
   if (newHost && newHost.startsWith('http')) {
     ACTIVE_AZAM_HOST = newHost.replace(/\/+$/, '');
   }
 }
 
-export const makeAzamUrl = (slug: string) =>
-  `${ACTIVE_AZAM_HOST}/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd`;
+export const makeAzamUrl = (slug: string) => {
+  const host = ACTIVE_AZAM_HOST.replace(/\/+$/, '');
+  if (host.includes('azamtvltd') && ACTIVE_AZAM_TOKEN.includes('.')) {
+    return `${host}/tok_${ACTIVE_AZAM_TOKEN}/live/eds/${slug}/DASH/${slug}.mpd`;
+  }
+  return `${host}/live/eds/${slug}/DASH/${slug}.mpd`;
+};
 
 
 export const CHANNELS_DATA: Channel[] = [

@@ -10,26 +10,25 @@ export interface CdnTokenData {
   fetchedAt?: number;
 }
 
-const FALLBACK_TOKEN =
-  "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJleHAiOiIxNzk1NTY5MjI1Iiwic2lwIjoiIiwicGF0aCI6IiIsInNlc3Npb25fY2RuX2lkIjoiMzhiMDE4NjVlZWJhZmY5YyIsInNlc3Npb25faWQiOiIiLCJjbGllbnRfaWQiOiI1MTE1MzU4IiwiZGV2aWNlX2lkIjoiZjcxOWRiMzMtNWNkMC00NTE3LTg5MDItM2UwYjA0Zjc5OWU4IiwibWF4X3Nlc3Npb25zIjoxLCJ1cmwiOiJodHRwczovLzEwLjY0LjEzMi4xNDYiLCJzZXNzaW9uX3RpbWVvdXQiOjEyMDAsImF1ZCI6IjciLCJzb3VyY2VzIjpbM119.rBkGXRbBeo9FSAdBlncN3knjV0ozvFFCM1R4U-ic8lr4xEcdaKzwinfFTr5REAe941tNJpVR5z8Op237dp7p9g";
-const FALLBACK_CDN_HOST = "https://cdnedgch2.azamtvltd.co.tz";
-const FALLBACK_EXP = 1795569225;
+export const PERMANENT_CDN_HOST = "https://1445733302.rsc.cdn77.org";
+const PERMANENT_TOKEN = "nelitv-live";
 
-let inMemoryToken: CdnTokenData | null =
-  FALLBACK_EXP > Math.floor(Date.now() / 1000) + 30
-    ? {
-        token: FALLBACK_TOKEN,
-        cdnHost: FALLBACK_CDN_HOST,
-        exp: FALLBACK_EXP,
-        source: "aztv-service",
-        provider: "aztv",
-        fetchedAt: 0,
-      }
-    : null;
+function createPermanentCdnRecord(): CdnTokenData {
+  return {
+    token: PERMANENT_TOKEN,
+    cdnHost: PERMANENT_CDN_HOST,
+    exp: null,
+    source: "cdn77-permanent",
+    provider: "cdn77",
+    fetchedAt: Date.now(),
+  };
+}
+
+let inMemoryToken: CdnTokenData = createPermanentCdnRecord();
 let lastFetchTime = 0;
 let inFlightPromise: Promise<CdnTokenData> | null = null;
 let keeperStarted = false;
-const TOKEN_CACHE_DURATION = 45 * 1000; // 45 seconds fresh cache
+const TOKEN_CACHE_DURATION = 45 * 1000;
 const prewarmedOrigins = new Set<string>();
 
 function cleanTokenValue(token: string): string {
@@ -46,6 +45,62 @@ function decodeJwtExp(token: string): number | null {
   } catch {
     return null;
   }
+}
+
+function isValidCandidatePayload(
+  rawData: any,
+  nowSec: number,
+  excludeProvider?: string
+): CdnTokenData | null {
+  if (!rawData || !rawData.token) return null;
+
+  const cleanTok = cleanTokenValue(rawData.token);
+  const cdnHost = (typeof rawData.cdnHost === 'string' && rawData.cdnHost.trim())
+    ? rawData.cdnHost.trim().replace(/\/+$/, '')
+    : PERMANENT_CDN_HOST;
+  const source = String(rawData.source || '');
+  const provider = rawData.upstreamProvider || (rawData.provider !== 'NeliTv Server' ? rawData.provider : undefined) || (cdnHost.includes('cdn77.org') ? 'cdn77' : 'aztv');
+
+  if (excludeProvider && provider === excludeProvider) {
+    return null;
+  }
+
+  // Permanent cdn77 host does not expire
+  if (cdnHost.includes('cdn77.org') && !cdnHost.includes('azamtvltd')) {
+    return {
+      token: cleanTok || PERMANENT_TOKEN,
+      cdnHost,
+      exp: null,
+      source: source || 'cdn77-permanent',
+      provider: 'cdn77',
+      fetchedAt: Date.now(),
+    };
+  }
+
+  // Reject stale db-fallback / unavailable responses
+  if (source === 'db-fallback' || source === 'unavailable') {
+    return null;
+  }
+
+  const outerExp = Number(rawData.exp);
+  const jwtExp = decodeJwtExp(cleanTok);
+
+  // Reject explicit exp: 0 or expired outer/inner JWT timestamps
+  if (outerExp === 0) return null;
+  if (jwtExp !== null && jwtExp <= nowSec + 60) return null;
+  const effectiveExp = jwtExp || (Number.isFinite(outerExp) && outerExp > 0 ? outerExp : null);
+  if (!effectiveExp || effectiveExp <= nowSec + 60) {
+    return null;
+  }
+
+  return {
+    token: cleanTok,
+    cdnHost,
+    exp: effectiveExp,
+    source: source || 'live',
+    provider,
+    fetchedAt: Date.now(),
+  };
 }
 
 async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string): Promise<CdnTokenData | null> {
@@ -74,23 +129,8 @@ async function fetchFromLocalApi(forceRefresh: boolean, excludeProvider?: string
 
     if (!res.ok) return null;
     const data = await res.json();
-    if (!data?.token) return null;
-
-    const cleanTok = cleanTokenValue(data.token);
-    const provider = data.upstreamProvider || (data.provider !== 'NeliTv Server' ? data.provider : undefined) || 'aztv';
-    if (excludeProvider && provider === excludeProvider) {
-      return null;
-    }
-
-    const exp = Number(data.exp) || decodeJwtExp(cleanTok);
-    return {
-      token: cleanTok,
-      cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
-      exp,
-      source: data.source || 'server_api',
-      provider,
-      fetchedAt: Date.now(),
-    };
+    const nowSec = Math.floor(Date.now() / 1000);
+    return isValidCandidatePayload(data, nowSec, excludeProvider);
   } catch {
     return null;
   }
@@ -122,91 +162,36 @@ async function fetchFromStreamzone(forceRefresh: boolean, excludeProvider?: stri
 
     if (!res.ok) return null;
     const data = await res.json();
-    if (!data?.token) return null;
-
-    const cleanTok = cleanTokenValue(data.token);
-    const provider = data.provider || 'aztv';
-    if (excludeProvider && provider === excludeProvider) {
-      return null;
-    }
-
-    const exp = Number(data.exp) || decodeJwtExp(cleanTok);
-    return {
-      token: cleanTok,
-      cdnHost: data.cdnHost || FALLBACK_CDN_HOST,
-      exp,
-      source: data.source || 'direct_streamzone',
-      provider,
-      fetchedAt: Date.now(),
-    };
+    const nowSec = Math.floor(Date.now() / 1000);
+    return isValidCandidatePayload(data, nowSec, excludeProvider);
   } catch {
     return null;
   }
 }
 
-function firstValidToken(
-  promises: Promise<CdnTokenData | null>[],
-  nowSec: number
-): Promise<CdnTokenData | null> {
-  return new Promise((resolve) => {
-    let remaining = promises.length;
-    let settled = false;
-    let firstExpiredCandidate: CdnTokenData | null = null;
-
-    promises.forEach((p) => {
-      p.then((res) => {
-        if (settled) return;
-        if (res && res.token) {
-          if (!res.exp || res.exp > nowSec + 60) {
-            settled = true;
-            resolve(res);
-            return;
-          }
-          if (!firstExpiredCandidate) firstExpiredCandidate = res;
-        }
-        remaining -= 1;
-        if (remaining === 0 && !settled) {
-          resolve(firstExpiredCandidate);
-        }
-      }).catch(() => {
-        remaining -= 1;
-        if (remaining === 0 && !settled) {
-          resolve(firstExpiredCandidate);
-        }
-      });
-    });
-  });
-}
-
-/** Synchronous 0ms token getter so video player starts immediately while refreshing in background */
+/** Synchronous 0ms getter so video player starts immediately on permanent CDN */
 export function getInstantCdnToken(): CdnTokenData {
   const nowSec = Math.floor(Date.now() / 1000);
-  if (inMemoryToken && (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 30)) {
+  if (
+    inMemoryToken &&
+    (inMemoryToken.cdnHost.includes('cdn77.org') || (inMemoryToken.exp && inMemoryToken.exp > nowSec + 30))
+  ) {
     return inMemoryToken;
   }
-  return {
-    token: FALLBACK_TOKEN,
-    cdnHost: FALLBACK_CDN_HOST,
-    exp: FALLBACK_EXP,
-    source: "aztv-service",
-    provider: "aztv",
-    fetchedAt: Date.now(),
-  };
+  return createPermanentCdnRecord();
 }
 
-// Fetch latest valid token from server or direct live CDN endpoint (never returns stale expired cache if live available)
 export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: string): Promise<CdnTokenData> {
   const nowMs = Date.now();
   const nowSec = Math.floor(nowMs / 1000);
 
-  // Return short-lived in-memory live token if still fresh and has >10 minutes before expiry
   if (
     !forceRefresh &&
     !excludeProvider &&
     inMemoryToken &&
     lastFetchTime > 0 &&
     nowMs - lastFetchTime < TOKEN_CACHE_DURATION &&
-    (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 600)
+    (inMemoryToken.cdnHost.includes('cdn77.org') || (inMemoryToken.exp && inMemoryToken.exp > nowSec + 300))
   ) {
     return inMemoryToken;
   }
@@ -216,38 +201,31 @@ export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: st
   }
 
   const runFetch = async (): Promise<CdnTokenData> => {
-    const winner = await firstValidToken(
-      [
-        fetchFromLocalApi(forceRefresh, excludeProvider),
-        fetchFromStreamzone(forceRefresh, excludeProvider),
-      ],
-      nowSec
-    );
-
-    if (winner) {
-      inMemoryToken = winner;
+    // Ask our NeliTv server first (which serves permanent cdn77 or verified live backup)
+    const localResult = await fetchFromLocalApi(forceRefresh, excludeProvider);
+    if (localResult) {
+      inMemoryToken = localResult;
       lastFetchTime = Date.now();
-      updateGlobalAzamToken(winner.token, winner.cdnHost);
-      return winner;
+      updateGlobalAzamToken(localResult.token, localResult.cdnHost);
+      return localResult;
     }
 
-    // Keep last inMemoryToken if still valid in future
-    if (inMemoryToken && (!inMemoryToken.exp || inMemoryToken.exp > nowSec + 30)) {
-      return inMemoryToken;
+    // Only query streamzone directly if requesting an alternate provider failover away from cdn77
+    if (excludeProvider === 'cdn77') {
+      const sz = await fetchFromStreamzone(true);
+      if (sz) {
+        inMemoryToken = sz;
+        lastFetchTime = Date.now();
+        updateGlobalAzamToken(sz.token, sz.cdnHost);
+        return sz;
+      }
     }
 
-    const fallback: CdnTokenData = {
-      token: FALLBACK_TOKEN,
-      cdnHost: FALLBACK_CDN_HOST,
-      exp: FALLBACK_EXP,
-      source: "aztv-service",
-      provider: "aztv",
-      fetchedAt: Date.now(),
-    };
-    inMemoryToken = fallback;
+    const permanent = createPermanentCdnRecord();
+    inMemoryToken = permanent;
     lastFetchTime = Date.now();
-    updateGlobalAzamToken(fallback.token, fallback.cdnHost);
-    return fallback;
+    updateGlobalAzamToken(permanent.token, permanent.cdnHost);
+    return permanent;
   };
 
   if (excludeProvider) {
@@ -261,26 +239,27 @@ export async function getLiveCdnToken(forceRefresh = false, excludeProvider?: st
   return inFlightPromise;
 }
 
-/** Switch to alternate upstream CDN token provider (mpingo <-> aztv) on 429/403 errors */
+/** Failover between permanent cdn77 and verified upstream azamtvltd providers if needed */
 export async function recoverAlternateCdnToken(failedProvider?: string): Promise<CdnTokenData> {
-  const targetExclude = failedProvider || inMemoryToken?.provider || 'mpingo';
-  const nowSec = Math.floor(Date.now() / 1000);
-  const alt = await firstValidToken(
-    [
-      fetchFromLocalApi(true, targetExclude),
-      fetchFromStreamzone(true, targetExclude),
-    ],
-    nowSec
-  );
-
-  if (alt && alt.token) {
-    inMemoryToken = alt;
+  const currentHost = inMemoryToken?.cdnHost || '';
+  if (!currentHost.includes('cdn77.org')) {
+    const permanent = createPermanentCdnRecord();
+    inMemoryToken = permanent;
     lastFetchTime = Date.now();
-    updateGlobalAzamToken(alt.token, alt.cdnHost);
-    return alt;
+    updateGlobalAzamToken(permanent.token, permanent.cdnHost);
+    return permanent;
   }
 
-  return getLiveCdnToken(true);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const sz = await fetchFromStreamzone(true, failedProvider === 'cdn77' ? undefined : failedProvider);
+  if (sz && (!sz.exp || sz.exp > nowSec + 60)) {
+    inMemoryToken = sz;
+    lastFetchTime = Date.now();
+    updateGlobalAzamToken(sz.token, sz.cdnHost);
+    return sz;
+  }
+
+  return createPermanentCdnRecord();
 }
 
 /** Quietly preconnect to channel CDN origin & warm token in background on hover/focus */
@@ -288,26 +267,28 @@ export function prewarmChannelConnection(channel: Channel): void {
   warmLiveCdnToken();
   if (typeof document === 'undefined' || !channel?.streamUrl) return;
   try {
-    const origin = new URL(channel.streamUrl).origin;
-    if (!prewarmedOrigins.has(origin)) {
-      prewarmedOrigins.add(origin);
-      const link = document.createElement('link');
-      link.rel = 'preconnect';
-      link.href = origin;
-      link.crossOrigin = 'anonymous';
-      document.head.appendChild(link);
-    }
+    const origins = new Set<string>([PERMANENT_CDN_HOST, new URL(channel.streamUrl).origin]);
+    origins.forEach((origin) => {
+      if (!prewarmedOrigins.has(origin)) {
+        prewarmedOrigins.add(origin);
+        const link = document.createElement('link');
+        link.rel = 'preconnect';
+        link.href = origin;
+        link.crossOrigin = 'anonymous';
+        document.head.appendChild(link);
+      }
+    });
   } catch {}
 }
 
-/** Pre-warm CDN token and keep background auto-refresh active so tokens never expire */
+/** Keep CDN token/host state synced in background */
 export function warmLiveCdnToken(): void {
   getLiveCdnToken(false).catch(() => {});
   if (!keeperStarted && typeof window !== 'undefined') {
     keeperStarted = true;
     setInterval(() => {
       const nowSec = Math.floor(Date.now() / 1000);
-      const nearExpiry = Boolean(inMemoryToken?.exp && inMemoryToken.exp - nowSec < 600);
+      const nearExpiry = Boolean(inMemoryToken?.exp && inMemoryToken.exp - nowSec < 300);
       getLiveCdnToken(nearExpiry).catch(() => {});
     }, 45 * 1000);
   }
@@ -315,7 +296,10 @@ export function warmLiveCdnToken(): void {
 
 // Generate the exact playable URL for any channel
 export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData): string {
-  const isAzamStream = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
+  const isAzamStream =
+    channel.isAzam ||
+    channel.streamUrl.includes('azamtvltd.co.tz') ||
+    channel.streamUrl.includes('1445733302.rsc.cdn77.org');
 
   if (!isAzamStream) {
     return channel.streamUrl;
@@ -331,9 +315,18 @@ export function buildPlayableStreamUrl(channel: Channel, tokenData: CdnTokenData
   }
 
   const cleanToken = cleanTokenValue(tokenData.token);
-  const host = tokenData.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz';
-  const cleanHost = host.replace(/\/+$/, '');
+  const host = (tokenData.cdnHost || PERMANENT_CDN_HOST).replace(/\/+$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const nowSec = Math.floor(Date.now() / 1000);
 
-  return `${cleanHost}/tok_${cleanToken}${cleanPath}`;
+  if (
+    host.includes('azamtvltd') &&
+    cleanToken.includes('.') &&
+    (!tokenData.exp || tokenData.exp > nowSec + 15)
+  ) {
+    return `${host}/tok_${cleanToken}${cleanPath}`;
+  }
+
+  const permanentHost = host.includes('azamtvltd') ? PERMANENT_CDN_HOST : host;
+  return `${permanentHost}${cleanPath}`;
 }

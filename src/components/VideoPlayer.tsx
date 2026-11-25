@@ -75,7 +75,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const initialToken = getInstantCdnToken();
   const activeTokenRef = useRef<string>(initialToken.token);
   const activeCdnHostRef = useRef<string>(initialToken.cdnHost);
-  const activeProviderRef = useRef<string>(initialToken.provider || 'aztv');
+  const activeProviderRef = useRef<string>(initialToken.provider || 'cdn77');
   const hasFirstFrameRef = useRef<boolean>(false);
   const useSegmentProxyRef = useRef<boolean>(false);
   const lastDownshiftAtRef = useRef<number>(0);
@@ -254,7 +254,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Continuous token keeper for Azam channels so live streams never hit token expiration
   useEffect(() => {
-    const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
+    const isAzam =
+      channel.isAzam ||
+      channel.streamUrl.includes('azamtvltd.co.tz') ||
+      channel.streamUrl.includes('cdn77.org');
     if (!isAzam) return;
 
     const keeper = setInterval(async () => {
@@ -427,17 +430,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       };
 
-      const isAzam = channel.isAzam || channel.streamUrl.includes('azamtvltd.co.tz');
+      const isAzam =
+        channel.isAzam ||
+        channel.streamUrl.includes('azamtvltd.co.tz') ||
+        channel.streamUrl.includes('cdn77.org');
       let targetUrl = channel.streamUrl;
       let hasTriedAlternateProvider = false;
       let hasTriedProxyFallback = false;
 
-      // 0ms Instant Token Resolution + Silent Background Refresh (never blocks player startup!)
+      // 0ms Instant Token/Host Resolution + Silent Background Refresh (never blocks player startup!)
       if (isAzam) {
         const instantToken = getInstantCdnToken();
         activeTokenRef.current = instantToken.token;
         activeCdnHostRef.current = instantToken.cdnHost;
-        activeProviderRef.current = instantToken.provider || 'aztv';
+        activeProviderRef.current = instantToken.provider || 'cdn77';
         targetUrl = buildPlayableStreamUrl(channel, instantToken);
 
         // Background token refresh — updates activeTokenRef seamlessly without delaying startup
@@ -546,11 +552,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }
           });
 
-          // Register Shaka Request Filter for Azam TV & Proxy Failover
+          // Register Shaka Request Filter for Permanent cdn77, Azam TV & Proxy Failover
           player.getNetworkingEngine().clearAllRequestFilters();
           player.getNetworkingEngine().registerRequestFilter((_type: any, request: any) => {
             const currentToken = activeTokenRef.current;
-            const currentHost = activeCdnHostRef.current;
+            const currentHost = activeCdnHostRef.current || 'https://1445733302.rsc.cdn77.org';
 
             if (!request.uris || request.uris.length === 0) return;
 
@@ -559,33 +565,36 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               if (updatedUri.includes('/api/proxy-stream')) {
                 return updatedUri;
               }
-              if (updatedUri.includes('azamtvltd') || updatedUri.includes('azam')) {
+              if (
+                updatedUri.includes('cdn77.org') ||
+                updatedUri.includes('azamtvltd') ||
+                updatedUri.includes('/live/eds/')
+              ) {
+                const useJwtAzam = currentHost.includes('azamtvltd') && currentToken.includes('.');
+                const desiredHost = useJwtAzam
+                  ? currentHost
+                  : currentHost.includes('cdn77.org')
+                  ? currentHost
+                  : 'https://1445733302.rsc.cdn77.org';
+
                 try {
-                  const targetHostUrl = new URL(currentHost);
+                  const targetHostUrl = new URL(desiredHost);
                   const reqUrl = new URL(updatedUri);
                   reqUrl.hostname = targetHostUrl.hostname;
                   reqUrl.protocol = targetHostUrl.protocol;
                   if (targetHostUrl.port) reqUrl.port = targetHostUrl.port;
+                  reqUrl.searchParams.delete('cdntoken');
+                  if (useJwtAzam) {
+                    if (/\/tok_[^/]+\//.test(reqUrl.pathname)) {
+                      reqUrl.pathname = reqUrl.pathname.replace(/\/tok_[^/]+\//, `/tok_${currentToken}/`);
+                    } else if (reqUrl.pathname.includes('/live/eds/')) {
+                      reqUrl.pathname = reqUrl.pathname.replace('/live/eds/', `/tok_${currentToken}/live/eds/`);
+                    }
+                  } else {
+                    reqUrl.pathname = reqUrl.pathname.replace(/^\/tok_[^/]+/, '');
+                  }
                   updatedUri = reqUrl.toString();
                 } catch {}
-
-                try {
-                  const u = new URL(updatedUri);
-                  u.searchParams.delete('cdntoken');
-                  updatedUri = u.toString();
-                } catch {}
-
-                if (/\/tok_[^/]+\//.test(updatedUri)) {
-                  updatedUri = updatedUri.replace(/\/tok_[^/]+\//, `/tok_${currentToken}/`);
-                } else if (updatedUri.includes('/live/eds/')) {
-                  updatedUri = updatedUri.replace('/live/eds/', `/tok_${currentToken}/live/eds/`);
-                } else {
-                  try {
-                    const u = new URL(updatedUri);
-                    u.searchParams.set('cdntoken', currentToken);
-                    updatedUri = u.toString();
-                  } catch {}
-                }
 
                 if (useSegmentProxyRef.current) {
                   return `/api/proxy-stream?url=${encodeURIComponent(updatedUri)}&app=nelitv`;

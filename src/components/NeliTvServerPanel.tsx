@@ -74,7 +74,7 @@ export const NeliTvServerPanel: React.FC = () => {
       }
       setTokenInfo({
         token: data.token,
-        cdnHost: data.cdnHost || 'https://cdnedgch2.azamtvltd.co.tz',
+        cdnHost: data.cdnHost || 'https://1445733302.rsc.cdn77.org',
         exp: data.exp || null,
         expiresAt: data.expiresAt || null,
         source: data.source || 'live',
