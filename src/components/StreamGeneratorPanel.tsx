@@ -234,15 +234,18 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
         videoEl.play().catch(() => {});
       });
 
-      hls.on(Hls.Events.ERROR, (_evt: unknown, data: { fatal?: boolean; details?: string; response?: { code?: number } }) => {
+      hls.on(Hls.Events.ERROR, (_evt: unknown, data: { fatal?: boolean; details?: string; response?: { code?: number; text?: string } }) => {
         if (data.fatal) {
           setPlayerStatus('error');
           const code = data.response?.code;
           if (code === 410) {
             setPlayerInfo('HTTP 410 Gone: Link hii imeisha muda wake wa masaa 5.');
           } else {
+            const upstreamHint = testingStream.last_error
+              ? ` — ${testingStream.last_error}`
+              : '';
             setPlayerInfo(
-              `Hitilafu ya HLS relay (${code ? `HTTP ${code}` : data.details}). Kagua afya ya chanzo.`
+              `Hitilafu ya HLS relay (${code ? `HTTP ${code}` : data.details})${upstreamHint}.`
             );
           }
         }
@@ -914,13 +917,38 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
 
             {newlyCreatedStream ? (
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-emerald-950/30 border border-[#1ce783]/35 space-y-3">
+                <div
+                  className={`p-4 rounded-xl border space-y-3 ${
+                    newlyCreatedStream.status === 'online'
+                      ? 'bg-emerald-950/30 border-[#1ce783]/35'
+                      : 'bg-amber-950/35 border-amber-500/40'
+                  }`}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#1ce783]">
-                      Stream Link Imetengenezwa Kikamilifu
+                    <span
+                      className={`text-xs font-bold ${
+                        newlyCreatedStream.status === 'online' ? 'text-[#1ce783]' : 'text-amber-300'
+                      }`}
+                    >
+                      {newlyCreatedStream.status === 'online'
+                        ? 'Stream Link Imetengenezwa na Iko Hewani'
+                        : 'Link Imetengenezwa Lakini Chanzo Kiko Offline'}
                     </span>
                     {renderStatusBadge(newlyCreatedStream.status)}
                   </div>
+
+                  {newlyCreatedStream.status === 'offline' && (
+                    <div className="p-2.5 rounded-lg bg-rose-950/45 border border-rose-500/35 text-rose-200 text-[11px] leading-relaxed">
+                      <strong>Tatizo la Chanzo Halisi:</strong>{' '}
+                      {newlyCreatedStream.last_error || 'Chanzo hakikujibu playlist ya #EXTM3U.'}
+                      {newlyCreatedStream.upstream_http_status === 403 && (
+                        <span>
+                          {' '}
+                          (Server ya chanzo imezuia maombi kwa HTTP 403 Forbidden / access restriction, hivyo haiwezi kucheza kupitia relay.)
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <div className="text-[11px] text-slate-400 mb-1">Generated Playback URL</div>
