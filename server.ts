@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ALL_KNOWN_CLEAR_KEYS, CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data/channels.ts';
 import { getChannelRouteSlug, findChannelFromRoute } from './src/utils/channelRoute.ts';
 import { NELI_API_KEY, signClientToken, verifyClientToken } from './src/server/authMiddleware.ts';
+import { registerStreamGeneratorRoutes } from './src/server/streamGeneratorRoutes.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
@@ -937,6 +938,12 @@ app.get('/api/portal/verify', (req: Request, res: Response) => {
     success: true,
     unlocked
   });
+});
+
+registerStreamGeneratorRoutes(app, {
+  verifyClientToken,
+  extractPortalTokenFromReq,
+  publicSiteUrl: PUBLIC_SITE_URL
 });
 
 // Block all direct / public exposure of /api/channels and /api/cdn-token
@@ -2802,9 +2809,9 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
   res.send(`User-agent: *\nAllow: /\n\nSitemap: https://nelitv.online/sitemap.xml\n`);
 });
 
-// 13. Ensure /api and /api/ open the NeliTv API Portal page in production / Vercel
+// 13. Ensure /api and /server routes open the NeliTv Portal SPA in production / Vercel
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-  app.get(['/api', '/api/', '/server', '/server/', '/nelitv-server', '/nelitv-server/'], (req: Request, res: Response) => {
+  app.get(['/api', '/api/', '/server', '/server/', '/server/stream-generator', '/server/stream-generator/', '/nelitv-server', '/nelitv-server/'], (req: Request, res: Response) => {
     const candidates = [
       path.join(__dirname, 'dist', 'index.html'),
       path.join(process.cwd(), 'dist', 'index.html')
@@ -2814,7 +2821,11 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
         return res.sendFile(candidate);
       }
     }
-    const targetView = req.path.toLowerCase().includes('server') ? 'server' : 'api';
+    const targetView = req.path.toLowerCase().includes('stream-generator')
+      ? 'stream-generator'
+      : req.path.toLowerCase().includes('server')
+      ? 'server'
+      : 'api';
     return res.redirect(302, `/?view=${targetView}`);
   });
 }
@@ -2836,7 +2847,7 @@ async function setupApp() {
       res.status(404).send('Not Found');
     });
 
-    app.get(['/api', '/api/', '/server', '/server/', '/nelitv-server', '/nelitv-server/'], async (req: Request, res: Response, next) => {
+    app.get(['/api', '/api/', '/server', '/server/', '/server/stream-generator', '/server/stream-generator/', '/nelitv-server', '/nelitv-server/'], async (req: Request, res: Response, next) => {
       try {
         const indexPath = path.join(__dirname, 'index.html');
         let html = fs.readFileSync(indexPath, 'utf-8');

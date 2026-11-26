@@ -40,6 +40,7 @@ type ActiveRouteTab =
   | 'contact'
   | 'api'
   | 'server'
+  | 'stream-generator'
   | 'embed'
   | 'download'
   | 'embed-player';
@@ -73,6 +74,7 @@ function resolveCurrentRoute(): RouteResolution {
     return { tab: 'download', channel: null };
   }
   if (queryView === 'api') return { tab: 'api', channel: null };
+  if (queryView === 'stream-generator') return { tab: 'stream-generator', channel: null };
   if (queryView === 'server') return { tab: 'server', channel: null };
 
   // Static app & legal routes
@@ -83,6 +85,7 @@ function resolveCurrentRoute(): RouteResolution {
   if (lowerPath === '/terms') return { tab: 'terms', channel: null };
   if (lowerPath === '/contact') return { tab: 'contact', channel: null };
   if (lowerPath === '/api') return { tab: 'api', channel: null };
+  if (lowerPath === '/server/stream-generator') return { tab: 'stream-generator', channel: null };
   if (lowerPath === '/server' || lowerPath === '/nelitv-server') return { tab: 'server', channel: null };
   if (lowerPath === '/embed') return { tab: 'embed', channel: null };
   if (lowerPath === '/privacy') return { tab: 'home', channel: null, openPrivacyModal: true };
@@ -140,6 +143,8 @@ function MainApp() {
       const targetUrl =
         nextTab === 'home'
           ? '/'
+          : nextTab === 'stream-generator'
+          ? '/server/stream-generator'
           : nextTab === 'watch' && selectedChannel
           ? `/${getChannelRouteSlug(selectedChannel)}`
           : `/${nextTab}`;
@@ -198,6 +203,8 @@ function MainApp() {
       document.title = 'Akaunti Yangu | NeliTv';
     } else if (activeTab === 'server') {
       document.title = 'NeliTv Server — Live Token & App Sync | NeliTv';
+    } else if (activeTab === 'stream-generator') {
+      document.title = 'Temporary Stream Generator — NeliTv Server | NeliTv';
     } else if (activeTab === 'api') {
       document.title = 'NeliTv API & SDK | NeliTv';
     }
@@ -227,7 +234,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 selection:bg-[#1ce783] selection:text-[#04120b] flex flex-col">
       <AdsterraGlobalScripts
-        enabled={activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'embed'}
+        enabled={activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'stream-generator' && activeTab !== 'embed'}
       />
       {showSplash && <CinematicSplash onComplete={handleSplashComplete} />}
 
@@ -297,9 +304,15 @@ function MainApp() {
           <ContactPage onBack={() => navigateToTab('home')} />
         )}
 
-        {(activeTab === 'api' || activeTab === 'server') && (
+        {(activeTab === 'api' || activeTab === 'server' || activeTab === 'stream-generator') && (
           <ApiPortalPage
-            initialView={activeTab === 'server' ? 'server' : 'api'}
+            initialView={
+              activeTab === 'stream-generator'
+                ? 'stream-generator'
+                : activeTab === 'server'
+                ? 'server'
+                : 'api'
+            }
             onBack={() => navigateToTab('home')}
             onNavigateToEmbed={() => navigateToTab('embed')}
             onChangeRouteTab={(nextTab) => navigateToTab(nextTab)}
@@ -316,7 +329,7 @@ function MainApp() {
       </main>
 
       {/* Clean Footer Navigation for Legal, Privacy & Tools */}
-      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'embed' && (
+      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'stream-generator' && activeTab !== 'embed' && (
         <footer className="border-t border-white/[0.08] bg-[#090c11] text-slate-400 pb-24 md:pb-8 pt-7 px-4 sm:px-8">
           <div className="max-w-[1680px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <div className="text-center sm:text-left">

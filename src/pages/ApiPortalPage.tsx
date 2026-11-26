@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Code, Key, ShieldCheck, Copy, Check, Terminal,
-  ArrowLeft, RefreshCw, AlertTriangle, Play, Layers,
-  LogOut, CheckCircle2, Eye, EyeOff, Tv, Server, Lock
-} from 'lucide-react';
+import { Code, Key, ShieldCheck, Copy, Check, Terminal, ArrowLeft, RefreshCw, AlertTriangle, Play, Layers, LogOut, CheckCircle2, Eye, EyeOff, Tv, Server, Lock, Link2 } from 'lucide-react';
 import { CHANNELS_DATA } from '../data/channels.ts';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { NeliTvServerPanel } from '../components/NeliTvServerPanel.tsx';
+import { StreamGeneratorPanel } from '../components/StreamGeneratorPanel.tsx';
 
 interface DeveloperSession {
   id: string;
@@ -20,10 +17,10 @@ interface DeveloperSession {
 }
 
 interface ApiPortalPageProps {
-  initialView?: 'server' | 'api';
+  initialView?: 'server' | 'api' | 'stream-generator';
   onBack?: () => void;
   onNavigateToEmbed?: () => void;
-  onChangeRouteTab?: (tab: 'server' | 'api') => void;
+  onChangeRouteTab?: (tab: 'server' | 'api' | 'stream-generator') => void;
 }
 
 const BASE_LINK = 'https://nelitv.online';
@@ -37,9 +34,10 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
 }) => {
   const { user: appUser, loginWithGoogle } = useAuth();
 
-  const [workspaceView, setWorkspaceView] = useState<'server' | 'api'>(initialView);
+  const [workspaceView, setWorkspaceView] = useState<'server' | 'api' | 'stream-generator'>(initialView);
 
-  // Server-verified access lock for /api and /server pages
+  // Server-verified access lock for /api, /server, and /server/stream-generator pages
+  const [portalToken, setPortalToken] = useState<string>('');
   const [isPortalUnlocked, setIsPortalUnlocked] = useState<boolean>(false);
   const [isCheckingPortal, setIsCheckingPortal] = useState<boolean>(true);
   const [portalPassword, setPortalPassword] = useState<string>('');
@@ -65,9 +63,11 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
         const data = await res.json();
         if (active) {
           if (res.ok && data?.unlocked) {
+            setPortalToken(savedToken);
             setIsPortalUnlocked(true);
           } else {
             sessionStorage.removeItem(PORTAL_TOKEN_STORAGE_KEY);
+            setPortalToken('');
             setIsPortalUnlocked(false);
           }
         }
@@ -99,6 +99,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
         try {
           sessionStorage.setItem(PORTAL_TOKEN_STORAGE_KEY, data.portalToken);
         } catch {}
+        setPortalToken(data.portalToken);
         setIsPortalUnlocked(true);
         setPortalPassword('');
       } else {
@@ -115,6 +116,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     try {
       sessionStorage.removeItem(PORTAL_TOKEN_STORAGE_KEY);
     } catch {}
+    setPortalToken('');
     setIsPortalUnlocked(false);
     setPortalPassword('');
     setPortalError(null);
@@ -124,7 +126,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
     setWorkspaceView(initialView);
   }, [initialView]);
 
-  const handleSwitchView = (nextView: 'server' | 'api') => {
+  const handleSwitchView = (nextView: 'server' | 'api' | 'stream-generator') => {
     setWorkspaceView(nextView);
     if (onChangeRouteTab) {
       onChangeRouteTab(nextView);
@@ -356,7 +358,13 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
               Ukurasa Umefungwa
             </h1>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Sehemu ya {workspaceView === 'server' ? 'NeliTv Server' : 'API Console'} inahitaji nenosiri maalum la usalama ili kufunguliwa.
+              Sehemu ya{' '}
+              {workspaceView === 'stream-generator'
+                ? 'Stream Generator'
+                : workspaceView === 'server'
+                ? 'NeliTv Server'
+                : 'API Console'}{' '}
+              inahitaji nenosiri maalum la usalama ili kufunguliwa.
             </p>
           </div>
 
@@ -429,12 +437,16 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
             )}
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                {workspaceView === 'server'
+                {workspaceView === 'stream-generator'
+                  ? 'NeliTv Temporary Stream Generator'
+                  : workspaceView === 'server'
                   ? 'NeliTv App Server'
                   : 'NeliTv Content & Player API'}
               </h1>
               <p className="text-xs text-slate-400 mt-1">
-                {workspaceView === 'server'
+                {workspaceView === 'stream-generator'
+                  ? `Tengeneza link za muda za HLS (5-hour TTL) kupitia ${BASE_LINK}/stream/{id}/master.m3u8`
+                  : workspaceView === 'server'
                   ? `Unganisha NeliTv App yako na token hai, orodha ya vituo, na ClearKeys kutoka ${BASE_LINK}`
                   : `Content API, Official Player API & SDK (${BASE_LINK}) — 100% bure`}
               </p>
@@ -443,7 +455,7 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Workspace Segmented Toggle */}
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#141923] border border-white/[0.08]">
+            <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#141923] border border-white/[0.08]">
               <button
                 onClick={() => handleSwitchView('server')}
                 className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
@@ -454,6 +466,18 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
               >
                 <Server className="w-3.5 h-3.5" />
                 <span>NeliTv App Server</span>
+              </button>
+
+              <button
+                onClick={() => handleSwitchView('stream-generator')}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  workspaceView === 'stream-generator'
+                    ? 'bg-[#1ce783] text-[#04120b] font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Stream Generator</span>
               </button>
 
               <button
@@ -500,8 +524,10 @@ export const ApiPortalPage: React.FC<ApiPortalPageProps> = ({
           </div>
         </div>
 
-        {/* Active View: NeliTv App Server Console OR Public Content & Player API */}
-        {workspaceView === 'server' ? (
+        {/* Active View: NeliTv App Server, Stream Generator, OR Public Content & Player API */}
+        {workspaceView === 'stream-generator' ? (
+          <StreamGeneratorPanel portalToken={portalToken} />
+        ) : workspaceView === 'server' ? (
           <NeliTvServerPanel />
         ) : (
           <div className="space-y-6">

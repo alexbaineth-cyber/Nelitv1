@@ -40,6 +40,10 @@
   },
   "rewrites": [
     {
+      "source": "/stream/(.*)",
+      "destination": "/api/index"
+    },
+    {
       "source": "/baynithalex/(.*)",
       "destination": "/api/index"
     },
@@ -49,6 +53,18 @@
     },
     {
       "source": "/api/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/server",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/server/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/server/(.*)",
       "destination": "/index.html"
     },
     {

@@ -125,5 +125,53 @@ INSERT INTO public.nelitv_subscriptions (
     expires_at = now() + INTERVAL '30 days';
 
 -- ==============================================================================
--- DONE! Tables are now live, indexed, and fully synchronized with NeliTv.
+-- 7. TEMPORARY STREAM GENERATOR TABLES (Optional fallback if Upstash Redis is not connected)
 -- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.nelitv_temp_streams (
+    stream_id TEXT PRIMARY KEY,
+    stream_name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    category TEXT DEFAULT 'Live TV',
+    source_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    expires_at_ms BIGINT NOT NULL,
+    ttl_seconds INTEGER NOT NULL DEFAULT 18000,
+    status TEXT NOT NULL DEFAULT 'checking',
+    playback_token TEXT NOT NULL,
+    playback_requests INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TIMESTAMPTZ,
+    last_error TEXT,
+    upstream_http_status INTEGER,
+    response_time_ms INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS public.nelitv_stream_tombstones (
+    stream_id TEXT PRIMARY KEY,
+    expired_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.nelitv_stream_allowlist (
+    host TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_nelitv_temp_streams_expires ON public.nelitv_temp_streams(expires_at);
+
+ALTER TABLE public.nelitv_temp_streams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.nelitv_stream_tombstones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.nelitv_stream_allowlist ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service access temp streams" ON public.nelitv_temp_streams;
+CREATE POLICY "Service access temp streams" ON public.nelitv_temp_streams FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service access stream tombstones" ON public.nelitv_stream_tombstones;
+CREATE POLICY "Service access stream tombstones" ON public.nelitv_stream_tombstones FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service access stream allowlist" ON public.nelitv_stream_allowlist;
+CREATE POLICY "Service access stream allowlist" ON public.nelitv_stream_allowlist FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE public.nelitv_temp_streams TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.nelitv_stream_tombstones TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.nelitv_stream_allowlist TO anon, authenticated, service_role;
+

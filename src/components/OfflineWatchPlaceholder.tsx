@@ -26,21 +26,28 @@ export const OfflineWatchPlaceholder: React.FC<OfflineWatchPlaceholderProps> = (
   const [localRetrying, setLocalRetrying] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(10);
   const [imgError, setImgError] = useState<boolean>(false);
+  const onRetryRef = React.useRef(onRetry);
 
-  // Auto retry countdown timer (counts down from 10s and triggers onRetry)
+  useEffect(() => {
+    onRetryRef.current = onRetry;
+  }, [onRetry]);
+
+  // Pure countdown timer (decrements once per second)
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          onRetry();
-          return 10;
-        }
-        return prev - 1;
-      });
+      setCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [onRetry]);
+  }, []);
+
+  // Trigger parent retry strictly after commit when countdown reaches 0
+  useEffect(() => {
+    if (countdown === 0) {
+      setCountdown(10);
+      onRetryRef.current();
+    }
+  }, [countdown]);
 
   const handleManualRetry = () => {
     setLocalRetrying(true);
