@@ -1,6 +1,5 @@
 import React from 'react';
 import { ShieldAlert, Mail, AlertTriangle, CheckCircle, ArrowLeft, ExternalLink } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
 
 interface DmcaPageProps {
   onBack?: () => void;
@@ -114,9 +113,6 @@ export const DmcaPage: React.FC<DmcaPageProps> = ({ onBack }) => {
             </p>
           </section>
         </div>
-
-        {/* Bottom Adsterra Responsive Banner */}
-        <AdBanner className="my-2" />
 
         {/* Footer info */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

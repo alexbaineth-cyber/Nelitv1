@@ -234,7 +234,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-[#0b0e14] text-slate-100 selection:bg-[#1ce783] selection:text-[#04120b] flex flex-col">
       <AdsterraGlobalScripts
-        enabled={activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'stream-generator' && activeTab !== 'embed'}
+        enabled={activeTab === 'home' || activeTab === 'watch'}
       />
       {showSplash && <CinematicSplash onComplete={handleSplashComplete} />}
 

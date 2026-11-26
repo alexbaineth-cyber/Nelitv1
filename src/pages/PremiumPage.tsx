@@ -4,7 +4,6 @@ import {
   Crown, CheckCircle2, Zap, ArrowRight,
   AlertCircle, X
 } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
 
 interface CleanPlan {
   id: string;
@@ -136,9 +135,6 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
           </p>
         </div>
 
-        {/* Top Adsterra Responsive Banner */}
-        <AdBanner className="my-2" />
-
         {/* Active subscription status indicator */}
         {hasActiveSubscription && (
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs sm:text-sm">
@@ -226,8 +222,6 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({
           </p>
         </div>
 
-        {/* Bottom Adsterra Responsive Banner */}
-        <AdBanner className="my-3" />
       </div>
 
       {/* SIMPLE POPUP FOR PHONE NUMBER INPUT & USSD PUSH */}

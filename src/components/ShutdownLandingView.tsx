@@ -3,7 +3,6 @@ import {
   Download, QrCode, Smartphone, Monitor,
   ShieldCheck, Copy, Check, ExternalLink, AlertCircle
 } from 'lucide-react';
-import { AdBanner } from './AdBanner';
 
 export const DEFAULT_APK_DOWNLOAD_URL = 'https://github.com/baynith1/Nelitv/releases/download/v3.2.0/Nelitv.apk';
 export const GITHUB_RELEASES_URL = 'https://github.com/baynith1/Nelitv/releases';
@@ -303,10 +302,6 @@ export const ShutdownLandingView: React.FC = () => {
           </div>
         </section>
 
-        {/* Non-disruptive Adsterra Banner Slot */}
-        <div className="w-full max-w-4xl mx-auto mt-6">
-          <AdBanner />
-        </div>
       </main>
 
       {/* Quiet Footer */}

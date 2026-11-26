@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Channel, CHANNELS_DATA } from '../data/channels.ts';
 import { Search, X, Tv, Eye, Play, Radio } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
-import { AdsterraNativeBanner } from '../components/AdsterraAds.tsx';
 
 interface SearchPageProps {
   channels?: Channel[];
@@ -128,12 +126,6 @@ export const SearchPage: React.FC<SearchPageProps> = ({
           </div>
         </div>
 
-        {/* Top Responsive Banner (auto-hides if no-fill) */}
-        <AdBanner />
-
-        {/* Primary Native 4:1 Banner right above search channels */}
-        <AdsterraNativeBanner mode="dom" />
-
         {/* Results Counter */}
         <div className="text-xs text-slate-400 font-medium">
           Zimepatikana chaneli <strong className="text-white">{filteredChannels.length}</strong>
@@ -211,20 +203,12 @@ export const SearchPage: React.FC<SearchPageProps> = ({
                       ))}
                     </div>
 
-                    {chunkIdx === 0 && filteredChannels.length > 12 && (
-                      <AdsterraNativeBanner mode="iframe" />
-                    )}
                   </React.Fragment>
                 );
               }
             )}
           </div>
         )}
-
-        {/* Bottom Responsive Banner (auto-hides if no-fill) */}
-        <div className="pt-4">
-          <AdBanner />
-        </div>
       </div>
     </div>
   );

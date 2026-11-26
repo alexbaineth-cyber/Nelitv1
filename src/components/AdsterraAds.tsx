@@ -796,9 +796,23 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
   const [retrySeed, setRetrySeed] = useState(0);
 
   useEffect(() => {
-    if (!enabled || typeof window === 'undefined') return;
+    if (!enabled || typeof window === 'undefined') {
+      setAdBlockerDetected(false);
+      if (typeof document !== 'undefined') {
+        document
+          .querySelectorAll(`script[src^="${ADSTERRA_POPUNDER_SRC}"], script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`)
+          .forEach((el) => el.remove());
+      }
+      return;
+    }
     const path = window.location.pathname.toLowerCase();
-    if (path.startsWith('/embed') || path.startsWith('/api')) return;
+    const search = window.location.search.toLowerCase();
+    if (
+      /^\/(embed|api|server|nelitv-server|search|account|about|dmca|terms|contact|download|apk|privacy)(\/|$)/.test(path) ||
+      /[?&]view=(server|api|stream-generator|apk)/.test(search)
+    ) {
+      return;
+    }
 
     let blockedByNetwork = false;
     let checkTimer: ReturnType<typeof setTimeout> | null = null;

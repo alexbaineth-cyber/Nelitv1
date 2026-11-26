@@ -1,6 +1,5 @@
 import React from 'react';
 import { Tv, Sparkles, Zap, ShieldCheck, Heart, Users, Globe, ArrowLeft, Trophy } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
 
 interface AboutPageProps {
   onBack?: () => void;
@@ -124,9 +123,6 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onBack, onNavigateHome }) 
             Wasiliana Nasi
           </a>
         </div>
-
-        {/* Bottom Adsterra Responsive Banner */}
-        <AdBanner className="my-2" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

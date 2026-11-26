@@ -1,6 +1,5 @@
 import React from 'react';
 import { FileText, CheckCircle2, AlertCircle, ArrowLeft, Shield } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
 
 interface TermsPageProps {
   onBack?: () => void;
@@ -104,9 +103,6 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
             </p>
           </section>
         </div>
-
-        {/* Bottom Adsterra Responsive Banner */}
-        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">

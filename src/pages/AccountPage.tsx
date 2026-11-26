@@ -12,7 +12,6 @@ import { DmcaPage } from './DmcaPage.tsx';
 import { AboutPage } from './AboutPage.tsx';
 import { TermsPage } from './TermsPage.tsx';
 import { ContactPage } from './ContactPage.tsx';
-import { AdBanner } from '../components/AdBanner';
 
 interface AccountPageProps {
   onNavigateToPremium: () => void;
@@ -849,10 +848,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           </div>
         )}
 
-        {/* Bottom Adsterra Responsive Banner */}
-        <div className="pt-2">
-          <AdBanner className="my-2" />
-        </div>
       </div>
     </div>
   );

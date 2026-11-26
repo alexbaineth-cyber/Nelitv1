@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Mail, Phone, MessageSquare, Send, CheckCircle2, ArrowLeft, Clock, MapPin } from 'lucide-react';
-import { AdBanner } from '../components/AdBanner';
 
 interface ContactPageProps {
   onBack?: () => void;
@@ -163,9 +162,6 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onBack }) => {
             </form>
           )}
         </div>
-
-        {/* Bottom Adsterra Responsive Banner */}
-        <AdBanner className="my-4" />
 
         {/* Footer */}
         <div className="pt-6 border-t border-neutral-800 text-center text-xs text-neutral-500 space-y-1">
