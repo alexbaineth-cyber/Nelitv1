@@ -242,7 +242,7 @@ async function probeUpstreamHls(
       enforceAllowlist: true,
       sameOriginHostOnly: sourceHost,
       headers: {
-        'User-Agent': 'NeliTv-StreamRelay/1.0 (+https://nelitv.online)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*'
       }
     });
@@ -752,7 +752,7 @@ export function registerStreamGeneratorRoutes(
           enforceAllowlist: true,
           sameOriginHostOnly: sourceHost,
           headers: {
-            'User-Agent': 'NeliTv-StreamRelay/1.0 (+https://nelitv.online)',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*'
           }
         });
@@ -767,7 +767,8 @@ export function registerStreamGeneratorRoutes(
           await store.saveUpdatedStream(record);
           return res.status(502).json({
             success: false,
-            error: 'Chanzo cha stream hakijajibu ipasavyo kwa sasa.'
+            upstreamStatus: response.status,
+            error: `Chanzo cha stream kimerudisha HTTP ${response.status} (hakiruhusu au hakipo hewani).`
           });
         }
 
@@ -908,7 +909,8 @@ export function registerStreamGeneratorRoutes(
       }
 
       const upstreamHeaders: Record<string, string> = {
-        'User-Agent': 'NeliTv-StreamRelay/1.0 (+https://nelitv.online)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: '*/*'
       };
       const rangeHeader = req.get('range');
       if (rangeHeader) {
@@ -929,6 +931,7 @@ export function registerStreamGeneratorRoutes(
         if (!response.ok && response.status !== 206) {
           return res.status(502).json({
             success: false,
+            upstreamStatus: response.status,
             error: `Hitilafu ya upstream (${response.status}).`
           });
         }
