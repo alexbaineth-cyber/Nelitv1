@@ -783,6 +783,15 @@ interface AdsterraGlobalScriptsProps {
   enabled?: boolean;
 }
 
+function removeAdsterraGlobalScriptsFromDom() {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelectorAll(
+      `script[src^="${ADSTERRA_POPUNDER_SRC}"], script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"], script[src*="capitalhospitals.org"], script[src*="czernik.org"], script[src*="highperformanceformat.com"]`
+    )
+    .forEach((el) => el.remove());
+}
+
 /**
  * Injects Adsterra Popunder + Social Bar scripts once on main viewing routes,
  * and monitors if an AdBlocker is actively blocking ad delivery so users are prompted
@@ -798,11 +807,7 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') {
       setAdBlockerDetected(false);
-      if (typeof document !== 'undefined') {
-        document
-          .querySelectorAll(`script[src^="${ADSTERRA_POPUNDER_SRC}"], script[src^="${ADSTERRA_SOCIAL_BAR_SRC}"]`)
-          .forEach((el) => el.remove());
-      }
+      removeAdsterraGlobalScriptsFromDom();
       return;
     }
     const path = window.location.pathname.toLowerCase();
@@ -811,6 +816,8 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
       /^\/(embed|api|server|nelitv-server|search|account|about|dmca|terms|contact|download|apk|privacy)(\/|$)/.test(path) ||
       /[?&]view=(server|api|stream-generator|apk)/.test(search)
     ) {
+      setAdBlockerDetected(false);
+      removeAdsterraGlobalScriptsFromDom();
       return;
     }
 
@@ -882,6 +889,7 @@ export const AdsterraGlobalScripts: React.FC<AdsterraGlobalScriptsProps> = ({
       clearTimeout(bootTimer);
       if (checkTimer) clearTimeout(checkTimer);
       if (bait?.parentNode) bait.parentNode.removeChild(bait);
+      removeAdsterraGlobalScriptsFromDom();
     };
   }, [enabled, retrySeed]);
 

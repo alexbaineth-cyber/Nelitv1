@@ -187,7 +187,16 @@ function MainApp() {
   // Update document title for non-watch tabs
   useEffect(() => {
     if (activeTab === 'watch' && selectedChannel) return;
-    if (activeTab === 'home') {
+    if (activeTab === 'download') {
+      document.title = 'Pakua NeliTv App & APK (Official Download) — APKPure nelitv.apk.com | NeliTv';
+      const metaDesc = document.querySelector('meta[name="description"]');
+      if (metaDesc) {
+        metaDesc.setAttribute(
+          'content',
+          'Pakua NeliTv App / NeliTv APK toleo jipya kwa Android na Smart TV bure bila matangazo. Inapatikana moja kwa moja hapa au kupitia APKPure (nelitv.apk.com).'
+        );
+      }
+    } else if (activeTab === 'home') {
       document.title = 'NeliTv — Tazama Live TV, Azam Sports, Ligi Kuu & Sinema Bure';
     } else if (activeTab === 'search') {
       document.title = 'Tafuta Chaneli | NeliTv';

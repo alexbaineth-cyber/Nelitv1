@@ -10,6 +10,7 @@ interface DownloadAppModalProps {
 export const DEFAULT_APK_DOWNLOAD_URL = 'https://github.com/baynith1/Nelitv/releases/download/v2.3.0/Nelitv.apk';
 export const GITHUB_RELEASES_URL = 'https://github.com/baynith1/Nelitv/releases';
 export const LATEST_RELEASE_API = 'https://api.github.com/repos/baynith1/Nelitv/releases/latest';
+export const APKPURE_LANDING_URL = 'https://nelitv.apk.com';
 
 export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onClose, initialTab = 'direct' }) => {
   const [downloadUrl, setDownloadUrl] = useState<string>(DEFAULT_APK_DOWNLOAD_URL);
@@ -181,6 +182,20 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({ isOpen, onCl
               >
                 <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition" />
                 <span>Pakua Nelitv.apk ({versionTag})</span>
+              </a>
+
+              {/* APKPure Official Landing Page Link */}
+              <a
+                href={APKPURE_LANDING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 hover:text-white font-bold text-xs flex items-center justify-between gap-2 transition"
+              >
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Pakua pia kupitia APKPure (nelitv.apk.com)</span>
+                </span>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
               </a>
 
               {/* Secondary Actions */}
