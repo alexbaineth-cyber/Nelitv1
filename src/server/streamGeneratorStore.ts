@@ -293,9 +293,15 @@ export { StreamStorageError };
 
 export class StreamGeneratorStore {
   private fallbackSupabase: SupabaseClient | null;
+  private playbackRecordCache = new Map<string, { record: TempStreamRecord; cachedAt: number }>();
+  private allowlistCache: { list: string[]; cachedAt: number } | null = null;
 
   constructor(fallbackSupabase?: SupabaseClient | null) {
     this.fallbackSupabase = fallbackSupabase || null;
+  }
+
+  private invalidateStreamCache(streamId: string) {
+    this.playbackRecordCache.delete(streamId);
   }
 
   getFallbackSupabase(): SupabaseClient | null {
@@ -338,6 +344,7 @@ export class StreamGeneratorStore {
   }
 
   async markExpiredAndPurge(streamId: string): Promise<void> {
+    this.invalidateStreamCache(streamId);
     const backend = await this.resolveBackend();
     if (backend.kind === 'upstash') {
       const [removedFromSet] = await upstashPipeline(backend.cfg, [
@@ -451,10 +458,24 @@ export class StreamGeneratorStore {
   }
 
   async getStreamForPlayback(
-    streamId: string
+    streamId: string,
+    options: { useCache?: boolean } = {}
   ): Promise<{ state: 'active'; record: TempStreamRecord } | { state: 'expired' } | { state: 'not_found' }> {
-    const backend = await this.resolveBackend();
     const nowMs = Date.now();
+
+    if (options.useCache) {
+      const cached = this.playbackRecordCache.get(streamId);
+      if (cached && nowMs - cached.cachedAt < 10_000) {
+        if (!cached.record.expires_at_ms || cached.record.expires_at_ms <= nowMs) {
+          this.invalidateStreamCache(streamId);
+          await this.markExpiredAndPurge(streamId);
+          return { state: 'expired' };
+        }
+        return { state: 'active', record: { ...cached.record } };
+      }
+    }
+
+    const backend = await this.resolveBackend();
 
     if (backend.kind === 'upstash') {
       const [raw, tomb] = await upstashPipeline(backend.cfg, [
@@ -463,6 +484,7 @@ export class StreamGeneratorStore {
       ]);
 
       if (!raw) {
+        this.invalidateStreamCache(streamId);
         if (tomb) {
           return { state: 'expired' };
         }
@@ -481,6 +503,7 @@ export class StreamGeneratorStore {
         return { state: 'expired' };
       }
 
+      this.playbackRecordCache.set(streamId, { record: { ...parsed }, cachedAt: nowMs });
       return { state: 'active', record: parsed };
     }
 
@@ -492,6 +515,7 @@ export class StreamGeneratorStore {
       .maybeSingle();
 
     if (!row) {
+      this.invalidateStreamCache(streamId);
       const tomb = await this.isTombstoned(streamId);
       return tomb ? { state: 'expired' } : { state: 'not_found' };
     }
@@ -502,16 +526,19 @@ export class StreamGeneratorStore {
       return { state: 'expired' };
     }
 
+    const activeRecord: TempStreamRecord = {
+      ...(row as TempStreamRecord),
+      expires_at_ms: expMs
+    };
+    this.playbackRecordCache.set(streamId, { record: { ...activeRecord }, cachedAt: nowMs });
     return {
       state: 'active',
-      record: {
-        ...(row as TempStreamRecord),
-        expires_at_ms: expMs
-      }
+      record: activeRecord
     };
   }
 
   async saveUpdatedStream(record: TempStreamRecord): Promise<void> {
+    this.invalidateStreamCache(record.stream_id);
     const backend = await this.resolveBackend();
     const remainingSec = Math.ceil((record.expires_at_ms - Date.now()) / 1000);
     if (remainingSec <= 0) {
@@ -551,6 +578,7 @@ export class StreamGeneratorStore {
   }
 
   async deleteStreamImmediately(streamId: string): Promise<boolean> {
+    this.invalidateStreamCache(streamId);
     const backend = await this.resolveBackend();
     if (backend.kind === 'upstash') {
       const [delCount, removedSet] = await upstashPipeline(backend.cfg, [
@@ -753,6 +781,11 @@ export class StreamGeneratorStore {
   }
 
   async getAllowlist(): Promise<string[]> {
+    const now = Date.now();
+    if (this.allowlistCache && now - this.allowlistCache.cachedAt < 60_000) {
+      return this.allowlistCache.list;
+    }
+
     const builtins = getBuiltinAllowlistHosts();
     try {
       const backend = await this.resolveBackend();
@@ -761,21 +794,27 @@ export class StreamGeneratorStore {
         if (raw) {
           const custom = JSON.parse(raw);
           if (Array.isArray(custom)) {
-            return Array.from(new Set([...builtins, ...custom.map((h: string) => String(h).toLowerCase())]));
+            const list = Array.from(new Set([...builtins, ...custom.map((h: string) => String(h).toLowerCase())]));
+            this.allowlistCache = { list, cachedAt: now };
+            return list;
           }
         }
+        this.allowlistCache = { list: builtins, cachedAt: now };
         return builtins;
       }
 
       const { data } = await backend.sb.from('nelitv_stream_allowlist').select('host');
       const custom = (data || []).map((r: any) => String(r.host || '').toLowerCase()).filter(Boolean);
-      return Array.from(new Set([...builtins, ...custom]));
+      const list = Array.from(new Set([...builtins, ...custom]));
+      this.allowlistCache = { list, cachedAt: now };
+      return list;
     } catch {
       return builtins;
     }
   }
 
   async addAllowlistHost(host: string): Promise<string[]> {
+    this.allowlistCache = null;
     const clean = host.trim().toLowerCase();
     const backend = await this.resolveBackend();
     if (backend.kind === 'upstash') {
@@ -793,6 +832,7 @@ export class StreamGeneratorStore {
   }
 
   async removeAllowlistHost(host: string): Promise<string[]> {
+    this.allowlistCache = null;
     const clean = host.trim().toLowerCase();
     const backend = await this.resolveBackend();
     if (backend.kind === 'upstash') {

@@ -218,15 +218,33 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
       hlsRef.current = null;
     }
 
+    let networkRetries = 0;
+    let mediaRetries = 0;
+    let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
+
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 30
+        lowLatencyMode: false,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 12,
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        manifestLoadingMaxRetry: 6,
+        levelLoadingMaxRetry: 6,
+        fragLoadingMaxRetry: 6,
+        manifestLoadingRetryDelay: 1000,
+        levelLoadingRetryDelay: 1000,
+        fragLoadingRetryDelay: 1000
       });
       hlsRef.current = hls;
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_evt: unknown, data: { levels?: unknown[] }) => {
+        if (destroyed) return;
+        networkRetries = 0;
+        mediaRetries = 0;
         setPlayerStatus('playing');
         setPlayerInfo(
           `Relay inafanya kazi • ${data.levels?.length || 1} quality level(s) • Segments zinapita kupitia NeliTV`
@@ -234,21 +252,59 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
         videoEl.play().catch(() => {});
       });
 
-      hls.on(Hls.Events.ERROR, (_evt: unknown, data: { fatal?: boolean; details?: string; response?: { code?: number; text?: string } }) => {
-        if (data.fatal) {
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        if (destroyed) return;
+        networkRetries = 0;
+        setPlayerStatus('playing');
+      });
+
+      hls.on(Hls.Events.ERROR, (_evt: unknown, data: { fatal?: boolean; type?: string; details?: string; response?: { code?: number; text?: string } }) => {
+        if (destroyed || !data.fatal) return;
+
+        const code = data.response?.code;
+        if (code === 410) {
           setPlayerStatus('error');
-          const code = data.response?.code;
-          if (code === 410) {
-            setPlayerInfo('HTTP 410 Gone: Link hii imeisha muda wake wa masaa 5.');
-          } else {
-            const upstreamHint = testingStream.last_error
-              ? ` — ${testingStream.last_error}`
-              : '';
-            setPlayerInfo(
-              `Hitilafu ya HLS relay (${code ? `HTTP ${code}` : data.details})${upstreamHint}.`
-            );
-          }
+          setPlayerInfo('HTTP 410 Gone: Link hii imeisha muda wake wa masaa 5.');
+          return;
         }
+        if (code === 403) {
+          setPlayerStatus('error');
+          setPlayerInfo('HTTP 403: Playback token si sahihi au muda umeisha.');
+          return;
+        }
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 4) {
+          mediaRetries += 1;
+          setPlayerStatus('loading');
+          setPlayerInfo('Inasawazisha video stream moja kwa moja...');
+          hls.recoverMediaError();
+          return;
+        }
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 5) {
+          networkRetries += 1;
+          setPlayerStatus('loading');
+          setPlayerInfo(`Inaunganisha upya live relay (${networkRetries}/5)...`);
+          if (recoveryTimer) clearTimeout(recoveryTimer);
+          recoveryTimer = setTimeout(() => {
+            if (destroyed || !hlsRef.current) return;
+            if (networkRetries >= 3) {
+              const sep = testingStream.playback_url.includes('?') ? '&' : '?';
+              hlsRef.current.loadSource(`${testingStream.playback_url}${sep}_r=${Date.now()}`);
+            } else {
+              hlsRef.current.startLoad();
+            }
+          }, 1000);
+          return;
+        }
+
+        setPlayerStatus('error');
+        const upstreamHint = testingStream.last_error
+          ? ` — ${testingStream.last_error}`
+          : '';
+        setPlayerInfo(
+          `Hitilafu ya HLS relay (${code ? `HTTP ${code}` : data.details})${upstreamHint}.`
+        );
       });
 
       hls.loadSource(testingStream.playback_url);
@@ -266,6 +322,8 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
     }
 
     return () => {
+      destroyed = true;
+      if (recoveryTimer) clearTimeout(recoveryTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

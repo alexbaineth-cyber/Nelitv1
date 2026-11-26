@@ -61,6 +61,7 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/node_modules/') ||
     url.pathname.startsWith('/@') ||
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/stream/') ||
     url.pathname.endsWith('.ts') ||
     url.pathname.endsWith('.tsx') ||
     url.searchParams.has('v') ||

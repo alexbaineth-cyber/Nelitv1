@@ -99,6 +99,41 @@ export function isHostInAllowlist(hostname: string, allowlist: string[]): boolea
   });
 }
 
+const DNS_SAFETY_CACHE = new Map<string, { safe: boolean; error?: string; expiresAt: number }>();
+const DNS_CACHE_TTL_MS = 60_000;
+
+async function lookupAndValidatePublicHostname(hostname: string): Promise<{ safe: boolean; error?: string }> {
+  const now = Date.now();
+  const cached = DNS_SAFETY_CACHE.get(hostname);
+  if (cached && cached.expiresAt > now) {
+    return { safe: cached.safe, error: cached.error };
+  }
+
+  if (DNS_SAFETY_CACHE.size > 1000) {
+    for (const [k, v] of DNS_SAFETY_CACHE.entries()) {
+      if (v.expiresAt <= now) DNS_SAFETY_CACHE.delete(k);
+    }
+  }
+
+  try {
+    const records = await dns.lookup(hostname, { all: true, verbatim: true });
+    if (!records || records.length === 0) {
+      return { safe: false, error: 'Hostname haiwezi kutatuliwa kwenye DNS.' };
+    }
+    for (const rec of records) {
+      if (isPrivateOrReservedIp(rec.address)) {
+        const res = { safe: false, error: 'Domain inaelekeza kwenye anwani ya ndani isiyoruhusiwa.' };
+        DNS_SAFETY_CACHE.set(hostname, { ...res, expiresAt: now + DNS_CACHE_TTL_MS });
+        return res;
+      }
+    }
+    DNS_SAFETY_CACHE.set(hostname, { safe: true, expiresAt: now + DNS_CACHE_TTL_MS });
+    return { safe: true };
+  } catch {
+    return { safe: false, error: 'Imeshindikana kuthibitisha DNS ya domain hiyo.' };
+  }
+}
+
 export async function validateExternalStreamUrl(
   rawUrl: string,
   options: {
@@ -144,18 +179,9 @@ export async function validateExternalStreamUrl(
       return { valid: false, error: 'Anwani binafsi au za ndani (private IP) haziruhusiwi.' };
     }
   } else {
-    try {
-      const records = await dns.lookup(hostname, { all: true, verbatim: true });
-      if (!records || records.length === 0) {
-        return { valid: false, error: 'Hostname haiwezi kutatuliwa kwenye DNS.' };
-      }
-      for (const rec of records) {
-        if (isPrivateOrReservedIp(rec.address)) {
-          return { valid: false, error: 'Domain inaelekeza kwenye anwani ya ndani isiyoruhusiwa.' };
-        }
-      }
-    } catch {
-      return { valid: false, error: 'Imeshindikana kuthibitisha DNS ya domain hiyo.' };
+    const dnsRes = await lookupAndValidatePublicHostname(hostname);
+    if (!dnsRes.safe) {
+      return { valid: false, error: dnsRes.error || 'Imeshindikana kuthibitisha DNS ya domain hiyo.' };
     }
   }
 

@@ -301,7 +301,7 @@ export function registerStreamGeneratorRoutes(
   store: StreamGeneratorStore = streamGeneratorStore
 ) {
   const adminLimiter = createIpRateLimiter(90, 60_000);
-  const playbackLimiter = createIpRateLimiter(600, 60_000);
+  const playbackLimiter = createIpRateLimiter(6000, 60_000);
 
   const isAllowedAdminOrigin = (origin: string, req: Request): boolean => {
     try {
@@ -687,6 +687,40 @@ export function registerStreamGeneratorRoutes(
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
   };
 
+  const setNoCachePlaylistHeaders = (res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+    res.setHeader('Surrogate-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  };
+
+  const fetchUpstreamWithRetry = async (
+    targetUrl: string,
+    opts: Parameters<typeof safeFetchWithRedirectValidation>[1],
+    retries = 1
+  ): Promise<{ response: globalThis.Response; finalUrl: string }> => {
+    let lastErr: any = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const result = await safeFetchWithRedirectValidation(targetUrl, opts);
+        if (result.response.status >= 500 && attempt < retries) {
+          await new Promise((r) => setTimeout(r, 250));
+          continue;
+        }
+        return result;
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 250));
+          continue;
+        }
+      }
+    }
+    throw lastErr;
+  };
+
   app.options('/stream/:id/*', (_req: Request, res: Response) => {
     setRelayCorsHeaders(res);
     return res.status(204).end();
@@ -783,8 +817,7 @@ export function registerStreamGeneratorRoutes(
         await store.saveUpdatedStream(record);
 
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-        res.setHeader('Pragma', 'no-cache');
+        setNoCachePlaylistHeaders(res);
         if (req.method === 'HEAD') {
           return res.status(200).end();
         }
@@ -844,7 +877,7 @@ export function registerStreamGeneratorRoutes(
     const providedToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
 
     try {
-      const lookup = await store.getStreamForPlayback(streamId);
+      const lookup = await store.getStreamForPlayback(streamId, { useCache: true });
       if (lookup.state === 'expired') {
         res.setHeader('Cache-Control', 'no-store');
         return res.status(410).json({
@@ -896,18 +929,6 @@ export function registerStreamGeneratorRoutes(
         });
       }
 
-      const allowlist = await store.getAllowlist();
-      const targetCheck = await validateExternalStreamUrl(decodedTarget.url, {
-        allowlist,
-        enforceAllowlist: false
-      });
-      if (!targetCheck.valid || !targetCheck.normalizedUrl) {
-        return res.status(403).json({
-          success: false,
-          error: 'Chanzo hakiruhusiwi kwa sera ya usalama.'
-        });
-      }
-
       const upstreamHeaders: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         Accept: '*/*'
@@ -917,16 +938,84 @@ export function registerStreamGeneratorRoutes(
         upstreamHeaders['Range'] = rangeHeader;
       }
 
-      const ext = inferExtensionFromUrl(targetCheck.normalizedUrl, 'ts');
+      const ext = inferExtensionFromUrl(decodedTarget.url, 'ts');
 
       try {
-        const { response, finalUrl } = await safeFetchWithRedirectValidation(targetCheck.normalizedUrl, {
-          method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-          timeoutMs: 12000,
-          allowlist,
-          enforceAllowlist: false,
-          headers: upstreamHeaders
-        });
+        let { response, finalUrl } = await fetchUpstreamWithRetry(
+          decodedTarget.url,
+          {
+            method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+            timeoutMs: 12000,
+            enforceAllowlist: false,
+            headers: upstreamHeaders
+          },
+          1
+        );
+
+        // Self-healing live playlist refresh: if an upstream CDN rotated its session/media playlist URL,
+        // re-fetch record.source_url once and extract a fresh active media playlist transparently.
+        if (
+          !response.ok &&
+          (ext === 'm3u8' || ext === 'm3u') &&
+          req.method === 'GET' &&
+          (response.status === 403 || response.status === 404 || response.status === 410 || response.status >= 500)
+        ) {
+          try {
+            const masterFetch = await fetchUpstreamWithRetry(
+              record.source_url,
+              {
+                method: 'GET',
+                timeoutMs: 9000,
+                enforceAllowlist: false,
+                headers: {
+                  'User-Agent': upstreamHeaders['User-Agent'],
+                  Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*'
+                }
+              },
+              1
+            );
+            if (masterFetch.response.ok) {
+              const masterBody = await masterFetch.response.text();
+              if (masterBody.includes('#EXTM3U')) {
+                const variantLine = masterBody
+                  .split(/\r?\n/)
+                  .map((l) => l.trim())
+                  .find((l) => l && !l.startsWith('#'));
+                if (masterBody.includes('#EXT-X-STREAM-INF') && variantLine) {
+                  const freshVariantUrl = new URL(variantLine, masterFetch.finalUrl).toString();
+                  const freshMediaFetch = await fetchUpstreamWithRetry(
+                    freshVariantUrl,
+                    {
+                      method: 'GET',
+                      timeoutMs: 12000,
+                      enforceAllowlist: false,
+                      headers: upstreamHeaders
+                    },
+                    1
+                  );
+                  if (freshMediaFetch.response.ok) {
+                    response = freshMediaFetch.response;
+                    finalUrl = freshMediaFetch.finalUrl;
+                  }
+                } else {
+                  res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+                  setNoCachePlaylistHeaders(res);
+                  const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
+                  return res.status(200).send(
+                    rewriteHlsPlaylist(
+                      masterBody,
+                      masterFetch.finalUrl,
+                      relayBaseUrl,
+                      record.stream_id,
+                      record.playback_token,
+                      record.expires_at_ms
+                    )
+                  );
+                }
+              }
+            }
+          } catch {}
+        }
 
         if (!response.ok && response.status !== 206) {
           return res.status(502).json({
@@ -945,8 +1034,7 @@ export function registerStreamGeneratorRoutes(
 
         if (isPlaylist) {
           res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-          res.setHeader('Pragma', 'no-cache');
+          setNoCachePlaylistHeaders(res);
           if (req.method === 'HEAD') {
             return res.status(200).end();
           }
