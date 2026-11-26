@@ -73,6 +73,8 @@ export interface Channel {
   currentProgram?: string;
   nextProgram?: string;
   bandwidthSaverSupported?: boolean;
+  preferProxy?: boolean;
+  isOnline?: boolean;
 }
 
 export let ACTIVE_AZAM_TOKEN = "nelitv-live";

@@ -170,6 +170,8 @@ export const WatchPage: React.FC<WatchPageProps> = ({
               <VideoPlayer
                 key={currentChannel.id}
                 channel={currentChannel}
+                fallbackChannel={sideChannels[0]}
+                onSwitchChannel={onSelectChannel}
                 isFullPage={isFullViewport}
                 onBack={() => {
                   if (isWatchPageFullPage) {

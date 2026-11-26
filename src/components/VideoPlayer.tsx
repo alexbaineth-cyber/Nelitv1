@@ -48,6 +48,8 @@ export type QualityOption = 'auto' | '1080' | '720' | '480' | '360' | '240' | 's
 
 interface VideoPlayerProps {
   channel: Channel;
+  fallbackChannel?: Channel;
+  onSwitchChannel?: (channel: Channel) => void;
   isFullPage?: boolean;
   onBack?: () => void;
   onSelectPlanClick?: (planId?: string) => void;
@@ -58,6 +60,8 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   channel,
+  fallbackChannel,
+  onSwitchChannel,
   isFullPage = false,
   onBack,
   onSelectPlanClick,
@@ -855,6 +859,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       // 2. HLS STREAM (Instant lowest-level startup + automatic CORS proxy failover + finite retries)
       else if (channel.streamFormat === 'hls') {
+        if (channel.preferProxy && !targetUrl.includes('/api/proxy-stream') && !targetUrl.startsWith('/')) {
+          targetUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+        }
+
         hardTimeoutTimer = setTimeout(() => {
           if (!isMounted || hasFirstFrameRef.current) return;
           if (videoRef.current && videoRef.current.readyState >= 2) {
@@ -1432,6 +1440,49 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [isOffline, channel]);
 
+  // Mid-stream zero-freeze watchdog: if buffering persists > 7.5s after playback started,
+  // silently self-heal via proxy failover / CDN retry without waiting for user intervention.
+  useEffect(() => {
+    if (!hasFirstFrame || !isBuffering || isOffline || errorMessage || isUserPaused || isEmbedded) {
+      return;
+    }
+
+    const midStallTimer = setTimeout(async () => {
+      if (shakaPlayerRef.current) {
+        try {
+          if (!useSegmentProxyRef.current) {
+            useSegmentProxyRef.current = true;
+            const fresh = await getLiveCdnToken(true).catch(() => null);
+            const activeTok = fresh?.token ? fresh : getInstantCdnToken();
+            if (fresh?.token) {
+              activeTokenRef.current = fresh.token;
+              activeCdnHostRef.current = fresh.cdnHost || activeCdnHostRef.current;
+              activeProviderRef.current = fresh.provider || activeProviderRef.current;
+            }
+            const nextUrl = buildPlayableStreamUrl(channel, activeTok);
+            await shakaPlayerRef.current.load(`/api/proxy-stream?url=${encodeURIComponent(nextUrl)}&app=nelitv`);
+            if (videoRef.current) {
+              videoRef.current.play().catch(() => {});
+            }
+            return;
+          }
+          shakaPlayerRef.current.retryStreaming();
+        } catch {}
+      } else if (hlsPlayerRef.current) {
+        try {
+          const hls = hlsPlayerRef.current;
+          const curUrl = hls.url || channel.streamUrl;
+          if (curUrl && !curUrl.includes('/api/proxy-stream') && !curUrl.startsWith('/')) {
+            hls.loadSource(`/api/proxy-stream?url=${encodeURIComponent(curUrl)}&app=nelitv`);
+          }
+          hls.startLoad(-1);
+        } catch {}
+      }
+    }, 7500);
+
+    return () => clearTimeout(midStallTimer);
+  }, [hasFirstFrame, isBuffering, isOffline, errorMessage, isUserPaused, isEmbedded, channel]);
+
   return (
     <div
       ref={containerRef}
@@ -1661,13 +1712,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <p className="text-sm text-slate-300 max-w-sm mb-5 leading-relaxed">
             {errorMessage}
           </p>
-          <button
-            onClick={() => handleRetry()}
-            className="py-2.5 px-6 rounded-xl bg-[#0072d2] hover:bg-[#0082ee] text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Jaribu Tena</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            <button
+              onClick={() => handleRetry()}
+              className="py-2.5 px-6 rounded-xl bg-[#0072d2] hover:bg-[#0082ee] text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Jaribu Tena</span>
+            </button>
+            {fallbackChannel && onSwitchChannel && fallbackChannel.id !== channel.id && (
+              <button
+                onClick={() => onSwitchChannel(fallbackChannel)}
+                className="py-2.5 px-5 rounded-xl bg-[#1ce783] hover:bg-[#18cf75] text-[#04120b] font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>Tazama {fallbackChannel.name}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 

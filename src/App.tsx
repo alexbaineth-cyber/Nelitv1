@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { CHANNELS_DATA, Channel } from './data/channels.ts';
 import { findChannelFromRoute, getChannelRouteSlug } from './utils/channelRoute.ts';
@@ -124,9 +124,55 @@ function MainApp() {
     }
   });
 
+  const [offlineIds, setOfflineIds] = useState<Set<string>>(() => new Set());
+  const [proxyPreferredIds, setProxyPreferredIds] = useState<Set<string>>(() => new Set());
+
   useEffect(() => {
     warmLiveCdnToken();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const syncHealth = async () => {
+      try {
+        const resp = await fetch('/api/channels/health', { cache: 'no-store' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!active || !data?.success) return;
+        if (Array.isArray(data.offlineIds)) {
+          setOfflineIds(new Set(data.offlineIds));
+        }
+        if (Array.isArray(data.proxyPreferredIds)) {
+          setProxyPreferredIds(new Set(data.proxyPreferredIds));
+        }
+      } catch {}
+    };
+    void syncHealth();
+    const timer = setInterval(syncHealth, 120_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const healthyChannels = useMemo<Channel[]>(() => {
+    const annotated = CHANNELS_DATA.map((ch) => ({
+      ...ch,
+      preferProxy: proxyPreferredIds.has(ch.id) || ch.preferProxy,
+      isOnline: !offlineIds.has(ch.id)
+    }));
+    const filtered = annotated.filter((ch) => !offlineIds.has(ch.id));
+    return filtered.length > 0 ? filtered : annotated;
+  }, [offlineIds, proxyPreferredIds]);
+
+  const resolvedSelectedChannel = useMemo<Channel>(() => {
+    const base = selectedChannel || healthyChannels[0] || CHANNELS_DATA[0];
+    return {
+      ...base,
+      preferProxy: proxyPreferredIds.has(base.id) || base.preferProxy,
+      isOnline: !offlineIds.has(base.id)
+    };
+  }, [selectedChannel, healthyChannels, offlineIds, proxyPreferredIds]);
 
   const handleSplashComplete = useCallback(() => {
     setShowSplash(false);
@@ -256,16 +302,16 @@ function MainApp() {
       <main className="flex-1">
         {activeTab === 'home' && (
           <HomePage
-            channels={CHANNELS_DATA}
+            channels={healthyChannels}
             onSelectChannel={handleSelectChannel}
             onNavigateToPremium={() => navigateToTab('account')}
           />
         )}
 
-        {activeTab === 'watch' && (selectedChannel || CHANNELS_DATA[0]) && (
+        {activeTab === 'watch' && resolvedSelectedChannel && (
           <WatchPage
-            currentChannel={selectedChannel || CHANNELS_DATA[0]}
-            channels={CHANNELS_DATA}
+            currentChannel={resolvedSelectedChannel}
+            channels={healthyChannels}
             onBack={() => navigateToTab('home')}
             onSelectChannel={handleSelectChannel}
             onNavigateToPremium={() => navigateToTab('account')}
@@ -275,7 +321,7 @@ function MainApp() {
 
         {activeTab === 'search' && (
           <SearchPage
-            channels={CHANNELS_DATA}
+            channels={healthyChannels}
             onSelectChannel={handleSelectChannel}
           />
         )}
@@ -330,7 +376,7 @@ function MainApp() {
 
         {activeTab === 'embed' && (
           <EmbedStudioPage
-            channels={CHANNELS_DATA}
+            channels={healthyChannels}
             onBack={() => navigateToTab('home')}
             onNavigateToApi={() => navigateToTab('api')}
           />

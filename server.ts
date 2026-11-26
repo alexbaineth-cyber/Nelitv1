@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import nodeCrypto from 'crypto';
 import { Readable } from 'stream';
 import dotenv from 'dotenv';
@@ -12,10 +12,23 @@ import { NELI_API_KEY, signClientToken, verifyClientToken } from './src/server/a
 import { registerStreamGeneratorRoutes } from './src/server/streamGeneratorRoutes.ts';
 import { StreamGeneratorStore } from './src/server/streamGeneratorStore.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
+import {
+  channelHealthGuardian,
+  manifestEdgeCache,
+  segmentEdgeCache
+} from './src/server/streamResilience.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
 
 dotenv.config();
+
+// Global Crash Shield: prevent transient upstream socket resets or rejected promises from killing the server
+process.on('uncaughtException', (err) => {
+  console.error('[NeliTv CrashShield uncaughtException]:', err?.message || err);
+});
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[NeliTv CrashShield unhandledRejection]:', reason?.message || reason);
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -840,6 +853,9 @@ setInterval(() => {
   void triggerBackgroundTokenRefresh('').catch(() => {});
 }, TOKEN_SOFT_TTL_MS);
 
+// Start 24/7 Channel Health Guardian
+channelHealthGuardian.start();
+
 // InMobi authorized digital sellers (ads.txt) endpoint
 const INMOBI_ADS_TXT_FALLBACK = `inmobi.com, 6db4aff5416d4bb7b0ba0b274749cc7c, DIRECT, 83e75a7ae333ca9d
 rubiconproject.com, 12266, RESELLER, 0bfd66d529a55807
@@ -952,12 +968,15 @@ registerStreamGeneratorRoutes(
   new StreamGeneratorStore(supabase)
 );
 
-// Block all direct / public exposure of /api/channels and /api/cdn-token
+// Block all direct / public exposure of /api/channels and /api/cdn-token (except /api/channels/health status)
 app.all([
   '/api/channels', '/api/channels/*',
   '/api/cdn-token', '/api/cdn-token/*',
   '/cdn-token', '/channels'
-], (req: Request, res: Response) => {
+], (req: Request, res: Response, next: NextFunction) => {
+  if (req.path === '/api/channels/health') {
+    return next();
+  }
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -986,10 +1005,19 @@ function buildLiveAzamChannelForApp(
     ch.streamUrl.includes('cdn77.org')
   );
 
+  const healthRec = channelHealthGuardian.getRecord(ch.id);
+  const isOnline = healthRec ? healthRec.online : ch.isActive !== false;
+  const preferProxy = healthRec ? healthRec.needsProxy : false;
+  const latencyMs = healthRec ? healthRec.latencyMs : null;
+
   if (!isAzam) {
+    const proxyStreamUrl = `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(ch.streamUrl)}&pt=${encodeURIComponent(proxyTicket)}`;
     return {
       ...ch,
       slug,
+      isOnline,
+      preferProxy,
+      latencyMs,
       drmScheme: ch.clearKeys ? 'clearkey' : 'none',
       drmInfo: ch.clearKeys
         ? {
@@ -999,7 +1027,7 @@ function buildLiveAzamChannelForApp(
             keys: ch.clearKeys
           }
         : null,
-      proxyStreamUrl: `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(ch.streamUrl)}&pt=${encodeURIComponent(proxyTicket)}`
+      proxyStreamUrl
     };
   }
 
@@ -1018,6 +1046,9 @@ function buildLiveAzamChannelForApp(
   return {
     ...ch,
     slug,
+    isOnline,
+    preferProxy: false,
+    latencyMs,
     streamUrl: freshUrl,
     tokenizedUrl: freshUrl,
     drmScheme: ch.clearKeys ? 'clearkey' : 'none',
@@ -1044,11 +1075,12 @@ let cachedLiveChannelsMemo: {
   channelsJson: string;
 } | null = null;
 
-function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
+function getMemoizedLiveChannels(tokenData: CdnTokenRecord, includeOffline = false) {
   const now = Date.now();
   const exposedExp = getSerializedExp(tokenData);
   const isPermanent = tokenData.cdnHost.includes('cdn77.org');
-  const key = `${tokenData.token}|${tokenData.cdnHost}|${exposedExp}`;
+  const healthSnap = channelHealthGuardian.getSnapshot();
+  const key = `${tokenData.token}|${tokenData.cdnHost}|${exposedExp}|${includeOffline ? 'all' : 'live'}|${healthSnap.onlineCount}`;
   if (
     cachedLiveChannelsMemo &&
     cachedLiveChannelsMemo.key === key &&
@@ -1058,7 +1090,8 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
   }
 
   const proxyTicket = signClientToken({ scope: 'player-proxy', client: 'nelitv-app' }, 12 * 3600);
-  const liveChannels = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
+  const builtAll = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
+  const liveChannels = includeOffline ? builtAll : builtAll.filter((c) => c.isOnline !== false);
 
   const channelsJson = JSON.stringify({
     success: true,
@@ -1070,6 +1103,7 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
     neverExpires: isPermanent,
     source: tokenData.source,
     total: liveChannels.length,
+    offlineFilteredCount: builtAll.length - liveChannels.length,
     data: liveChannels,
     channels: liveChannels
   });
@@ -1093,6 +1127,7 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
     },
     clearKeys: ALL_KNOWN_CLEAR_KEYS,
     totalChannels: liveChannels.length,
+    offlineFilteredCount: builtAll.length - liveChannels.length,
     channels: liveChannels,
     data: liveChannels,
     endpoints: {
@@ -1100,6 +1135,7 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
       channels: `${PUBLIC_SITE_URL}/baynithalex/api/channels`,
       appSync: `${PUBLIC_SITE_URL}/baynithalex/api/app`,
       proxyStream: `${PUBLIC_SITE_URL}/api/proxy-stream`,
+      healthCheck: `${PUBLIC_SITE_URL}/api/channels/health`,
       playerEmbed: `${PUBLIC_SITE_URL}/embed/{slug}`
     }
   });
@@ -1114,6 +1150,45 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord) {
   };
   return cachedLiveChannelsMemo;
 }
+
+// 0.0 High-Availability Server Health & Live Channel Guardian Endpoints
+app.get(['/api/health', '/healthz'], (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const snap = channelHealthGuardian.getSnapshot();
+  res.json({
+    ok: true,
+    status: 'healthy',
+    server: 'NeliTv High-Availability Relay',
+    uptimeSeconds: Math.round(process.uptime()),
+    memoryRssMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+    cdnHost: cachedCdnToken.cdnHost,
+    manifestCache: manifestEdgeCache.getStats(),
+    segmentCache: segmentEdgeCache.getStats(),
+    channels: {
+      total: snap.total,
+      onlineCount: snap.onlineCount,
+      offlineCount: snap.offlineCount,
+      lastSweepAt: snap.lastSweepAt
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/channels/health', (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+  const snap = channelHealthGuardian.getSnapshot();
+  res.json({
+    success: true,
+    total: snap.total,
+    onlineCount: snap.onlineCount,
+    offlineCount: snap.offlineCount,
+    lastSweepAt: snap.lastSweepAt,
+    isScanning: snap.isScanning,
+    onlineIds: snap.onlineIds,
+    offlineIds: snap.offlineIds,
+    proxyPreferredIds: snap.proxyPreferredIds
+  });
+});
 
 // 0. NeliTv App Server Index
 app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Response) => {
@@ -1152,8 +1227,9 @@ app.get(['/baynithalex/api', '/baynithalex/api/'], async (req: Request, res: Res
 // 1. NeliTv App Server Channels Endpoint (Pre-serialized <1ms response + ClearKeys + Proxy URLs)
 app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
+  const includeOffline = req.query.includeOffline === '1' || req.query.all === '1';
   const tokenData = await getOrFetchCdnToken(force);
-  const { channelsJson } = getMemoizedLiveChannels(tokenData);
+  const { channelsJson } = getMemoizedLiveChannels(tokenData, includeOffline);
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
@@ -1163,8 +1239,9 @@ app.get('/baynithalex/api/channels', async (req: Request, res: Response) => {
 // 1.1 Dedicated NeliTv App Server All-in-One Bootstrap / Sync Endpoint
 app.get(['/baynithalex/api/app', '/baynithalex/api/bootstrap'], async (req: Request, res: Response) => {
   const force = req.query.refresh === 'true' || req.query.fresh === '1';
+  const includeOffline = req.query.includeOffline === '1' || req.query.all === '1';
   const tokenData = await getOrFetchCdnToken(force);
-  const { appJson } = getMemoizedLiveChannels(tokenData);
+  const { appJson } = getMemoizedLiveChannels(tokenData, includeOffline);
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
@@ -1336,9 +1413,9 @@ async function fetchUpstreamWithAutoHeal(
     headers['Range'] = rangeHeader;
   }
 
-  const doFetch = async (urlToFetch: string) => {
+  const doFetchOnce = async (urlToFetch: string, timeoutMs = 8500) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9500);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch(urlToFetch, {
         method: method === 'HEAD' ? 'HEAD' : 'GET',
@@ -1350,23 +1427,70 @@ async function fetchUpstreamWithAutoHeal(
     }
   };
 
+  const doFetchWithRetries = async (urlToFetch: string): Promise<globalThis.Response> => {
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const resp = await doFetchOnce(urlToFetch, attempt === 0 ? 8000 : 9500);
+        if (resp.ok || (resp.status >= 400 && resp.status < 500 && resp.status !== 429 && resp.status !== 408)) {
+          return resp;
+        }
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, attempt === 0 ? 180 : 420));
+          continue;
+        }
+        return resp;
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, attempt === 0 ? 180 : 420));
+        }
+      }
+    }
+    throw lastErr || new Error('Upstream fetch failed');
+  };
+
   let activeUrl = targetUrl;
-  let response = await doFetch(activeUrl);
+  let response: globalThis.Response | null = null;
+  let initialErr: any = null;
+
+  try {
+    response = await doFetchWithRetries(activeUrl);
+  } catch (err: any) {
+    initialErr = err;
+  }
 
   const parsed = new URL(targetUrl);
-  if (
-    (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) &&
-    parsed.hostname.includes('azamtvltd.co.tz')
-  ) {
-    const freshData = await getOrFetchCdnToken(true);
-    if (freshData.cdnHost.includes('cdn77.org')) {
+  const failedStatus = !response || response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500;
+
+  // Bidirectional Azam Failover: azamtvltd <-> cdn77.org
+  if (failedStatus && parsed.hostname.includes('azamtvltd.co.tz')) {
+    try {
       const cleanPath = parsed.pathname.replace(/^\/tok_[^/]+/, '');
-      activeUrl = `${PERMANENT_CDN77_HOST}${cleanPath}${parsed.search}`;
-      response = await doFetch(activeUrl);
-    } else if (freshData?.token && /\/tok_[^/]+/.test(activeUrl)) {
-      activeUrl = activeUrl.replace(/\/tok_[^/]+/, `/tok_${freshData.token}`);
-      response = await doFetch(activeUrl);
-    }
+      const cdn77Url = `${PERMANENT_CDN77_HOST}${cleanPath}${parsed.search}`;
+      const r2 = await doFetchWithRetries(cdn77Url);
+      if (r2.ok || !response) {
+        activeUrl = cdn77Url;
+        response = r2;
+      }
+    } catch {}
+  } else if (failedStatus && parsed.hostname.includes('cdn77.org')) {
+    try {
+      const backupData = await getOrFetchCdnToken(true, 'cdn77');
+      if (backupData.cdnHost.includes('azamtvltd') && backupData.token.includes('.')) {
+        const cleanPath = parsed.pathname.replace(/^\/tok_[^/]+/, '');
+        const backupUrl = `${backupData.cdnHost.replace(/\/+$/, '')}/tok_${backupData.token}${cleanPath}${parsed.search}`;
+        const r2 = await doFetchWithRetries(backupUrl);
+        if (r2.ok || !response) {
+          activeUrl = backupUrl;
+          response = r2;
+        }
+      }
+    } catch {}
+  }
+
+  if (!response) {
+    throw initialErr || new Error('All upstream origins unavailable');
   }
 
   return { response, activeUrl };
@@ -1431,7 +1555,7 @@ app.all('/api/proxy-relay/:dirToken/*', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type, X-Neli-Cache');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -1457,11 +1581,31 @@ app.all('/api/proxy-relay/:dirToken/*', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Host not allowed' });
     }
 
-    const { response } = await fetchUpstreamWithAutoHeal(
-      targetUrl,
-      req.method,
-      req.headers.range as string | undefined
-    );
+    const rangeHeader = req.headers.range as string | undefined;
+    if (req.method === 'GET' && !rangeHeader) {
+      const segKey = `relay:${targetUrl}`;
+      const alreadyCached = Boolean(segmentEdgeCache.get(segKey));
+      const entry = await segmentEdgeCache.coalesce(segKey, async () => {
+        const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
+        if (!response.ok) {
+          throw Object.assign(new Error(`Upstream segment HTTP ${response.status}`), { upstreamStatus: response.status });
+        }
+        const buf = Buffer.from(await response.arrayBuffer());
+        const ctype = response.headers.get('content-type') || 'video/mp4';
+        return segmentEdgeCache.set(segKey, buf, ctype, response.status);
+      });
+      if (entry) {
+        res.status(entry.status);
+        if (entry.contentType) res.setHeader('Content-Type', entry.contentType);
+        res.setHeader('Content-Length', String(entry.bytes));
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'public, max-age=15');
+        res.setHeader('X-Neli-Cache', alreadyCached ? 'hit' : 'miss');
+        return res.send(entry.buffer);
+      }
+    }
+
+    const { response } = await fetchUpstreamWithAutoHeal(targetUrl, req.method, rangeHeader);
 
     res.status(response.status);
     const contentType = response.headers.get('content-type') || '';
@@ -1485,7 +1629,9 @@ app.all('/api/proxy-relay/:dirToken/*', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.warn('[Proxy relay error]:', err.message);
-    res.status(502).json({ error: 'Proxy relay failed: ' + err.message });
+    if (!res.headersSent) {
+      res.status(err?.upstreamStatus || 502).json({ error: 'Proxy relay failed: ' + err.message });
+    }
   }
 });
 
@@ -1494,7 +1640,7 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type, X-Neli-Cache');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -1519,10 +1665,123 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Host not allowed' });
     }
 
+    const proxyOrigin = resolveProxyPublicOrigin(req);
+    const pt = typeof req.query.pt === 'string' ? req.query.pt : '';
+    const ptParam = pt ? `&pt=${encodeURIComponent(pt)}` : '&app=nelitv';
+    const lowerUrl = targetUrl.toLowerCase();
+    const looksLikeMpd = lowerUrl.includes('.mpd');
+    const looksLikeHls = lowerUrl.includes('.m3u8');
+    const manifestCacheKey = `${proxyOrigin}|${ptParam}|${req.query.directSegments === '1' ? 'ds1' : 'ds0'}|${req.query.raw === '1' ? 'raw1' : 'raw0'}|${targetUrl}`;
+
+    if (req.method === 'GET' && (looksLikeMpd || looksLikeHls)) {
+      const cachedFresh = manifestEdgeCache.getFresh(manifestCacheKey);
+      if (cachedFresh) {
+        res.setHeader('Content-Type', cachedFresh.contentType);
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
+        res.setHeader('X-Neli-Cache', 'hit');
+        return res.status(200).send(cachedFresh.body);
+      }
+
+      try {
+        const entry = await manifestEdgeCache.coalesce(manifestCacheKey, async () => {
+          const { response, activeUrl: activeTargetUrl } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
+          if (!response.ok) {
+            throw Object.assign(new Error(`Upstream manifest HTTP ${response.status}`), { upstreamStatus: response.status });
+          }
+          const contentType = response.headers.get('content-type') || '';
+          const isMpdManifest = contentType.includes('dash+xml') || activeTargetUrl.toLowerCase().includes('.mpd');
+          const isHlsManifest =
+            contentType.includes('mpegurl') ||
+            contentType.includes('x-mpegurl') ||
+            activeTargetUrl.toLowerCase().includes('.m3u8');
+
+          const rawText = await response.text();
+          if (isMpdManifest) {
+            const baseDir = activeTargetUrl.substring(0, activeTargetUrl.lastIndexOf('/') + 1);
+            const useDirectSegments = req.query.directSegments === '1';
+            const segmentBaseUrl = useDirectSegments
+              ? baseDir
+              : `${proxyOrigin}/api/proxy-relay/${createSignedProxyDirToken(baseDir, pt)}/`;
+            const normalized = normalizeDashMpdForPlayback(rawText, segmentBaseUrl, {
+              raw: req.query.raw === '1',
+              keepSubtitles: req.query.keepSubtitles === '1'
+            });
+            return manifestEdgeCache.set(manifestCacheKey, normalized, 'application/dash+xml; charset=utf-8');
+          }
+
+          if (isHlsManifest || rawText.includes('#EXTM3U')) {
+            const baseOriginUrl = response.url || activeTargetUrl;
+            const makeProxyUrl = (absOrRel: string): string => {
+              try {
+                const resolved = new URL(absOrRel, baseOriginUrl).toString();
+                return `${proxyOrigin}/api/proxy-stream?url=${encodeURIComponent(resolved)}${ptParam}`;
+              } catch {
+                return absOrRel;
+              }
+            };
+            const rewritten = rawText
+              .split(/\r?\n/)
+              .map((line) => {
+                const trimmed = line.trim();
+                if (!trimmed) return line;
+                if (trimmed.startsWith('#')) {
+                  return line.replace(/URI="([^"]+)"/gi, (_m, rel) => `URI="${makeProxyUrl(rel)}"`);
+                }
+                return makeProxyUrl(trimmed);
+              })
+              .join('\n');
+            return manifestEdgeCache.set(manifestCacheKey, rewritten, 'application/vnd.apple.mpegurl; charset=utf-8');
+          }
+
+          return null;
+        });
+
+        if (entry) {
+          res.setHeader('Content-Type', entry.contentType);
+          res.setHeader('Cache-Control', 'no-store, max-age=0');
+          res.setHeader('X-Neli-Cache', 'miss');
+          return res.status(200).send(entry.body);
+        }
+      } catch (manifestErr: any) {
+        const staleFallback = manifestEdgeCache.getStaleFallback(manifestCacheKey);
+        if (staleFallback) {
+          res.setHeader('Content-Type', staleFallback.contentType);
+          res.setHeader('Cache-Control', 'no-store, max-age=0');
+          res.setHeader('X-Neli-Cache', 'stale-fallback');
+          return res.status(200).send(staleFallback.body);
+        }
+        throw manifestErr;
+      }
+    }
+
+    const rangeHeader = req.headers.range as string | undefined;
+    if (req.method === 'GET' && !rangeHeader && !looksLikeMpd && !looksLikeHls) {
+      const segKey = `seg:${targetUrl}`;
+      const alreadyCached = Boolean(segmentEdgeCache.get(segKey));
+      const cachedSeg = await segmentEdgeCache.coalesce(segKey, async () => {
+        const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
+        if (!response.ok) {
+          throw Object.assign(new Error(`Upstream segment HTTP ${response.status}`), { upstreamStatus: response.status });
+        }
+        const buf = Buffer.from(await response.arrayBuffer());
+        const ctype = response.headers.get('content-type') || 'application/octet-stream';
+        return segmentEdgeCache.set(segKey, buf, ctype, response.status);
+      });
+      if (cachedSeg) {
+        res.status(cachedSeg.status);
+        if (cachedSeg.contentType) res.setHeader('Content-Type', cachedSeg.contentType);
+        res.setHeader('Content-Length', String(cachedSeg.bytes));
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cache-Control', 'public, max-age=15');
+        res.setHeader('X-Neli-Cache', alreadyCached ? 'hit' : 'miss');
+        return res.send(cachedSeg.buffer);
+      }
+    }
+
     const { response, activeUrl: activeTargetUrl } = await fetchUpstreamWithAutoHeal(
       targetUrl,
       req.method,
-      req.headers.range as string | undefined
+      rangeHeader
     );
 
     res.status(response.status);
@@ -1554,10 +1813,6 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     if (req.method === 'HEAD') {
       return res.end();
     }
-
-    const proxyOrigin = resolveProxyPublicOrigin(req);
-    const pt = typeof req.query.pt === 'string' ? req.query.pt : '';
-    const ptParam = pt ? `&pt=${encodeURIComponent(pt)}` : '&app=nelitv';
 
     if (isMpdManifest) {
       res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -1610,7 +1865,9 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     console.warn('[Proxy stream error]:', err.message);
-    res.status(502).json({ error: 'Proxy failed: ' + err.message });
+    if (!res.headersSent) {
+      res.status(err?.upstreamStatus || 502).json({ error: 'Proxy failed: ' + err.message });
+    }
   }
 });
 

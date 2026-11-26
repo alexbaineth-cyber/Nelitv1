@@ -22,6 +22,7 @@ import {
   safeFetchWithRedirectValidation,
   validateExternalStreamUrl
 } from './ssrfGuard.ts';
+import { manifestEdgeCache } from './streamResilience.ts';
 
 interface StreamGeneratorRouteDeps {
   verifyClientToken: (token: string) => Record<string, any> | null;
@@ -777,22 +778,43 @@ export function registerStreamGeneratorRoutes(
       const allowlist = await store.getAllowlist();
       const sourceHost = new URL(record.source_url).hostname;
       const startedAt = Date.now();
+      const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
+      const masterCacheKey = `gen:master:${streamId}:${relayBaseUrl}`;
+
+      const serveMasterStaleIfAvailable = (reason: string): boolean => {
+        if (req.method !== 'GET') return false;
+        const stale = manifestEdgeCache.getStaleFallback(masterCacheKey);
+        if (!stale) return false;
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+        setNoCachePlaylistHeaders(res);
+        res.setHeader('X-Neli-Cache', 'stale-fallback');
+        res.setHeader('X-Neli-Fallback-Reason', reason);
+        res.status(200).send(stale.body);
+        return true;
+      };
 
       try {
-        const { response, finalUrl } = await safeFetchWithRedirectValidation(record.source_url, {
-          method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-          timeoutMs: 9000,
-          allowlist,
-          enforceAllowlist: true,
-          sameOriginHostOnly: sourceHost,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-            Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*'
-          }
-        });
+        const { response, finalUrl } = await fetchUpstreamWithRetry(
+          record.source_url,
+          {
+            method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+            timeoutMs: 9000,
+            allowlist,
+            enforceAllowlist: true,
+            sameOriginHostOnly: sourceHost,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+              Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*'
+            }
+          },
+          2
+        );
 
         const elapsed = Math.max(1, Date.now() - startedAt);
         if (!response.ok) {
+          if (serveMasterStaleIfAvailable(`http-${response.status}`)) {
+            return;
+          }
           record.status = 'offline';
           record.upstream_http_status = response.status;
           record.response_time_ms = elapsed;
@@ -824,6 +846,9 @@ export function registerStreamGeneratorRoutes(
 
         const playlistText = await response.text();
         if (!playlistText.includes('#EXTM3U')) {
+          if (serveMasterStaleIfAvailable('invalid-m3u8')) {
+            return;
+          }
           record.status = 'offline';
           record.last_error = 'Upstream response missing #EXTM3U header';
           await store.saveUpdatedStream(record);
@@ -833,7 +858,6 @@ export function registerStreamGeneratorRoutes(
           });
         }
 
-        const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
         const rewritten = rewriteHlsPlaylist(
           playlistText,
           finalUrl,
@@ -842,8 +866,17 @@ export function registerStreamGeneratorRoutes(
           record.playback_token,
           record.expires_at_ms
         );
+        manifestEdgeCache.set(
+          masterCacheKey,
+          rewritten,
+          'application/vnd.apple.mpegurl; charset=utf-8'
+        );
+        res.setHeader('X-Neli-Cache', 'live');
         return res.status(200).send(rewritten);
       } catch (fetchErr: any) {
+        if (serveMasterStaleIfAvailable(fetchErr?.name === 'AbortError' ? 'timeout' : 'network-blip')) {
+          return;
+        }
         const elapsed = Math.max(1, Date.now() - startedAt);
         const isTimeout = fetchErr?.name === 'AbortError';
         record.status = 'offline';
@@ -939,6 +972,20 @@ export function registerStreamGeneratorRoutes(
       }
 
       const ext = inferExtensionFromUrl(decodedTarget.url, 'ts');
+      const isPlaylistExt = ext === 'm3u8' || ext === 'm3u';
+      const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
+      const subPlaylistCacheKey = `gen:media:${streamId}:${decodedTarget.url}:${relayBaseUrl}`;
+
+      const serveSubStaleIfAvailable = (): boolean => {
+        if (!isPlaylistExt || req.method !== 'GET') return false;
+        const stale = manifestEdgeCache.getStaleFallback(subPlaylistCacheKey);
+        if (!stale) return false;
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+        setNoCachePlaylistHeaders(res);
+        res.setHeader('X-Neli-Cache', 'stale-fallback');
+        res.status(200).send(stale.body);
+        return true;
+      };
 
       try {
         let { response, finalUrl } = await fetchUpstreamWithRetry(
@@ -949,14 +996,14 @@ export function registerStreamGeneratorRoutes(
             enforceAllowlist: false,
             headers: upstreamHeaders
           },
-          1
+          isPlaylistExt ? 2 : 1
         );
 
         // Self-healing live playlist refresh: if an upstream CDN rotated its session/media playlist URL,
         // re-fetch record.source_url once and extract a fresh active media playlist transparently.
         if (
           !response.ok &&
-          (ext === 'm3u8' || ext === 'm3u') &&
+          isPlaylistExt &&
           req.method === 'GET' &&
           (response.status === 403 || response.status === 404 || response.status === 410 || response.status >= 500)
         ) {
@@ -1000,17 +1047,20 @@ export function registerStreamGeneratorRoutes(
                 } else {
                   res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
                   setNoCachePlaylistHeaders(res);
-                  const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
-                  return res.status(200).send(
-                    rewriteHlsPlaylist(
-                      masterBody,
-                      masterFetch.finalUrl,
-                      relayBaseUrl,
-                      record.stream_id,
-                      record.playback_token,
-                      record.expires_at_ms
-                    )
+                  const rewrittenFresh = rewriteHlsPlaylist(
+                    masterBody,
+                    masterFetch.finalUrl,
+                    relayBaseUrl,
+                    record.stream_id,
+                    record.playback_token,
+                    record.expires_at_ms
                   );
+                  manifestEdgeCache.set(
+                    subPlaylistCacheKey,
+                    rewrittenFresh,
+                    'application/vnd.apple.mpegurl; charset=utf-8'
+                  );
+                  return res.status(200).send(rewrittenFresh);
                 }
               }
             }
@@ -1018,6 +1068,7 @@ export function registerStreamGeneratorRoutes(
         }
 
         if (!response.ok && response.status !== 206) {
+          if (serveSubStaleIfAvailable()) return;
           return res.status(502).json({
             success: false,
             upstreamStatus: response.status,
@@ -1028,8 +1079,7 @@ export function registerStreamGeneratorRoutes(
         const upstreamType = response.headers.get('content-type');
         const resolvedContentType = inferContentTypeFromExtOrHeader(ext, upstreamType);
         const isPlaylist =
-          ext === 'm3u8' ||
-          ext === 'm3u' ||
+          isPlaylistExt ||
           resolvedContentType.includes('mpegurl');
 
         if (isPlaylist) {
@@ -1039,7 +1089,9 @@ export function registerStreamGeneratorRoutes(
             return res.status(200).end();
           }
           const subPlaylistText = await response.text();
-          const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
+          if (!subPlaylistText.includes('#EXTM3U') && serveSubStaleIfAvailable()) {
+            return;
+          }
           const rewrittenSub = rewriteHlsPlaylist(
             subPlaylistText,
             finalUrl,
@@ -1048,6 +1100,12 @@ export function registerStreamGeneratorRoutes(
             record.playback_token,
             record.expires_at_ms
           );
+          manifestEdgeCache.set(
+            subPlaylistCacheKey,
+            rewrittenSub,
+            'application/vnd.apple.mpegurl; charset=utf-8'
+          );
+          res.setHeader('X-Neli-Cache', 'live');
           return res.status(200).send(rewrittenSub);
         }
 
@@ -1085,6 +1143,7 @@ export function registerStreamGeneratorRoutes(
         });
         return nodeStream.pipe(res);
       } catch (segErr: any) {
+        if (serveSubStaleIfAvailable()) return;
         const isTimeout = segErr?.name === 'AbortError';
         if (!res.headersSent) {
           return res.status(isTimeout ? 504 : 502).json({
