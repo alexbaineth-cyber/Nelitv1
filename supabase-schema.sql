@@ -125,7 +125,7 @@ INSERT INTO public.nelitv_subscriptions (
     expires_at = now() + INTERVAL '30 days';
 
 -- ==============================================================================
--- 7. TEMPORARY STREAM GENERATOR TABLES (Optional fallback if Upstash Redis is not connected)
+-- 7. TEMPORARY STREAM GENERATOR (SUPABASE AUTO-DELETE AFTER 5 HOURS)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.nelitv_temp_streams (
     stream_id TEXT PRIMARY KEY,
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS public.nelitv_temp_streams (
     category TEXT DEFAULT 'Live TV',
     source_url TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '5 hours'),
     expires_at_ms BIGINT NOT NULL,
     ttl_seconds INTEGER NOT NULL DEFAULT 18000,
     status TEXT NOT NULL DEFAULT 'checking',
@@ -156,11 +156,24 @@ CREATE TABLE IF NOT EXISTS public.nelitv_stream_allowlist (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.nelitv_stream_stats (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    total_generated BIGINT NOT NULL DEFAULT 0,
+    total_expired BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.nelitv_stream_stats (id, total_generated, total_expired)
+VALUES (1, 0, 0)
+ON CONFLICT (id) DO NOTHING;
+
 CREATE INDEX IF NOT EXISTS idx_nelitv_temp_streams_expires ON public.nelitv_temp_streams(expires_at);
+CREATE INDEX IF NOT EXISTS idx_nelitv_stream_tombstones_expired ON public.nelitv_stream_tombstones(expired_at);
 
 ALTER TABLE public.nelitv_temp_streams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nelitv_stream_tombstones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nelitv_stream_allowlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.nelitv_stream_stats ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Service access temp streams" ON public.nelitv_temp_streams;
 CREATE POLICY "Service access temp streams" ON public.nelitv_temp_streams FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
@@ -171,7 +184,81 @@ CREATE POLICY "Service access stream tombstones" ON public.nelitv_stream_tombsto
 DROP POLICY IF EXISTS "Service access stream allowlist" ON public.nelitv_stream_allowlist;
 CREATE POLICY "Service access stream allowlist" ON public.nelitv_stream_allowlist FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Service access stream stats" ON public.nelitv_stream_stats;
+CREATE POLICY "Service access stream stats" ON public.nelitv_stream_stats FOR ALL TO service_role, authenticated, anon USING (true) WITH CHECK (true);
+
 GRANT ALL ON TABLE public.nelitv_temp_streams TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.nelitv_stream_tombstones TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.nelitv_stream_allowlist TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.nelitv_stream_stats TO anon, authenticated, service_role;
+
+-- Automatic 5-hour expiration & storage cleanup function
+CREATE OR REPLACE FUNCTION public.cleanup_expired_nelitv_streams()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    deleted_count INTEGER := 0;
+BEGIN
+    WITH deleted AS (
+        DELETE FROM public.nelitv_temp_streams
+        WHERE expires_at <= now()
+        RETURNING stream_id
+    ),
+    recorded AS (
+        INSERT INTO public.nelitv_stream_tombstones (stream_id, expired_at)
+        SELECT stream_id, now() FROM deleted
+        ON CONFLICT (stream_id) DO NOTHING
+    )
+    SELECT COUNT(*) INTO deleted_count FROM deleted;
+
+    IF deleted_count > 0 THEN
+        UPDATE public.nelitv_stream_stats
+        SET total_expired = total_expired + deleted_count,
+            updated_at = now()
+        WHERE id = 1;
+    END IF;
+
+    -- Keep tombstones table tiny by purging tombstones older than 7 days
+    DELETE FROM public.nelitv_stream_tombstones
+    WHERE expired_at < now() - INTERVAL '7 days';
+
+    RETURN deleted_count;
+END;
+$$;
+
+-- Statement-level trigger: auto-cleans expired >5h streams on every insert/update
+CREATE OR REPLACE FUNCTION public.trigger_cleanup_expired_nelitv_streams()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    PERFORM public.cleanup_expired_nelitv_streams();
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_nelitv_auto_cleanup_expired_streams ON public.nelitv_temp_streams;
+CREATE TRIGGER trg_nelitv_auto_cleanup_expired_streams
+AFTER INSERT ON public.nelitv_temp_streams
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.trigger_cleanup_expired_nelitv_streams();
+
+-- Optional background sweep every 5 minutes via pg_cron (runs automatically if pg_cron is enabled in Supabase)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.unschedule('nelitv-cleanup-5h-streams');
+        PERFORM cron.schedule(
+            'nelitv-cleanup-5h-streams',
+            '*/5 * * * *',
+            'SELECT public.cleanup_expired_nelitv_streams();'
+        );
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
 

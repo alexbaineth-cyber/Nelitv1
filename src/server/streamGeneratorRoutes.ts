@@ -13,6 +13,7 @@ import {
   encryptRelayTarget,
   generatePlaybackToken,
   generateUnpredictableStreamId,
+  maskHostForDisplay,
   maskSourceUrlForDisplay,
   verifyPlaybackTokenConstantTime
 } from './streamRelayCrypto.ts';
@@ -69,12 +70,27 @@ function createIpRateLimiter(maxRequests: number, windowMs: number) {
 
 function resolveRelayBaseUrl(req: Request, publicSiteUrl: string): string {
   const dedicated = (process.env.STREAM_RELAY_BASE_URL || '').trim().replace(/\/+$/, '');
-  if (dedicated) return dedicated;
+  if (dedicated) {
+    try {
+      const parsed = new URL(dedicated);
+      const h = parsed.hostname.toLowerCase();
+      if (h !== 'localhost' && h !== '127.0.0.1' && h !== '::1' && parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+        return parsed.toString().replace(/\/+$/, '');
+      }
+      return dedicated;
+    } catch {
+      return dedicated;
+    }
+  }
 
-  const host = (req.get('x-forwarded-host') || req.get('host') || '').trim();
-  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  const forwardedProto = (req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
 
   if (host) {
+    const hostnameOnly = host.split(':')[0].toLowerCase();
+    const isLoopback = hostnameOnly === 'localhost' || hostnameOnly === '127.0.0.1' || hostnameOnly === '[::1]';
+    const proto = !isLoopback ? 'https' : forwardedProto === 'https' ? 'https' : req.protocol || 'http';
     return `${proto}://${host}`;
   }
   return publicSiteUrl;
@@ -92,9 +108,9 @@ function sanitizeStreamForAdmin(
   record: TempStreamRecord,
   baseUrl: string
 ) {
-  let sourceHost = 'unknown';
+  let sourceHost = 'protected';
   try {
-    sourceHost = new URL(record.source_url).hostname;
+    sourceHost = maskHostForDisplay(new URL(record.source_url).hostname);
   } catch {}
 
   const nowMs = Date.now();
@@ -149,6 +165,7 @@ function inferContentTypeFromExtOrHeader(ext: string, upstreamType: string | nul
 function rewriteHlsPlaylist(
   playlistBody: string,
   basePlaylistUrl: string,
+  relayBaseUrl: string,
   streamId: string,
   playbackToken: string,
   expiresAtMs: number
@@ -165,7 +182,7 @@ function rewriteHlsPlaylist(
 
     const ext = inferExtensionFromUrl(resolved, defaultExt);
     const enc = encryptRelayTarget(streamId, resolved, expiresAtMs);
-    return `/stream/${encodeURIComponent(streamId)}/media/${enc}.${ext}?token=${encodeURIComponent(playbackToken)}`;
+    return `${relayBaseUrl}/stream/${encodeURIComponent(streamId)}/media/${enc}.${ext}?token=${encodeURIComponent(playbackToken)}`;
   };
 
   const lines = playlistBody.split(/\r?\n/);
@@ -366,7 +383,7 @@ export function registerStreamGeneratorRoutes(
 
   app.get('/api/stream-generator/status', adminLimiter, requireAdminPortal, async (_req: Request, res: Response) => {
     try {
-      const storage = await inspectStorageStatus();
+      const storage = await inspectStorageStatus(store.getFallbackSupabase());
       const allowlist = await store.getAllowlist();
       return res.json({
         success: true,
@@ -382,7 +399,7 @@ export function registerStreamGeneratorRoutes(
   app.get('/api/stream-generator/list', adminLimiter, requireAdminPortal, async (req: Request, res: Response) => {
     try {
       const baseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
-      const storage = await inspectStorageStatus();
+      const storage = await inspectStorageStatus(store.getFallbackSupabase());
       const allowlist = await store.getAllowlist();
 
       if (!storage.configured) {
@@ -765,6 +782,8 @@ export function registerStreamGeneratorRoutes(
         await store.saveUpdatedStream(record);
 
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
         if (req.method === 'HEAD') {
           return res.status(200).end();
         }
@@ -780,9 +799,11 @@ export function registerStreamGeneratorRoutes(
           });
         }
 
+        const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
         const rewritten = rewriteHlsPlaylist(
           playlistText,
           finalUrl,
+          relayBaseUrl,
           record.stream_id,
           record.playback_token,
           record.expires_at_ms
@@ -921,14 +942,17 @@ export function registerStreamGeneratorRoutes(
 
         if (isPlaylist) {
           res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+          res.setHeader('Pragma', 'no-cache');
           if (req.method === 'HEAD') {
             return res.status(200).end();
           }
           const subPlaylistText = await response.text();
+          const relayBaseUrl = resolveRelayBaseUrl(req, deps.publicSiteUrl);
           const rewrittenSub = rewriteHlsPlaylist(
             subPlaylistText,
             finalUrl,
+            relayBaseUrl,
             record.stream_id,
             record.playback_token,
             record.expires_at_ms

@@ -561,18 +561,20 @@ export const StreamGeneratorPanel: React.FC<StreamGeneratorPanelProps> = ({ port
                     {storage.provider === 'upstash-redis'
                       ? 'Upstash Redis (Native 18,000s TTL Connected)'
                       : storage.provider === 'supabase-postgres'
-                      ? 'Supabase Postgres (Active)'
-                      : 'Upstash Redis haijaunganishwa bado'}
+                      ? 'Supabase Postgres (5-Hour Auto-Delete Active)'
+                      : 'Supabase Stream Tables Bado Hazijaanzishwa'}
                   </span>
                 </div>
                 <p className="text-slate-400 leading-relaxed">
-                  {storage.configured
-                    ? `Upstash Free Tier: ${storage.upstashFreeTier.maxStorage}, ${storage.upstashFreeTier.maxCommandsPerMonth}, ${storage.upstashFreeTier.maxBandwidthPerMonth} (${storage.upstashFreeTier.price}). Vercel Hobby: ${storage.vercelLimits.hobbyBandwidth}.`
+                  {storage.provider === 'upstash-redis'
+                    ? `Upstash Free Tier: ${storage.upstashFreeTier.maxStorage}, ${storage.upstashFreeTier.maxCommandsPerMonth}. HTTPS Mixed-Content Relay Active.`
+                    : storage.provider === 'supabase-postgres'
+                    ? 'Hifadhi ya Supabase (nelitv_temp_streams) inafuta rekodi zilizopita masaa 5 kiotomatiki ili kuhifadhi nafasi, na HTTP origins zinabadilishwa kuwa HTTPS kupitia NeliTV relay.'
                     : storage.reason}
                 </p>
                 {!storage.configured && (
                   <p className="text-amber-200/90 leading-relaxed pt-1">
-                    <strong>Hatua ya Vercel Marketplace (Bure $0/mo):</strong> Fungua Vercel Dashboard → Project → <strong>Integrations / Storage</strong> → <strong>Upstash Redis</strong> → Create Database (Free Tier: 250MB / 500k commands/mo) → Unganisha na project kisha Redeploy.
+                    <strong>Hatua ya Supabase (Bure):</strong> Fungua Supabase Dashboard → <strong>SQL Editor</strong> → nakili na u-Run sehemu ya <code>7. TEMPORARY STREAM GENERATOR</code> kutoka <code>supabase-schema.sql</code> (ina auto-delete ya masaa 5).
                   </p>
                 )}
               </div>

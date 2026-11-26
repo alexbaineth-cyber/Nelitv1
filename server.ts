@@ -10,6 +10,7 @@ import { ALL_KNOWN_CLEAR_KEYS, CHANNELS_DATA, VIFURUSHI_PLANS } from './src/data
 import { getChannelRouteSlug, findChannelFromRoute } from './src/utils/channelRoute.ts';
 import { NELI_API_KEY, signClientToken, verifyClientToken } from './src/server/authMiddleware.ts';
 import { registerStreamGeneratorRoutes } from './src/server/streamGeneratorRoutes.ts';
+import { StreamGeneratorStore } from './src/server/streamGeneratorStore.ts';
 import { isFreeAccountEmail, FREE_ACCOUNTS, FREE_PLAN_NAME, FREE_EXPIRATION_LIFETIME } from './src/data/freeAccounts.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
@@ -20,6 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', true);
 const portArgIndex = process.argv.indexOf('--port');
 const cliPort = portArgIndex !== -1 ? process.argv[portArgIndex + 1] : undefined;
 const PORT = process.env.PORT || cliPort || 3000;
@@ -940,11 +942,15 @@ app.get('/api/portal/verify', (req: Request, res: Response) => {
   });
 });
 
-registerStreamGeneratorRoutes(app, {
-  verifyClientToken,
-  extractPortalTokenFromReq,
-  publicSiteUrl: PUBLIC_SITE_URL
-});
+registerStreamGeneratorRoutes(
+  app,
+  {
+    verifyClientToken,
+    extractPortalTokenFromReq,
+    publicSiteUrl: PUBLIC_SITE_URL
+  },
+  new StreamGeneratorStore(supabase)
+);
 
 // Block all direct / public exposure of /api/channels and /api/cdn-token
 app.all([

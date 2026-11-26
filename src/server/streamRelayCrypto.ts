@@ -70,12 +70,22 @@ export function decryptRelayTarget(
   }
 }
 
+export function maskHostForDisplay(hostname: string): string {
+  const clean = hostname.trim();
+  if (!clean) return '••••';
+  const parts = clean.split('.');
+  if (parts.length >= 2) {
+    return `${parts[0].slice(0, 2)}•••.${parts[parts.length - 1]}`;
+  }
+  return `${clean.slice(0, 2)}••••`;
+}
+
 export function maskSourceUrlForDisplay(rawUrl: string): string {
   try {
     const u = new URL(rawUrl);
     const ext = u.pathname.endsWith('.m3u8') ? '.m3u8' : '';
-    return `${u.protocol}//${u.hostname}/••••${ext}`;
+    return `origin://${maskHostForDisplay(u.hostname)}/••••${ext}`;
   } catch {
-    return '••••';
+    return 'origin://••••';
   }
 }

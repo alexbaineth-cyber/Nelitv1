@@ -69,7 +69,7 @@ function getUpstashConfig(): { url: string; token: string } | null {
   return null;
 }
 
-function getSupabaseClient(): SupabaseClient | null {
+function getSupabaseClient(fallbackClient?: SupabaseClient | null): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
   const key =
     process.env.SUPABASE_SECRET_KEY ||
@@ -77,8 +77,10 @@ function getSupabaseClient(): SupabaseClient | null {
     process.env.SUPABASE_ANON_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     '';
-  if (!url || !key) return null;
-  return createClient(url, key);
+  if (url && key) {
+    return createClient(url, key);
+  }
+  return fallbackClient || null;
 }
 
 export function getBuiltinAllowlistHosts(): string[] {
@@ -139,7 +141,9 @@ async function upstashPipeline(
   return results.map((r) => r.result);
 }
 
-export async function inspectStorageStatus(): Promise<StorageStatusInfo> {
+export async function inspectStorageStatus(
+  fallbackSupabase?: SupabaseClient | null
+): Promise<StorageStatusInfo> {
   const upstash = getUpstashConfig();
   const baseInfo = {
     upstashFreeTier: {
@@ -176,7 +180,7 @@ export async function inspectStorageStatus(): Promise<StorageStatusInfo> {
     }
   }
 
-  const sb = getSupabaseClient();
+  const sb = getSupabaseClient(fallbackSupabase);
   if (sb) {
     try {
       const { error } = await sb.from('nelitv_temp_streams').select('stream_id').limit(1);
@@ -185,7 +189,7 @@ export async function inspectStorageStatus(): Promise<StorageStatusInfo> {
           provider: 'supabase-postgres',
           persistent: true,
           configured: true,
-          reason: 'Using existing Supabase Postgres table (nelitv_temp_streams). Connect Upstash Redis in Vercel Marketplace for native key TTL.',
+          reason: 'Supabase Postgres (nelitv_temp_streams) iko active na inafuta stream baada ya masaa 5 (auto-delete).',
           ...baseInfo
         };
       }
@@ -194,7 +198,7 @@ export async function inspectStorageStatus(): Promise<StorageStatusInfo> {
         persistent: false,
         configured: false,
         reason:
-          'Upstash Redis haijaunganishwa (UPSTASH_REDIS_REST_URL/TOKEN) na table ya nelitv_temp_streams bado haijaundwa kwenye Supabase.',
+          'Table ya nelitv_temp_streams bado haijawekwa kwenye Supabase SQL Editor. Weka SQL ya auto-delete (masaa 5) kwenye Supabase kisha refresh.',
         ...baseInfo
       };
     } catch {}
@@ -204,7 +208,7 @@ export async function inspectStorageStatus(): Promise<StorageStatusInfo> {
     provider: 'unconfigured',
     persistent: false,
     configured: false,
-    reason: 'Connect Upstash Redis via Vercel Marketplace (Free Tier) to enable persistent 5-hour TTL storage.',
+    reason: 'Weka SQL schema ya nelitv_temp_streams kwenye Supabase ili kuwasha hifadhi inayojifuta yenyewe baada ya masaa 5.',
     ...baseInfo
   };
 }
@@ -222,6 +226,16 @@ class StreamStorageError extends Error {
 export { StreamStorageError };
 
 export class StreamGeneratorStore {
+  private fallbackSupabase: SupabaseClient | null;
+
+  constructor(fallbackSupabase?: SupabaseClient | null) {
+    this.fallbackSupabase = fallbackSupabase || null;
+  }
+
+  getFallbackSupabase(): SupabaseClient | null {
+    return this.fallbackSupabase;
+  }
+
   private async resolveBackend(): Promise<
     | { kind: 'upstash'; cfg: { url: string; token: string } }
     | { kind: 'supabase'; sb: SupabaseClient }
@@ -230,7 +244,7 @@ export class StreamGeneratorStore {
     if (upstash) {
       return { kind: 'upstash', cfg: upstash };
     }
-    const sb = getSupabaseClient();
+    const sb = getSupabaseClient(this.fallbackSupabase);
     if (sb) {
       const { error } = await sb.from('nelitv_temp_streams').select('stream_id').limit(1);
       if (!error) {
@@ -238,7 +252,7 @@ export class StreamGeneratorStore {
       }
     }
     throw new StreamStorageError(
-      'Persistent storage (Upstash Redis) is not configured yet. Connect Upstash Redis via Vercel Marketplace or run the Supabase schema migration.',
+      'Supabase table (nelitv_temp_streams) bado haijaanzishwa. Run SQL schema kwenye Supabase SQL Editor kwanza.',
       503,
       'STORAGE_NOT_CONFIGURED'
     );
@@ -288,7 +302,20 @@ export class StreamGeneratorStore {
 
     if (deletedRows && deletedRows.length > 0) {
       try {
-        await backend.sb.rpc('increment_nelitv_expired_streams');
+        const { data: statsRow } = await backend.sb
+          .from('nelitv_stream_stats')
+          .select('total_expired')
+          .eq('id', 1)
+          .maybeSingle();
+        if (statsRow) {
+          await backend.sb
+            .from('nelitv_stream_stats')
+            .update({
+              total_expired: Number(statsRow.total_expired || 0) + deletedRows.length,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', 1);
+        }
       } catch {}
     }
   }
@@ -337,6 +364,24 @@ export class StreamGeneratorStore {
       response_time_ms: record.response_time_ms
     });
     if (error) throw new Error(error.message);
+
+    try {
+      const { data: statsRow } = await backend.sb
+        .from('nelitv_stream_stats')
+        .select('total_generated')
+        .eq('id', 1)
+        .maybeSingle();
+      if (statsRow) {
+        await backend.sb
+          .from('nelitv_stream_stats')
+          .update({
+            total_generated: Number(statsRow.total_generated || 0) + 1,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', 1);
+      }
+    } catch {}
+
     return record;
   }
 
@@ -558,17 +603,41 @@ export class StreamGeneratorStore {
 
     // Supabase Postgres path: purge expired rows strictly before returning
     const nowIso = new Date(nowMs).toISOString();
-    const { data: expiredRows } = await backend.sb
-      .from('nelitv_temp_streams')
-      .delete()
-      .lte('expires_at', nowIso)
-      .select('stream_id');
+    let rpcSucceeded = false;
+    try {
+      const { error: rpcErr } = await backend.sb.rpc('cleanup_expired_nelitv_streams');
+      if (!rpcErr) rpcSucceeded = true;
+    } catch {}
 
-    if (expiredRows && expiredRows.length > 0) {
-      await backend.sb.from('nelitv_stream_tombstones').upsert(
-        expiredRows.map((r: any) => ({ stream_id: r.stream_id, expired_at: nowIso })),
-        { onConflict: 'stream_id' }
-      );
+    if (!rpcSucceeded) {
+      const { data: expiredRows } = await backend.sb
+        .from('nelitv_temp_streams')
+        .delete()
+        .lte('expires_at', nowIso)
+        .select('stream_id');
+
+      if (expiredRows && expiredRows.length > 0) {
+        await backend.sb.from('nelitv_stream_tombstones').upsert(
+          expiredRows.map((r: any) => ({ stream_id: r.stream_id, expired_at: nowIso })),
+          { onConflict: 'stream_id' }
+        );
+        try {
+          const { data: statsRow } = await backend.sb
+            .from('nelitv_stream_stats')
+            .select('total_expired')
+            .eq('id', 1)
+            .maybeSingle();
+          if (statsRow) {
+            await backend.sb
+              .from('nelitv_stream_stats')
+              .update({
+                total_expired: Number(statsRow.total_expired || 0) + expiredRows.length,
+                updated_at: nowIso
+              })
+              .eq('id', 1);
+          }
+        } catch {}
+      }
     }
 
     const { data: activeRows } = await backend.sb
@@ -577,25 +646,41 @@ export class StreamGeneratorStore {
       .gt('expires_at', nowIso)
       .order('created_at', { ascending: false });
 
-    const { count: tombCount } = await backend.sb
-      .from('nelitv_stream_tombstones')
-      .select('stream_id', { count: 'exact', head: true });
+    let totalGeneratedCount = 0;
+    let totalExpiredCount = 0;
+    try {
+      const { data: statsRow } = await backend.sb
+        .from('nelitv_stream_stats')
+        .select('total_generated, total_expired')
+        .eq('id', 1)
+        .maybeSingle();
+      if (statsRow) {
+        totalGeneratedCount = Number(statsRow.total_generated) || 0;
+        totalExpiredCount = Number(statsRow.total_expired) || 0;
+      }
+    } catch {}
+
+    if (totalExpiredCount === 0) {
+      const { count: tombCount } = await backend.sb
+        .from('nelitv_stream_tombstones')
+        .select('stream_id', { count: 'exact', head: true });
+      totalExpiredCount = tombCount || 0;
+    }
 
     const active: TempStreamRecord[] = (activeRows || []).map((r: any) => ({
       ...r,
       expires_at_ms: Number(r.expires_at_ms) || new Date(r.expires_at).getTime()
     }));
 
-    const expiredStreams = tombCount || 0;
     const offlineStreams = active.filter((s) => s.status === 'offline').length;
     const totalPlaybackRequests = active.reduce((acc, s) => acc + (s.playback_requests || 0), 0);
 
     return {
       streams: active,
       stats: {
-        totalGenerated: active.length + expiredStreams,
+        totalGenerated: Math.max(totalGeneratedCount, active.length + totalExpiredCount),
         activeStreams: active.length,
-        expiredStreams,
+        expiredStreams: totalExpiredCount,
         offlineStreams,
         totalPlaybackRequests
       }
