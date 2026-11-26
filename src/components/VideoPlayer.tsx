@@ -86,6 +86,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [loadPercent, setLoadPercent] = useState<number>(12);
   const [isBuffering, setIsBuffering] = useState<boolean>(false);
   const [isUserPaused, setIsUserPaused] = useState<boolean>(false);
+  const [needsUserTapToPlay, setNeedsUserTapToPlay] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(() => {
     try {
@@ -285,6 +286,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     loadPercentRef.current = 12;
     setLoadPercent(12);
     setHasFirstFrame(false);
+    setNeedsUserTapToPlay(false);
     setErrorMessage(null);
     setIsBuffering(false);
     prewarmChannelConnection(channel);
@@ -321,13 +323,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     };
 
+    const markFrameReady = () => {
+      if (!isMounted) return;
+      advanceProgress(100);
+      if (!hasFirstFrameRef.current) {
+        hasFirstFrameRef.current = true;
+        setHasFirstFrame(true);
+      }
+      setIsBuffering(false);
+      clearWatchdogs();
+    };
+
     // Smooth monotonic progress ticker while network packets & decoder warm up
     progressTicker = setInterval(() => {
       if (!isMounted || hasFirstFrameRef.current) return;
       const cur = loadPercentRef.current;
       const vid = videoRef.current;
       if (vid && vid.readyState >= 2) {
-        advanceProgress(98);
+        markFrameReady();
         return;
       }
       if (cur < 35) {
@@ -373,17 +386,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       } catch {}
     };
 
-    const markFrameReady = () => {
-      if (!isMounted) return;
-      advanceProgress(100);
-      if (!hasFirstFrameRef.current) {
-        hasFirstFrameRef.current = true;
-        setHasFirstFrame(true);
-      }
-      setIsBuffering(false);
-      clearWatchdogs();
-    };
-
     const loadStream = async () => {
       // Only await cleanup when switching away from an already-initialized player
       if (shakaPlayerRef.current || hlsPlayerRef.current || hlsAudioPlayerRef.current) {
@@ -397,7 +399,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsUserPaused(false);
       advanceProgress(24);
 
-      // Automated instant play with muted policy fallback
+      // Automated instant play with muted policy fallback & explicit tap-to-play fallback
       const attemptAutoPlay = async () => {
         if (!isMounted) return;
         const vid = videoRef.current;
@@ -410,6 +412,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           await vid.play();
           setIsPlaying(true);
           setIsMuted(false);
+          setNeedsUserTapToPlay(false);
           if (vid.readyState >= 2) markFrameReady();
         } catch {
           try {
@@ -417,8 +420,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setIsMuted(true);
             await vid.play();
             setIsPlaying(true);
+            setNeedsUserTapToPlay(false);
             if (vid.readyState >= 2) markFrameReady();
-          } catch {}
+          } catch {
+            if (isMounted) {
+              setNeedsUserTapToPlay(true);
+              if (vid.readyState >= 2) markFrameReady();
+            }
+          }
         }
 
         if (channel.audioUrl && audioRef.current) {
@@ -501,58 +510,61 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
 
           player.configure({
+            preferredAudioLanguage: selectedLanguage === 'en' ? 'en' : 'sw',
             drm: {
               clearKeys: clearKeysConfig,
+              preferredKeySystems: ['org.w3.clearkey'],
               servers: {},
               retryParameters: {
                 maxAttempts: 2,
-                baseDelay: 100,
-                backoffFactor: 1.2
+                baseDelay: 150,
+                backoffFactor: 1.3
               }
             },
             streaming: {
-              bufferingGoal: 1.5,        // Minimal initial buffer for near-instant frame render
-              rebufferingGoal: 0.25,     // Sub-second resume
-              bufferBehind: 8,           // Keeps 8s behind in memory
-              safeSeekOffset: 6,         // Safe offset behind live edge so segments already exist on CDN
+              bufferingGoal: 6,
+              rebufferingGoal: 1.5,
+              bufferBehind: 12,
+              safeSeekOffset: 8,
+              startAtSegmentBoundary: true,
               gapDetectionThreshold: 0.5,
               stallEnabled: true,
-              stallThreshold: 0.5,
+              stallThreshold: 1.0,
               stallSkip: 0.25,
               segmentPrefetchLimit: 2,
               ignoreTextStreamFailures: true,
               retryParameters: {
-                maxAttempts: 2,          // Fail fast (~1.5s) instead of 40-60s black retry loops
-                baseDelay: 100,
-                backoffFactor: 1.3,
-                timeout: 6500
+                maxAttempts: 3,
+                baseDelay: 200,
+                backoffFactor: 1.4,
+                timeout: 8000
               }
             },
             manifest: {
-              defaultPresentationDelay: 8,
+              disableText: true,
+              defaultPresentationDelay: 10,
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
-                ignoreSuggestedPresentationDelay: false, // Respect origin's live edge delay so segments exist immediately!
-                clockSyncUri: ''
+                ignoreSuggestedPresentationDelay: false
               },
               retryParameters: {
-                maxAttempts: 2,
-                baseDelay: 100,
-                backoffFactor: 1.3,
-                timeout: 6500
+                maxAttempts: 3,
+                baseDelay: 200,
+                backoffFactor: 1.4,
+                timeout: 8000
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 220000,   // Starts on lightest track (~0.5s first frame), upgrades in background
+              defaultBandwidthEstimate: 280000,
               switchInterval: 3,
               bandwidthDowngradeTarget: 0.95,
               bandwidthUpgradeTarget: 0.65
             }
           });
 
-          // Register Shaka Request Filter for Permanent cdn77, Azam TV & Proxy Failover
+          // Register Shaka Request Filter for Permanent cdn77, Azam TV & Proxy Relay Failover
           player.getNetworkingEngine().clearAllRequestFilters();
           player.getNetworkingEngine().registerRequestFilter((_type: any, request: any) => {
             const currentToken = activeTokenRef.current;
@@ -562,7 +574,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             request.uris = request.uris.map((uri: string) => {
               let updatedUri = uri;
-              if (updatedUri.includes('/api/proxy-stream')) {
+              if (updatedUri.includes('/api/proxy-stream') || updatedUri.includes('/api/proxy-relay/')) {
                 return updatedUri;
               }
               if (
@@ -604,11 +616,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             });
           });
 
-          // Fast background failover if direct CDN stays black > 6.5s
+          // Background failover to clean ClearKey-normalized proxy MPD if direct CDN fails or stalls > 9s
           fastProxyFailoverTimer = setTimeout(async () => {
             if (!isMounted || hasFirstFrameRef.current || !shakaPlayerRef.current) return;
-            if (videoRef.current && videoRef.current.readyState >= 2) {
-              markFrameReady();
+            const vid = videoRef.current;
+            if (vid && (vid.readyState >= 2 || vid.buffered.length > 0)) {
+              if (vid.readyState >= 2) markFrameReady();
               return;
             }
             if (!hasTriedProxyFallback) {
@@ -620,18 +633,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 if (isMounted) await attemptAutoPlay();
               } catch {}
             }
-          }, 6500);
+          }, 9000);
 
-          // Prevent 1-minute dead black screen if upstream is unreachable
+          // Hard timeout prevents infinite 96% hang if upstream & proxy both fail
           hardTimeoutTimer = setTimeout(() => {
             if (!isMounted || hasFirstFrameRef.current) return;
             if (videoRef.current && videoRef.current.readyState >= 2) {
               markFrameReady();
               return;
             }
+            clearWatchdogs();
             setIsBuffering(false);
             setErrorMessage('Mkondo umechelewesha majibu kutoka mtandaoni. Bofya Jaribu Tena.');
-          }, 16000);
+          }, 20000);
 
           player.addEventListener('adaptation', () => {
             advanceProgress(72);
@@ -718,7 +732,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }
           };
 
-          // Fast Error Recovery (Proxy first with auto-heal, then alternate provider)
+          let shakaStreamingRetries = 0;
+
+          // Fast Error Recovery (Normalized ClearKey proxy first with auto-heal, then alternate provider, finite retries)
           player.addEventListener('error', async (event: any) => {
             const err = event.detail;
             if (!err) return;
@@ -727,8 +743,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             if (err.severity === 1) return;
             if (!isMounted) return;
 
-            // 1. Handle DRM ClearKey missing keys
-            if (err.code === 4012 || err.code === 6007 || err.code === 6008 || err.code === 6012) {
+            // 1. Handle DRM missing keys specifically before generic DRM failover
+            if (err.code === 6007 || err.code === 6008) {
               const missingKeys = (Array.isArray(err?.data) ? err.data[0] : err?.data?.[0]?.missingKeys) as string[] | string | undefined;
               if (missingKeys && missingKeys.length > 0 && channel.clearKeys) {
                 const secretKey = Object.values(channel.clearKeys)[0];
@@ -743,22 +759,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     }
                   }
                   try {
-                    player.configure({ drm: { clearKeys: updatedKeys } });
-                    await player.load(targetUrl);
+                    player.configure({ drm: { clearKeys: updatedKeys, preferredKeySystems: ['org.w3.clearkey'] } });
+                    await player.load(useSegmentProxyRef.current ? `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv` : targetUrl);
                     await attemptAutoPlay();
                     return;
                   } catch {}
                 }
               }
-              return;
             }
 
-            // 2. Fast proxy & token recovery on 429 / 403 / 401 / network error
+            // 2. Switch to normalized proxy MPD on DRM (6001-6012), MSE/Media (3014-3016), Manifest (4001-4032), or Network errors
             const httpCode = err?.data?.[1];
-            if (isAzam || httpCode === 429 || httpCode === 403 || httpCode === 401 || err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || err?.code === 4032 || err?.code === 4001 || err?.code === 4002) {
-              if (await switchToProxyFast()) return;
+            const isDrmError = err?.code >= 6001 && err?.code <= 6012;
+            const isMediaOrManifestError = (err?.code >= 3014 && err?.code <= 3016) || (err?.code >= 4001 && err?.code <= 4032);
+            const isNetworkError = err?.code === 1001 || err?.code === 1002 || err?.code === 1003 || httpCode === 429 || httpCode === 403 || httpCode === 401;
 
-              if (!hasTriedAlternateProvider) {
+            if (isDrmError || isMediaOrManifestError || isNetworkError || isAzam) {
+              if (!hasTriedProxyFallback && (await switchToProxyFast())) return;
+
+              if (isAzam && !hasTriedAlternateProvider) {
                 hasTriedAlternateProvider = true;
                 try {
                   const altToken = await recoverAlternateCdnToken(activeProviderRef.current);
@@ -766,7 +785,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   activeCdnHostRef.current = altToken.cdnHost;
                   activeProviderRef.current = altToken.provider || activeProviderRef.current;
                   targetUrl = buildPlayableStreamUrl(channel, altToken);
-                  await player.load(targetUrl);
+                  const reloadUrl = useSegmentProxyRef.current
+                    ? `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`
+                    : targetUrl;
+                  await player.load(reloadUrl);
                   setErrorMessage(null);
                   await attemptAutoPlay();
                   return;
@@ -774,9 +796,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             }
 
-            try {
-              player.retryStreaming();
-            } catch {}
+            if (shakaStreamingRetries < 2) {
+              shakaStreamingRetries += 1;
+              try {
+                if (player.retryStreaming()) return;
+              } catch {}
+            }
+
+            if (!hasFirstFrameRef.current && isMounted) {
+              clearWatchdogs();
+              setIsBuffering(false);
+              setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
+            }
           });
 
           await player.load(targetUrl);
@@ -822,12 +853,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }
       }
-      // 2. HLS STREAM (Instant lowest-level startup + background ABR upgrade)
+      // 2. HLS STREAM (Instant lowest-level startup + automatic CORS proxy failover + finite retries)
       else if (channel.streamFormat === 'hls') {
+        hardTimeoutTimer = setTimeout(() => {
+          if (!isMounted || hasFirstFrameRef.current) return;
+          if (videoRef.current && videoRef.current.readyState >= 2) {
+            markFrameReady();
+            return;
+          }
+          clearWatchdogs();
+          setIsBuffering(false);
+          setErrorMessage('Mkondo umechelewesha majibu kutoka mtandaoni. Bofya Jaribu Tena.');
+        }, 16000);
+
         if (Hls.isSupported()) {
+          let hlsNetworkRetries = 0;
+          let hlsMediaRetries = 0;
+          let hasTriedHlsProxy = targetUrl.includes('/api/proxy-stream');
+
           const hls = new Hls({
             enableWorker: true,
-            startLevel: 0,                  // Immediate start on fastest level, auto-upgrade in background
+            startLevel: 0,
             maxBufferLength: 6,
             maxMaxBufferLength: 16,
             liveSyncDurationCount: 2,
@@ -872,23 +918,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           });
 
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
-            if (data.fatal) {
-              switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
+            if (!data.fatal || !isMounted) return;
+
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              if (!hasTriedHlsProxy) {
+                hasTriedHlsProxy = true;
+                const proxiedHlsUrl = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+                targetUrl = proxiedHlsUrl;
+                try {
+                  hls.loadSource(proxiedHlsUrl);
                   hls.startLoad();
-                  break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                  hls.recoverMediaError();
-                  break;
-                default:
-                  try {
-                    hls.destroy();
-                  } catch {}
-                  if (isMounted && !hasFirstFrameRef.current) {
-                    setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
-                  }
-                  break;
+                  return;
+                } catch {}
               }
+              if (hlsNetworkRetries < 2) {
+                hlsNetworkRetries += 1;
+                hls.startLoad();
+                return;
+              }
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              if (hlsMediaRetries === 0) {
+                hlsMediaRetries += 1;
+                hls.recoverMediaError();
+                return;
+              } else if (hlsMediaRetries === 1) {
+                hlsMediaRetries += 1;
+                try { hls.swapAudioCodec(); } catch {}
+                hls.recoverMediaError();
+                return;
+              }
+            }
+
+            try {
+              hls.destroy();
+            } catch {}
+            clearWatchdogs();
+            setIsBuffering(false);
+            if (isMounted && !hasFirstFrameRef.current) {
+              setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
             }
           });
 
@@ -905,19 +972,46 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           }
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          let triedNativeProxy = targetUrl.includes('/api/proxy-stream');
           video.src = targetUrl;
           if (channel.audioUrl && audioRef.current) {
             audioRef.current.src = channel.audioUrl;
           }
-          video.addEventListener('loadedmetadata', async () => {
+          video.onloadedmetadata = async () => {
             if (isMounted) {
+              advanceProgress(72);
               await attemptAutoPlay();
             }
-          });
+          };
+          video.onerror = () => {
+            if (!isMounted) return;
+            if (!triedNativeProxy) {
+              triedNativeProxy = true;
+              const proxied = `/api/proxy-stream?url=${encodeURIComponent(targetUrl)}&app=nelitv`;
+              targetUrl = proxied;
+              video.src = proxied;
+              video.load();
+              return;
+            }
+            clearWatchdogs();
+            setIsBuffering(false);
+            setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
+          };
         }
       }
       // 3. MP4 / Direct
       else {
+        hardTimeoutTimer = setTimeout(() => {
+          if (!isMounted || hasFirstFrameRef.current) return;
+          if (videoRef.current && videoRef.current.readyState >= 2) {
+            markFrameReady();
+            return;
+          }
+          clearWatchdogs();
+          setIsBuffering(false);
+          setErrorMessage('Mkondo umechelewesha majibu kutoka mtandaoni. Bofya Jaribu Tena.');
+        }, 16000);
+
         video.src = targetUrl;
         video.onloadeddata = async () => {
           if (isMounted) {
@@ -930,6 +1024,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             markFrameReady();
             if (!isPlaying) await attemptAutoPlay();
           }
+        };
+        video.onerror = () => {
+          if (!isMounted) return;
+          clearWatchdogs();
+          setIsBuffering(false);
+          setErrorMessage('Mkondo haujibu kwa sasa. Bofya Jaribu Tena.');
         };
       }
     };
@@ -955,6 +1055,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     const handlePlay = () => {
       setIsPlaying(true);
+      setNeedsUserTapToPlay(false);
       if (video.readyState >= 2) handleFirstFrame();
     };
 
@@ -969,6 +1070,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const handlePlaying = () => {
       handleFirstFrame();
       setIsPlaying(true);
+      setNeedsUserTapToPlay(false);
     };
     const handleTimeUpdate = () => {
       if (!hasFirstFrameRef.current && (video.currentTime > 0 || video.readyState >= 2)) {
@@ -978,6 +1080,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     video.addEventListener('loadeddata', handleFirstFrame);
     video.addEventListener('canplay', handleFirstFrame);
+    video.addEventListener('canplaythrough', handleFirstFrame);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('waiting', handleWaiting);
@@ -987,6 +1090,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       video.removeEventListener('loadeddata', handleFirstFrame);
       video.removeEventListener('canplay', handleFirstFrame);
+      video.removeEventListener('canplaythrough', handleFirstFrame);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('waiting', handleWaiting);
@@ -1077,13 +1181,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Language Track Switcher
+  // Language Track Switcher (matches both 2-letter 'sw'/'en' and 3-letter 'swa'/'eng')
   const toggleLanguage = () => {
     const newLang = selectedLanguage === 'sw' ? 'en' : 'sw';
     setSelectedLanguage(newLang);
     if (shakaPlayerRef.current) {
       try {
-        shakaPlayerRef.current.selectAudioLanguage(newLang === 'sw' ? 'swa' : 'eng');
+        const langs: string[] = shakaPlayerRef.current.getAudioLanguages?.() || [];
+        const candidates = newLang === 'sw' ? ['sw', 'swa'] : ['en', 'eng'];
+        const matched = candidates.find((c) => langs.some((l) => l.toLowerCase().startsWith(c))) || candidates[0];
+        shakaPlayerRef.current.selectAudioLanguage(matched);
       } catch (e) {
         console.warn('Audio switch note:', e);
       }
@@ -1368,7 +1475,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ) : (
         <>
           {/* Ambient Channel Backdrop with Live Filling Percentage while stream connects */}
-          {!hasFirstFrame && !errorMessage && !isOffline && (
+          {!hasFirstFrame && !needsUserTapToPlay && !errorMessage && !isOffline && (
             <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#0a0f1a]">
               {channel.thumbnailUrl && (
                 <img
@@ -1470,26 +1577,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Center Play Overlay when user explicitly paused */}
-      {!isEmbedded && isUserPaused && !isBuffering && !isPaywallTriggered && !errorMessage && (
+      {/* Center Play Overlay when user explicitly paused or browser blocked autoplay */}
+      {!isEmbedded && (isUserPaused || needsUserTapToPlay) && !isBuffering && !isPaywallTriggered && !errorMessage && !isOffline && (
         <div
           data-player-ui="true"
           onClick={() => {
             setIsUserPaused(false);
+            setNeedsUserTapToPlay(false);
             if (videoRef.current) {
-              videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {
+              videoRef.current.muted = false;
+              setIsMuted(false);
+              videoRef.current.play().then(() => {
+                setIsPlaying(true);
+                if (videoRef.current && videoRef.current.readyState >= 2) {
+                  hasFirstFrameRef.current = true;
+                  setHasFirstFrame(true);
+                }
+              }).catch(() => {
                 if (videoRef.current) {
                   videoRef.current.muted = true;
-                  videoRef.current.play().then(() => setIsPlaying(true));
+                  setIsMuted(true);
+                  videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
                 }
               });
             }
           }}
-          className="absolute inset-0 z-20 flex items-center justify-center bg-[#03040a]/45 cursor-pointer"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#03040a]/55 cursor-pointer"
         >
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white text-[#0b0e14] flex items-center justify-center shadow-xl transition transform hover:scale-105 active:scale-95">
             <Play className="w-7 h-7 sm:w-9 sm:h-9 fill-[#0b0e14] ml-1" />
           </div>
+          {needsUserTapToPlay && (
+            <span className="px-3.5 py-1 rounded-full bg-black/75 border border-white/20 text-xs font-bold text-white">
+              Bonyeza Kucheza
+            </span>
+          )}
         </div>
       )}
 

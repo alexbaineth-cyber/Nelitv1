@@ -991,6 +991,14 @@ function buildLiveAzamChannelForApp(
       ...ch,
       slug,
       drmScheme: ch.clearKeys ? 'clearkey' : 'none',
+      drmInfo: ch.clearKeys
+        ? {
+            scheme: 'clearkey',
+            preferredKeySystem: 'org.w3.clearkey',
+            schemeUuid: 'e2719d58-a985-b3c9-781a-b030af78d30e',
+            keys: ch.clearKeys
+          }
+        : null,
       proxyStreamUrl: `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(ch.streamUrl)}&pt=${encodeURIComponent(proxyTicket)}`
     };
   }
@@ -1013,6 +1021,15 @@ function buildLiveAzamChannelForApp(
     streamUrl: freshUrl,
     tokenizedUrl: freshUrl,
     drmScheme: ch.clearKeys ? 'clearkey' : 'none',
+    drmInfo: ch.clearKeys
+      ? {
+          scheme: 'clearkey',
+          preferredKeySystem: 'org.w3.clearkey',
+          schemeUuid: 'e2719d58-a985-b3c9-781a-b030af78d30e',
+          keys: ch.clearKeys
+        }
+      : null,
+    codecProfile: 'avc1+mp4a',
     proxyStreamUrl: `${PUBLIC_SITE_URL}/api/proxy-stream?url=${encodeURIComponent(freshUrl)}&pt=${encodeURIComponent(proxyTicket)}`
   };
 }
@@ -1214,21 +1231,66 @@ const ALLOWED_PROXY_DOMAINS = Array.from(
   ])
 );
 
-// 1.5 Streaming Proxy (Supports NeliTv Web Player, Official NeliTv APK & ExoPlayer/Media3/WebView)
-app.all('/api/proxy-stream', async (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+// Proxy relay signing & codec/DRM normalization helpers for Web, Android App & Android TV
+const PROXY_RELAY_HMAC_SECRET = process.env.NELI_PROXY_SECRET || NELI_API_KEY;
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
+function resolveProxyPublicOrigin(req: Request): string {
+  const host = (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  const forwardedProto = (req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
+  if (host) {
+    const hostOnly = host.split(':')[0].toLowerCase();
+    const isLoopback = hostOnly === 'localhost' || hostOnly === '127.0.0.1' || hostOnly === '[::1]';
+    const proto = !isLoopback ? 'https' : forwardedProto === 'https' ? 'https' : req.protocol || 'http';
+    return `${proto}://${host}`;
   }
+  return PUBLIC_SITE_URL;
+}
 
-  // Only block explicit browser top-level address-bar HTML page navigation
+function createSignedProxyDirToken(baseDir: string, pt?: string): string {
+  const payload = JSON.stringify({ d: baseDir, pt: pt || '' });
+  const encoded = Buffer.from(payload, 'utf8').toString('base64url');
+  const sig = nodeCrypto
+    .createHmac('sha256', PROXY_RELAY_HMAC_SECRET)
+    .update(encoded)
+    .digest('base64url')
+    .slice(0, 16);
+  return `${encoded}.${sig}`;
+}
+
+function verifySignedProxyDirToken(token: string): { dir: string; pt: string } | null {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 2) return null;
+    const [encoded, sig] = parts;
+    const expectedSig = nodeCrypto
+      .createHmac('sha256', PROXY_RELAY_HMAC_SECRET)
+      .update(encoded)
+      .digest('base64url')
+      .slice(0, 16);
+    if (sig.length !== expectedSig.length) return null;
+    if (!nodeCrypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+      return null;
+    }
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!decoded?.d || typeof decoded.d !== 'string') return null;
+    return { dir: decoded.d, pt: typeof decoded.pt === 'string' ? decoded.pt : '' };
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedUpstreamHost(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  return ALLOWED_PROXY_DOMAINS.some(
+    (domain) => lower === domain || lower.endsWith('.' + domain) || lower.includes(domain)
+  );
+}
+
+function isProxyRequestAuthorized(req: Request, hasValidRelayToken = false): boolean {
   const isBrowserAddressBarNav =
     req.get('sec-fetch-mode') === 'navigate' &&
     req.get('sec-fetch-dest') === 'document';
+  if (isBrowserAddressBarNav) return false;
 
   const secFetchSite = req.get('sec-fetch-site') || '';
   const referer = req.get('referer') || req.get('origin') || '';
@@ -1244,22 +1306,201 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     req.query.app === 'nelitv' ||
     reqApiKey === NELI_API_KEY ||
     Boolean(reqApiKey && getDeveloperByApiKey(reqApiKey)) ||
-    /nelitv|exoplayer|media3|dalvik|okhttp|dart|flutter|android|ktor|retrofit|lavf|vlc|applecoremedia/i.test(userAgent);
+    /nelitv|exoplayer|media3|dalvik|okhttp|cronet|dart|flutter|android|ktor|retrofit|lavf|vlc|applecoremedia|tizen|webos|smarttv|googletv|bravia/i.test(userAgent);
 
-  const isTrustedPlayerContext =
-    !isBrowserAddressBarNav && (
-      Boolean(validTicket && validTicket.scope === 'player-proxy') ||
-      isNeliAppClient ||
-      secFetchSite === 'same-origin' ||
-      secFetchSite === 'same-site' ||
-      referer.includes('nelitv.online') ||
-      referer.includes('.run.app') ||
-      referer.includes('localhost') ||
-      (host && referer.includes(host)) ||
-      !req.headers.accept?.includes('text/html')
+  return Boolean(
+    hasValidRelayToken ||
+    (validTicket && validTicket.scope === 'player-proxy') ||
+    isNeliAppClient ||
+    secFetchSite === 'same-origin' ||
+    secFetchSite === 'same-site' ||
+    referer.includes('nelitv.online') ||
+    referer.includes('.run.app') ||
+    referer.includes('.vercel.app') ||
+    referer.includes('localhost') ||
+    (host && referer.includes(host)) ||
+    !req.headers.accept?.includes('text/html')
+  );
+}
+
+async function fetchUpstreamWithAutoHeal(
+  targetUrl: string,
+  method: string,
+  rangeHeader?: string
+): Promise<{ response: globalThis.Response; activeUrl: string }> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': '*/*'
+  };
+  if (rangeHeader) {
+    headers['Range'] = rangeHeader;
+  }
+
+  const doFetch = async (urlToFetch: string) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9500);
+    try {
+      return await fetch(urlToFetch, {
+        method: method === 'HEAD' ? 'HEAD' : 'GET',
+        headers,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let activeUrl = targetUrl;
+  let response = await doFetch(activeUrl);
+
+  const parsed = new URL(targetUrl);
+  if (
+    (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) &&
+    parsed.hostname.includes('azamtvltd.co.tz')
+  ) {
+    const freshData = await getOrFetchCdnToken(true);
+    if (freshData.cdnHost.includes('cdn77.org')) {
+      const cleanPath = parsed.pathname.replace(/^\/tok_[^/]+/, '');
+      activeUrl = `${PERMANENT_CDN77_HOST}${cleanPath}${parsed.search}`;
+      response = await doFetch(activeUrl);
+    } else if (freshData?.token && /\/tok_[^/]+/.test(activeUrl)) {
+      activeUrl = activeUrl.replace(/\/tok_[^/]+/, `/tok_${freshData.token}`);
+      response = await doFetch(activeUrl);
+    }
+  }
+
+  return { response, activeUrl };
+}
+
+/**
+ * Normalizes ClearKey-backed DASH MPDs for maximum compatibility across Web (Shaka),
+ * Android App (ExoPlayer / Media3), and Android TV:
+ * - Removes unlicensed Microsoft PlayReady / Nagra PRM / Widevine ContentProtection nodes
+ *   while preserving standard MPEG-DASH cenc + injecting W3C ClearKey UUID.
+ * - Strips fragmented wvtt MP4 subtitle AdaptationSets (which cause 96% / MediaCodec stalls on AzamOne & AzamTwo).
+ * - Injects clean path-based HTTPS <BaseURL> so relative segment templates work seamlessly.
+ */
+function normalizeDashMpdForPlayback(
+  rawXml: string,
+  baseUrlForSegments: string,
+  options: { raw?: boolean; keepSubtitles?: boolean } = {}
+): string {
+  let xml = rawXml;
+
+  if (!options.raw && /cenc:default_KID=/i.test(xml)) {
+    // Strip unlicensed PlayReady (9a04f079...), Nagra PRM (adb41c24...), and Widevine (edef8ba9...) blocks
+    xml = xml
+      .replace(
+        /<ContentProtection\b[^>]*schemeIdUri="urn:uuid:(?:9a04f079-9840-4286-ab92-e65be0885f95|adb41c24-2dbf-4a6d-958b-4457c0d27b95|edef8ba9-79d6-4ace-a3c8-27dcd51d21ed)"[^>]*>[\s\S]*?<\/ContentProtection>/gi,
+        ''
+      )
+      .replace(
+        /<ContentProtection\b[^>]*schemeIdUri="urn:uuid:(?:9a04f079-9840-4286-ab92-e65be0885f95|adb41c24-2dbf-4a6d-958b-4457c0d27b95|edef8ba9-79d6-4ace-a3c8-27dcd51d21ed)"[^>]*\/>/gi,
+        ''
+      );
+
+    // Ensure standard W3C ClearKey ContentProtection UUID is present alongside cenc
+    if (!xml.includes('e2719d58-a985-b3c9-781a-b030af78d30e')) {
+      xml = xml.replace(
+        /(<ContentProtection\b[^>]*schemeIdUri="urn:mpeg:dash:mp4protection:2011"[^>]*\/>)/gi,
+        '$1<ContentProtection schemeIdUri="urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e" value="ClearKey"/>'
+      );
+    }
+  }
+
+  // Strip wvtt MP4 subtitle AdaptationSet (known stall/codec issue on AzamOne & AzamTwo in ExoPlayer/WebView)
+  if (!options.raw && !options.keepSubtitles) {
+    xml = xml.replace(
+      /<AdaptationSet\b[^>]*\bcontentType="text"[^>]*>[\s\S]*?<\/AdaptationSet>/gi,
+      (block) => (/codecs="wvtt"|dfxp_/i.test(block) ? '' : block)
+    );
+  }
+
+  // Replace or inject <BaseURL> cleanly under <MPD>
+  if (/<BaseURL>[\s\S]*?<\/BaseURL>/i.test(xml)) {
+    xml = xml.replace(/<BaseURL>[\s\S]*?<\/BaseURL>/i, `<BaseURL>${baseUrlForSegments}</BaseURL>`);
+  } else {
+    xml = xml.replace(/<MPD([^>]*)>/i, `<MPD$1>\n  <BaseURL>${baseUrlForSegments}</BaseURL>`);
+  }
+
+  return xml;
+}
+
+// 1.5a Path-based DASH/Media Segment Relay (Used by normalized <BaseURL> for Web, Android App & TV)
+app.all('/api/proxy-relay/:dirToken/*', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  const parsedToken = verifySignedProxyDirToken(req.params.dirToken);
+  if (!parsedToken) {
+    return res.status(403).json({ error: 'Invalid proxy relay token' });
+  }
+
+  if (!isProxyRequestAuthorized(req, true)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const relPath = req.params[0] || '';
+    const qsIdx = req.originalUrl.indexOf('?');
+    const qs = qsIdx !== -1 ? req.originalUrl.slice(qsIdx) : '';
+    const targetUrl = new URL(relPath + qs, parsedToken.dir).toString();
+    const parsedTarget = new URL(targetUrl);
+
+    if (!isAllowedUpstreamHost(parsedTarget.hostname)) {
+      return res.status(403).json({ error: 'Host not allowed' });
+    }
+
+    const { response } = await fetchUpstreamWithAutoHeal(
+      targetUrl,
+      req.method,
+      req.headers.range as string | undefined
     );
 
-  if (!isTrustedPlayerContext) {
+    res.status(response.status);
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType) res.setHeader('Content-Type', contentType);
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    const acceptRanges = response.headers.get('accept-ranges');
+    if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+
+    if (req.method === 'HEAD') {
+      return res.end();
+    }
+
+    if (response.body) {
+      // @ts-ignore
+      Readable.fromWeb(response.body).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    console.warn('[Proxy relay error]:', err.message);
+    res.status(502).json({ error: 'Proxy relay failed: ' + err.message });
+  }
+});
+
+// 1.5 Streaming Proxy (Supports NeliTv Web Player, Official NeliTv APK & ExoPlayer/Media3/Android TV)
+app.all('/api/proxy-stream', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  if (!isProxyRequestAuthorized(req, false)) {
     return res.status(403).json({
       success: false,
       error: 'Access denied. Media streams are only accessible inside the official NeliTv Player or NeliTv App.',
@@ -1274,61 +1515,32 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
 
   try {
     const parsed = new URL(targetUrl);
-    if (!ALLOWED_PROXY_DOMAINS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain) || parsed.hostname.includes(domain))) {
+    if (!isAllowedUpstreamHost(parsed.hostname)) {
       return res.status(403).json({ error: 'Host not allowed' });
     }
 
-    const headers: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-    };
-
-    if (req.headers.range) {
-      headers['Range'] = req.headers.range as string;
-    }
-
-    const fetchWithTimeout = async (urlToFetch: string) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 9000);
-      try {
-        return await fetch(urlToFetch, {
-          method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-          headers,
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    let activeTargetUrl = targetUrl;
-    let response = await fetchWithTimeout(activeTargetUrl);
-
-    // Seamless auto-healing: if upstream rejects legacy Azam token with 401/403/429, swap to permanent cdn77 or fresh token & retry
-    if (
-      (response.status === 401 || response.status === 403 || response.status === 429) &&
-      parsed.hostname.includes('azamtvltd.co.tz')
-    ) {
-      const freshData = await getOrFetchCdnToken(true);
-      if (freshData.cdnHost.includes('cdn77.org')) {
-        const cleanPath = parsed.pathname.replace(/^\/tok_[^/]+/, '');
-        activeTargetUrl = `${PERMANENT_CDN77_HOST}${cleanPath}${parsed.search}`;
-        response = await fetchWithTimeout(activeTargetUrl);
-      } else if (freshData?.token && /\/tok_[^/]+/.test(activeTargetUrl)) {
-        activeTargetUrl = activeTargetUrl.replace(/\/tok_[^/]+/, `/tok_${freshData.token}`);
-        response = await fetchWithTimeout(activeTargetUrl);
-      }
-    }
+    const { response, activeUrl: activeTargetUrl } = await fetchUpstreamWithAutoHeal(
+      targetUrl,
+      req.method,
+      req.headers.range as string | undefined
+    );
 
     res.status(response.status);
 
     const contentType = response.headers.get('content-type') || '';
-    if (contentType) res.setHeader('Content-Type', contentType);
-    const isMpdManifest = contentType.includes('dash+xml') || activeTargetUrl.includes('.mpd');
+    const isMpdManifest = contentType.includes('dash+xml') || activeTargetUrl.toLowerCase().includes('.mpd');
     const isHlsManifest =
       contentType.includes('mpegurl') ||
       contentType.includes('x-mpegurl') ||
-      activeTargetUrl.includes('.m3u8');
+      activeTargetUrl.toLowerCase().includes('.m3u8');
+
+    if (isMpdManifest) {
+      res.setHeader('Content-Type', 'application/dash+xml; charset=utf-8');
+    } else if (isHlsManifest) {
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+    } else if (contentType) {
+      res.setHeader('Content-Type', contentType);
+    }
 
     if (!isMpdManifest && !isHlsManifest) {
       const contentLength = response.headers.get('content-length');
@@ -1343,39 +1555,48 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
       return res.end();
     }
 
+    const proxyOrigin = resolveProxyPublicOrigin(req);
+    const pt = typeof req.query.pt === 'string' ? req.query.pt : '';
+    const ptParam = pt ? `&pt=${encodeURIComponent(pt)}` : '&app=nelitv';
+
     if (isMpdManifest) {
       res.setHeader('Cache-Control', 'no-store, max-age=0');
-      let text = await response.text();
-      if (!text.includes('<BaseURL>')) {
-        const baseDir = activeTargetUrl.substring(0, activeTargetUrl.lastIndexOf('/') + 1);
-        text = text.replace(/<MPD([^>]*)>/, `<MPD$1>\n  <BaseURL>${baseDir}</BaseURL>`);
-      }
-      return res.send(text);
+      const rawText = await response.text();
+      const baseDir = activeTargetUrl.substring(0, activeTargetUrl.lastIndexOf('/') + 1);
+      const useDirectSegments = req.query.directSegments === '1';
+      const segmentBaseUrl = useDirectSegments
+        ? baseDir
+        : `${proxyOrigin}/api/proxy-relay/${createSignedProxyDirToken(baseDir, pt)}/`;
+
+      const normalized = normalizeDashMpdForPlayback(rawText, segmentBaseUrl, {
+        raw: req.query.raw === '1',
+        keepSubtitles: req.query.keepSubtitles === '1'
+      });
+      return res.send(normalized);
     }
 
     if (isHlsManifest) {
       res.setHeader('Cache-Control', 'no-store, max-age=0');
       const rawText = await response.text();
       const baseOriginUrl = response.url || activeTargetUrl;
+      const makeProxyUrl = (absOrRel: string): string => {
+        try {
+          const resolved = new URL(absOrRel, baseOriginUrl).toString();
+          return `${proxyOrigin}/api/proxy-stream?url=${encodeURIComponent(resolved)}${ptParam}`;
+        } catch {
+          return absOrRel;
+        }
+      };
+
       const rewritten = rawText
-        .split('\n')
+        .split(/\r?\n/)
         .map((line) => {
           const trimmed = line.trim();
           if (!trimmed) return line;
           if (trimmed.startsWith('#')) {
-            return line.replace(/URI="([^"]+)"/g, (_m, rel) => {
-              try {
-                return `URI="${new URL(rel, baseOriginUrl).toString()}"`;
-              } catch {
-                return `URI="${rel}"`;
-              }
-            });
+            return line.replace(/URI="([^"]+)"/gi, (_m, rel) => `URI="${makeProxyUrl(rel)}"`);
           }
-          try {
-            return new URL(trimmed, baseOriginUrl).toString();
-          } catch {
-            return line;
-          }
+          return makeProxyUrl(trimmed);
         })
         .join('\n');
       return res.send(rewritten);
