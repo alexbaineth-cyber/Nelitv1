@@ -69,18 +69,95 @@ function getUpstashConfig(): { url: string; token: string } | null {
   return null;
 }
 
-function getSupabaseClient(fallbackClient?: SupabaseClient | null): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key =
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    '';
-  if (url && key) {
-    return createClient(url, key);
+let cachedWorkingSupabase: SupabaseClient | null = null;
+
+function buildSupabaseCandidates(fallbackClient?: SupabaseClient | null): SupabaseClient[] {
+  const candidates: SupabaseClient[] = [];
+  const seenKeys = new Set<string>();
+  const url = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    ''
+  ).trim();
+
+  if (url) {
+    const rawKeys = [
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_SECRET_KEY,
+      process.env.SUPABASE_ANON_KEY,
+      process.env.VITE_SUPABASE_ANON_KEY,
+      process.env.SUPABASE_PUBLISHABLE_KEY,
+      process.env.SUPABASE_KEY
+    ];
+    for (const rawKey of rawKeys) {
+      const trimmed = (rawKey || '').trim();
+      if (trimmed && !seenKeys.has(trimmed)) {
+        seenKeys.add(trimmed);
+        candidates.push(createClient(url, trimmed));
+      }
+    }
   }
-  return fallbackClient || null;
+
+  if (fallbackClient) {
+    candidates.push(fallbackClient);
+  }
+
+  return candidates;
+}
+
+function formatSupabaseProbeFailure(error: any): string {
+  const code = String(error?.code || '');
+  const msg = String(error?.message || '');
+  const lower = msg.toLowerCase();
+
+  if (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    lower.includes('does not exist') ||
+    lower.includes('could not find the table')
+  ) {
+    return 'Supabase table (nelitv_temp_streams) bado haijaanzishwa. Run SQL schema kwenye Supabase SQL Editor kwanza.';
+  }
+
+  if (
+    lower.includes('unregistered api key') ||
+    lower.includes('invalid api key') ||
+    lower.includes('jwt')
+  ) {
+    return `Supabase API key kwenye server ina hitilafu (${msg}). Hakikisha SUPABASE_ANON_KEY au SUPABASE_SERVICE_ROLE_KEY ni sahihi.`;
+  }
+
+  return msg
+    ? `Hitilafu ya Supabase (nelitv_temp_streams): ${msg}`
+    : 'Supabase table (nelitv_temp_streams) bado haijaanzishwa. Run SQL schema kwenye Supabase SQL Editor kwanza.';
+}
+
+async function resolveWorkingSupabaseClient(
+  fallbackClient?: SupabaseClient | null,
+  forceVerify = false
+): Promise<{ client: SupabaseClient | null; lastError: any }> {
+  if (cachedWorkingSupabase && !forceVerify) {
+    return { client: cachedWorkingSupabase, lastError: null };
+  }
+
+  const candidates = buildSupabaseCandidates(fallbackClient);
+  let lastError: any = null;
+
+  for (const candidate of candidates) {
+    try {
+      const { error } = await candidate.from('nelitv_temp_streams').select('stream_id').limit(1);
+      if (!error) {
+        cachedWorkingSupabase = candidate;
+        return { client: candidate, lastError: null };
+      }
+      lastError = error;
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+
+  cachedWorkingSupabase = null;
+  return { client: null, lastError };
 }
 
 export function getBuiltinAllowlistHosts(): string[] {
@@ -180,35 +257,24 @@ export async function inspectStorageStatus(
     }
   }
 
-  const sb = getSupabaseClient(fallbackSupabase);
-  if (sb) {
-    try {
-      const { error } = await sb.from('nelitv_temp_streams').select('stream_id').limit(1);
-      if (!error) {
-        return {
-          provider: 'supabase-postgres',
-          persistent: true,
-          configured: true,
-          reason: 'Supabase Postgres (nelitv_temp_streams) iko active na inafuta stream baada ya masaa 5 (auto-delete).',
-          ...baseInfo
-        };
-      }
-      return {
-        provider: 'unconfigured',
-        persistent: false,
-        configured: false,
-        reason:
-          'Table ya nelitv_temp_streams bado haijawekwa kwenye Supabase SQL Editor. Weka SQL ya auto-delete (masaa 5) kwenye Supabase kisha refresh.',
-        ...baseInfo
-      };
-    } catch {}
+  const { client, lastError } = await resolveWorkingSupabaseClient(fallbackSupabase, true);
+  if (client) {
+    return {
+      provider: 'supabase-postgres',
+      persistent: true,
+      configured: true,
+      reason: 'Supabase Postgres (nelitv_temp_streams) iko active na inafuta stream baada ya masaa 5 (auto-delete).',
+      ...baseInfo
+    };
   }
 
   return {
     provider: 'unconfigured',
     persistent: false,
     configured: false,
-    reason: 'Weka SQL schema ya nelitv_temp_streams kwenye Supabase ili kuwasha hifadhi inayojifuta yenyewe baada ya masaa 5.',
+    reason: lastError
+      ? formatSupabaseProbeFailure(lastError)
+      : 'Weka SQL schema ya nelitv_temp_streams kwenye Supabase ili kuwasha hifadhi inayojifuta yenyewe baada ya masaa 5.',
     ...baseInfo
   };
 }
@@ -244,15 +310,14 @@ export class StreamGeneratorStore {
     if (upstash) {
       return { kind: 'upstash', cfg: upstash };
     }
-    const sb = getSupabaseClient(this.fallbackSupabase);
-    if (sb) {
-      const { error } = await sb.from('nelitv_temp_streams').select('stream_id').limit(1);
-      if (!error) {
-        return { kind: 'supabase', sb };
-      }
+    const { client, lastError } = await resolveWorkingSupabaseClient(this.fallbackSupabase, false);
+    if (client) {
+      return { kind: 'supabase', sb: client };
     }
     throw new StreamStorageError(
-      'Supabase table (nelitv_temp_streams) bado haijaanzishwa. Run SQL schema kwenye Supabase SQL Editor kwanza.',
+      lastError
+        ? formatSupabaseProbeFailure(lastError)
+        : 'Supabase table (nelitv_temp_streams) bado haijaanzishwa. Run SQL schema kwenye Supabase SQL Editor kwanza.',
       503,
       'STORAGE_NOT_CONFIGURED'
     );
