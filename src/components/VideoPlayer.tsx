@@ -1658,6 +1658,22 @@ function persistAbrBandwidthEstimate(bps: number) {
           }
           break;
         }
+        case 'DUCK_AUDIO': {
+          if (vid) {
+            if (detail.ducked) {
+              if ((vid as any).__preDuckVol === undefined) {
+                (vid as any).__preDuckVol = vid.volume;
+              }
+              if (!vid.muted && vid.volume > 0.14) {
+                vid.volume = 0.12;
+              }
+            } else if ((vid as any).__preDuckVol !== undefined) {
+              vid.volume = (vid as any).__preDuckVol;
+              delete (vid as any).__preDuckVol;
+            }
+          }
+          break;
+        }
         default:
           break;
       }

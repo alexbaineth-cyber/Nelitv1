@@ -406,6 +406,7 @@ function normalizeSpeechText(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s.+]/gu, ' ')
+    .replace(/\b(uh+|um+|erm+|hmm+|mhm+|ah+|eh+|ati|yaani|eee+)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

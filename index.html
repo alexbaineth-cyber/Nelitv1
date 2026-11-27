@@ -57,13 +57,18 @@
     <script>
       (function () {
         try {
-          if ('caches' in window && sessionStorage.getItem('nelitv_sw_purged_v4') !== '1') {
+          if ('caches' in window && sessionStorage.getItem('nelitv_sw_purged_v5') !== '1') {
             caches.keys().then(function (keys) {
               var legacy = keys.filter(function (k) {
-                return k === 'nelitv-pwa-v1' || k === 'nelitv-pwa-v2' || k === 'nelitv-pwa-v3';
+                return (
+                  k === 'nelitv-pwa-v1' ||
+                  k === 'nelitv-pwa-v2' ||
+                  k === 'nelitv-pwa-v3' ||
+                  k === 'nelitv-pwa-v4'
+                );
               });
               if (legacy.length > 0) {
-                sessionStorage.setItem('nelitv_sw_purged_v4', '1');
+                sessionStorage.setItem('nelitv_sw_purged_v5', '1');
                 Promise.all(legacy.map(function (k) { return caches.delete(k); })).then(function () {
                   if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.getRegistrations().then(function (regs) {

@@ -24,7 +24,7 @@
         },
         {
           "key": "Permissions-Policy",
-          "value": "camera=(), microphone=(), geolocation=()"
+          "value": "camera=(), microphone=*, geolocation=()"
         },
         {
           "key": "Strict-Transport-Security",
@@ -66,6 +66,10 @@
     {
       "source": "/server/(.*)",
       "destination": "/index.html"
+    },
+    {
+      "source": "/v1/(.*)",
+      "destination": "/api/index"
     },
     {
       "source": "/api/(.*)",

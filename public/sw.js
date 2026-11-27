@@ -1,5 +1,5 @@
 // Service worker for NeliTv Progressive Web App & Offline Playback Support
-const CACHE_NAME = 'nelitv-pwa-v4';
+const CACHE_NAME = 'nelitv-pwa-v5';
 const OFFLINE_URL = '/';
 
 const PRECACHE_ASSETS = [
@@ -61,6 +61,7 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/node_modules/') ||
     url.pathname.startsWith('/@') ||
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/v1/') ||
     url.pathname.startsWith('/stream/') ||
     url.pathname.endsWith('.ts') ||
     url.pathname.endsWith('.tsx') ||
