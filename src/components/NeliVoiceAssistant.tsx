@@ -38,7 +38,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   onNavigateHome,
   onNavigateDownload
 }) => {
-  const [supported, setSupported] = useState<boolean>(false);
+  const [supported, setSupported] = useState<boolean>(true);
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [handsFreeWakeMode, setHandsFreeWakeMode] = useState<boolean>(false);
   const [liveTranscript, setLiveTranscript] = useState<string>('');
@@ -47,6 +47,9 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   const recognitionRef = useRef<any>(null);
   const isSpeakingRef = useRef<boolean>(false);
   const handsFreeRef = useRef<boolean>(false);
+  const micUnlockedRef = useRef<boolean>(false);
+  const latestTranscriptRef = useRef<string>('');
+  const hasDispatchedRef = useRef<boolean>(false);
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const langIndexRef = useRef<number>(0);
   const recognitionLangs = ['en-US', 'sw-TZ'];
@@ -64,7 +67,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
     } catch {}
   }, []);
 
-  const showTransientBanner = useCallback((text: string, ms = 3400) => {
+  const showTransientBanner = useCallback((text: string, ms = 3600) => {
     setSpokenBanner(text);
     if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
     bannerTimerRef.current = setTimeout(() => {
@@ -75,7 +78,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
 
   const speakReply = useCallback(
     (text: string, lang: 'sw' | 'en') => {
-      showTransientBanner(text, 3800);
+      showTransientBanner(text, 4000);
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
       try {
         window.speechSynthesis.cancel();
@@ -105,27 +108,35 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   );
 
   const executeBrainAction = useCallback(
-    (data: NeliAiCommandResponse) => {
-      const act = data.action;
+    (data: any) => {
+      const act = data?.action;
       if (!act) return;
+      const actType = String(act.type || '').toUpperCase();
 
-      switch (act.type) {
+      switch (actType) {
         case 'OPEN_CHANNEL':
+        case 'PLAY_CHANNEL':
         case 'NEXT_CHANNEL':
         case 'PREV_CHANNEL': {
-          if (act.channel) {
-            const found =
-              channels.find((c) => c.id === act.channel?.id) ||
-              channels.find((c) => c.name.toLowerCase() === act.channel?.name.toLowerCase());
-            if (found) {
-              onSelectChannel(found);
-            }
+          const chanRef = act.channel || data.matchedChannel;
+          const targetId = act.channelId || chanRef?.id;
+          const targetSlug = act.slug || chanRef?.slug;
+          const targetName = act.channelName || chanRef?.name;
+          const found =
+            channels.find((c) => targetId && c.id === targetId) ||
+            channels.find((c) => targetSlug && c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === String(targetSlug).toLowerCase()) ||
+            channels.find((c) => targetName && c.name.toLowerCase() === String(targetName).toLowerCase()) ||
+            channels.find((c) => targetName && c.name.toLowerCase().includes(String(targetName).toLowerCase()));
+          if (found) {
+            onSelectChannel(found);
           }
           break;
         }
-        case 'OPEN_MOVIE': {
-          if (act.movie && act.movie.streamUrl) {
-            onOpenMovie(act.movie);
+        case 'OPEN_MOVIE':
+        case 'PLAY_MOVIE': {
+          const targetMovie = act.movie || data.matchedMovies?.[0];
+          if (targetMovie && targetMovie.streamUrl) {
+            onOpenMovie(targetMovie);
           }
           break;
         }
@@ -135,6 +146,41 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         }
         case 'OPEN_DOWNLOAD': {
           onNavigateDownload();
+          break;
+        }
+        case 'VOLUME': {
+          const val = typeof act.value === 'number' ? act.value : undefined;
+          const dir = act.direction === 'down' || (typeof act.delta === 'number' && act.delta < 0) ? 'down' : 'up';
+          dispatchVoicePlayerCommand(
+            val !== undefined
+              ? { type: 'SET_VOLUME', value: val > 1 ? val / 100 : val }
+              : { type: 'STEP_VOLUME', direction: dir, delta: dir === 'down' ? -0.2 : 0.2 }
+          );
+          break;
+        }
+        case 'BRIGHTNESS': {
+          const val = typeof act.value === 'number' ? act.value : undefined;
+          const dir = act.direction === 'down' || (typeof act.delta === 'number' && act.delta < 0) ? 'down' : 'up';
+          dispatchVoicePlayerCommand(
+            val !== undefined
+              ? { type: 'SET_BRIGHTNESS', value: val > 2 ? val / 100 : val }
+              : { type: 'STEP_BRIGHTNESS', direction: dir, delta: dir === 'down' ? -0.15 : 0.15 }
+          );
+          break;
+        }
+        case 'QUALITY': {
+          if (act.quality) {
+            dispatchVoicePlayerCommand({ type: 'SET_QUALITY', quality: act.quality });
+          } else {
+            dispatchVoicePlayerCommand({ type: 'STEP_QUALITY', direction: act.direction === 'down' ? 'down' : 'up' });
+          }
+          break;
+        }
+        case 'FULLSCREEN': {
+          dispatchVoicePlayerCommand({
+            type: 'SET_FULLSCREEN',
+            fullscreen: typeof act.fullscreen === 'boolean' ? act.fullscreen : true
+          });
           break;
         }
         case 'SET_VOLUME':
@@ -150,7 +196,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         case 'PAUSE':
         case 'PLAY': {
           dispatchVoicePlayerCommand({
-            type: act.type,
+            type: actType as any,
             value: act.value,
             delta: act.delta,
             direction: act.direction,
@@ -172,10 +218,13 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       const cleaned = transcript.trim();
       if (!cleaned) return;
 
+      const endpoint =
+        (import.meta as any).env?.VITE_NELI_AI_COMMAND_URL || '/v1/neli-ai/command';
+
       setStatus('processing');
       setLiveTranscript(cleaned);
       try {
-        const resp = await fetch('/api/ai/command', {
+        const resp = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -183,6 +232,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
           },
           body: JSON.stringify({
             transcript: cleaned,
+            text: cleaned,
             appId: 'nelitv-web',
             currentChannelId: currentChannel?.id,
             locale: 'auto'
@@ -202,6 +252,30 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
     [currentChannel?.id, executeBrainAction, speakReply]
   );
 
+  const ensureMicPermission = useCallback(async (): Promise<boolean> => {
+    if (micUnlockedRef.current) return true;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      return true;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      micUnlockedRef.current = true;
+      return true;
+    } catch (err: any) {
+      const errName = String(err?.name || '');
+      if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        showTransientBanner('Hakuna maikrofoni iliyopatikana kwenye kifaa hiki.', 4000);
+      } else {
+        showTransientBanner(
+          'Ruhusa ya maikrofoni imezuiwa. Ruhusu mic kwenye browser yako kisha jaribu tena.',
+          4500
+        );
+      }
+      return false;
+    }
+  }, [showTransientBanner]);
+
   const stopRecognition = useCallback(() => {
     if (recognitionRef.current) {
       try {
@@ -210,14 +284,28 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       } catch {}
       recognitionRef.current = null;
     }
+    // If user tapped mic to stop while interim speech was already captured, run it immediately
+    if (latestTranscriptRef.current && !hasDispatchedRef.current) {
+      const captured = latestTranscriptRef.current;
+      hasDispatchedRef.current = true;
+      latestTranscriptRef.current = '';
+      void sendTranscriptToBrain(captured);
+      return;
+    }
     setStatus(handsFreeRef.current ? 'wake-listening' : 'idle');
-  }, []);
+  }, [sendTranscriptToBrain]);
 
   const startRecognition = useCallback(
     (continuousWakeMode: boolean) => {
       const SpeechRec =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (!SpeechRec) return;
+      if (!SpeechRec) {
+        showTransientBanner(
+          'Kivinjari hiki hakina Web Speech Mic (tumia Chrome, Edge, au NeliTv APK).',
+          4500
+        );
+        return;
+      }
 
       if (recognitionRef.current) {
         try {
@@ -226,16 +314,20 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         } catch {}
       }
 
+      latestTranscriptRef.current = '';
+      hasDispatchedRef.current = false;
+
       const rec = new SpeechRec();
       rec.lang = recognitionLangs[langIndexRef.current % recognitionLangs.length];
       rec.continuous = continuousWakeMode;
-      rec.interimResults = !continuousWakeMode;
+      rec.interimResults = true;
       rec.maxAlternatives = 1;
 
       rec.onstart = () => {
         setStatus(continuousWakeMode ? 'wake-listening' : 'listening');
         if (!continuousWakeMode) {
           setLiveTranscript('');
+          setSpokenBanner('');
         }
       };
 
@@ -245,32 +337,76 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         const transcript = String(lastResult?.[0]?.transcript || '').trim();
         if (!transcript) return;
 
+        latestTranscriptRef.current = transcript;
+
         if (!continuousWakeMode) {
           setLiveTranscript(transcript);
-          if (lastResult.isFinal) {
+          if (lastResult.isFinal && !hasDispatchedRef.current) {
+            hasDispatchedRef.current = true;
+            latestTranscriptRef.current = '';
             try {
               rec.stop();
             } catch {}
             void sendTranscriptToBrain(transcript);
           }
         } else if (lastResult.isFinal) {
-          // Wake-word guard in continuous hands-free mode ("Neli ...")
           const hasWake = /\b(neli|nelly|nely|hey neli|ok neli)\b/i.test(transcript);
           if (hasWake) {
+            latestTranscriptRef.current = '';
             void sendTranscriptToBrain(transcript);
           }
         }
       };
 
       rec.onerror = (err: any) => {
-        if (err?.error === 'language-not-supported' && langIndexRef.current === 0) {
-          langIndexRef.current = 1;
+        const code = String(err?.error || '');
+        if (code === 'aborted') {
+          return;
         }
-        if (err?.error === 'not-allowed' || err?.error === 'service-not-allowed') {
+        if (code === 'language-not-supported' && langIndexRef.current === 0) {
+          langIndexRef.current = 1;
+          showTransientBanner('Inabadilisha lugha ya maikrofoni, bonyeza tena.', 3000);
+          setStatus('idle');
+          return;
+        }
+        if (code === 'not-allowed' || code === 'service-not-allowed') {
+          if (!micUnlockedRef.current) {
+            void ensureMicPermission().then((granted) => {
+              if (granted) {
+                setTimeout(() => startRecognition(continuousWakeMode), 250);
+              } else {
+                setHandsFreeWakeMode(false);
+                handsFreeRef.current = false;
+                setStatus('idle');
+              }
+            });
+            return;
+          }
+          micUnlockedRef.current = false;
           setHandsFreeWakeMode(false);
           handsFreeRef.current = false;
           setStatus('idle');
-          showTransientBanner('Ruhusu maikrofoni kwenye kivinjari ili kutumia Neli Voice.', 3500);
+          showTransientBanner(
+            'Ruhusu maikrofoni kwenye kivinjari (au fungua app kwenye tab mpya) ili Neli akusikie.',
+            4500
+          );
+          return;
+        }
+        if (code === 'audio-capture') {
+          setHandsFreeWakeMode(false);
+          handsFreeRef.current = false;
+          setStatus('idle');
+          showTransientBanner('Maikrofoni haipatikani au inatumika na app nyingine.', 4000);
+          return;
+        }
+        if (code === 'network') {
+          setStatus('idle');
+          showTransientBanner('Huduma ya kutambua sauti inahitaji mtandao thabiti.', 3800);
+          return;
+        }
+        if (code === 'no-speech' && !continuousWakeMode) {
+          setStatus('idle');
+          showTransientBanner('Sikusikia sauti — bonyeza mic kisha sema amri yako.', 3000);
           return;
         }
         if (!continuousWakeMode) {
@@ -279,6 +415,13 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       };
 
       rec.onend = () => {
+        if (!continuousWakeMode && latestTranscriptRef.current && !hasDispatchedRef.current) {
+          const captured = latestTranscriptRef.current;
+          hasDispatchedRef.current = true;
+          latestTranscriptRef.current = '';
+          void sendTranscriptToBrain(captured);
+          return;
+        }
         if (handsFreeRef.current && continuousWakeMode) {
           setTimeout(() => {
             if (handsFreeRef.current && !isSpeakingRef.current) {
@@ -293,11 +436,15 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       recognitionRef.current = rec;
       try {
         rec.start();
-      } catch {
+      } catch (startErr: any) {
         setStatus('idle');
+        showTransientBanner(
+          startErr?.message || 'Imeshindwa kuwasha maikrofoni. Jaribu kubonyeza tena.',
+          3500
+        );
       }
     },
-    [sendTranscriptToBrain, showTransientBanner]
+    [ensureMicPermission, sendTranscriptToBrain, showTransientBanner]
   );
 
   useEffect(() => {
@@ -312,31 +459,45 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
     };
   }, []);
 
-  if (!supported) {
-    return null;
-  }
-
   const handlePrimaryMicTap = () => {
+    if (!supported) {
+      showTransientBanner(
+        'Kivinjari hiki hakina sauti ya Web Speech (tumia Chrome, Edge, au NeliTv APK).',
+        4500
+      );
+      return;
+    }
+    if (status === 'speaking') {
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {}
+      isSpeakingRef.current = false;
+    }
     if (status === 'listening') {
       stopRecognition();
       return;
     }
-    if (handsFreeWakeMode) {
-      // Single command boost while already in wake mode
-      startRecognition(false);
-      return;
-    }
+    // Preserve synchronous user gesture for SpeechRecognition.start()
     startRecognition(false);
   };
 
   const handleToggleWakeWordMode = () => {
+    if (!supported) {
+      showTransientBanner(
+        'Kivinjari hiki hakina sauti ya Web Speech (tumia Chrome, Edge, au NeliTv APK).',
+        4500
+      );
+      return;
+    }
     const next = !handsFreeWakeMode;
-    setHandsFreeWakeMode(next);
-    handsFreeRef.current = next;
     if (next) {
+      setHandsFreeWakeMode(true);
+      handsFreeRef.current = true;
       startRecognition(true);
       showTransientBanner('Neli Hands-Free imewashwa — sema "Neli fungua Azam Two"', 3500);
     } else {
+      setHandsFreeWakeMode(false);
+      handsFreeRef.current = false;
       stopRecognition();
       setStatus('idle');
       showTransientBanner('Neli Hands-Free imezimwa', 2000);
@@ -346,11 +507,11 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   return (
     <div
       data-player-ui="true"
-      className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col items-end gap-2 pointer-events-none"
+      className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[100005] flex flex-col items-end gap-2 pointer-events-none"
     >
-      {/* Pure Voice Status Pill (only visible while listening or speaking; NO chat interface) */}
+      {/* Pure Voice Status Pill (only visible while listening, processing, speaking, or reporting error) */}
       {(status === 'listening' || status === 'processing' || Boolean(liveTranscript) || Boolean(spokenBanner)) && (
-        <div className="pointer-events-auto max-w-[280px] sm:max-w-xs px-3.5 py-2.5 rounded-2xl bg-[#0e1420]/95 backdrop-blur-md border border-[#1ce783]/35 shadow-2xl text-xs text-slate-100 flex items-center gap-2.5">
+        <div className="pointer-events-auto max-w-[300px] sm:max-w-xs px-3.5 py-2.5 rounded-2xl bg-[#0e1420]/95 backdrop-blur-md border border-[#1ce783]/35 shadow-2xl text-xs text-slate-100 flex items-center gap-2.5">
           {status === 'speaking' ? (
             <Volume2 className="w-4 h-4 text-[#1ce783] shrink-0 animate-pulse" />
           ) : (
@@ -364,8 +525,8 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
                 ? 'Inachakata...'
                 : 'Neli Voice AI'}
             </div>
-            <p className="text-xs text-white/95 truncate">
-              {spokenBanner || liveTranscript || 'Sema amri kama: Open Azam Two...'}
+            <p className="text-xs text-white/95 line-clamp-2">
+              {spokenBanner || liveTranscript || 'Sema amri kama: Change channel to Azam Two...'}
             </p>
           </div>
         </div>
@@ -375,7 +536,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       <div className="pointer-events-auto flex items-center gap-2">
         <button
           type="button"
-          onClick={handleToggleWakeWordMode}
+          onClick={() => void handleToggleWakeWordMode()}
           title={
             handsFreeWakeMode
               ? 'Zima Wake-Word ("Neli")'
@@ -392,9 +553,9 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
 
         <button
           type="button"
-          onClick={handlePrimaryMicTap}
+          onClick={() => void handlePrimaryMicTap()}
           aria-label="Neli Voice Assistant"
-          title="Bonyeza uzungumze na Neli (mfano: Neli open Azam Two)"
+          title="Bonyeza uzungumze na Neli (mfano: Neli change channel to Azam Two)"
           className={`relative w-12 h-12 rounded-full flex items-center justify-center shadow-2xl border transition active:scale-95 cursor-pointer ${
             status === 'listening'
               ? 'bg-[#1ce783] text-[#04120b] border-white/40 ring-4 ring-[#1ce783]/30'

@@ -84,6 +84,7 @@ export interface NeliAiCommandResponse {
   language: 'sw' | 'en';
   spokenReply: string;
   action: NeliAiAction;
+  actionAlias?: string;
   matchedChannel?: NeliAiAction['channel'] | null;
   matchedMovies?: FirebaseMovieItem[];
   knowledgeSummary: {
@@ -315,7 +316,7 @@ const PHONETIC_CHANNEL_SYNONYMS: Array<[RegExp, string]> = [
 
 function normalizeChannelCandidate(query: string): string {
   let out = query
-    .replace(/\b(open|fungua|weka|niwekee|cheza|play|watch|tazama|change to|switch to|badilisha kwenda|nenda|channel|chaneli|kituo|tv)\b/gi, ' ')
+    .replace(/\b(open|fungua|weka|niwekee|cheza|play|watch|tazama|change|switch|put|turn|go|badili|badilisha|hamia|nenda|to|into|on|the|a|kwenda|kwenye|hadi|channel|chaneli|kituo)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -471,6 +472,26 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
   const lang = detectLanguage(query || norm, req.locale);
   const knowledgeSummary = neliAiKnowledge.getStats();
 
+  const toActionAlias = (t: NeliAiAction['type']): string => {
+    switch (t) {
+      case 'OPEN_CHANNEL':
+        return 'PLAY_CHANNEL';
+      case 'SET_VOLUME':
+      case 'STEP_VOLUME':
+        return 'VOLUME';
+      case 'SET_BRIGHTNESS':
+      case 'STEP_BRIGHTNESS':
+        return 'BRIGHTNESS';
+      case 'SET_QUALITY':
+      case 'STEP_QUALITY':
+        return 'QUALITY';
+      case 'SET_FULLSCREEN':
+        return 'FULLSCREEN';
+      default:
+        return t;
+    }
+  };
+
   const buildReply = (
     intent: string,
     confidence: number,
@@ -490,6 +511,7 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
     language: lang,
     spokenReply,
     action,
+    actionAlias: toActionAlias(action.type),
     matchedChannel: matchedChannel ?? null,
     matchedMovies,
     knowledgeSummary
@@ -730,7 +752,7 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       brief
     );
   }
-  if (/^(?:next|next channel|change channel|switch channel|other channel|badili kituo|kituo kingine|badili channel|channel inayofuata)$/i.test(query)) {
+  if (/^(?:please\s+)?(?:next|next\s+(?:the\s+)?channel|change\s+(?:the\s+)?channel|switch\s+(?:the\s+)?channel|other\s+channel|badili\s+kituo|kituo\s+kingine|badili\s+channel|channel\s+inayofuata)$/i.test(query)) {
     const pool = getOnlineChannelPool();
     const curIdx = pool.findIndex((c) => c.id === req.currentChannelId);
     const nextIdx = curIdx >= 0 ? (curIdx + 1) % pool.length : 0;
