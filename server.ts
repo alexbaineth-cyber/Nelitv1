@@ -963,6 +963,97 @@ app.get('/api/portal/verify', (req: Request, res: Response) => {
   });
 });
 
+// Permanent, unchanged & undeleted NeliTv AI Data Center Key & Config
+const NELI_AI_CENTER_FILE = path.join(DATA_DIR, 'neli_ai_center.json');
+const NELI_AI_PERMANENT_KEY =
+  process.env.NELI_AI_PERMANENT_KEY || 'neli_ai_live_255_tanzania_center_key_01';
+
+function getImmutableNeliAiCenterConfig() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(NELI_AI_CENTER_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(NELI_AI_CENTER_FILE, 'utf-8'));
+      if (parsed && typeof parsed.apiKey === 'string' && parsed.apiKey.trim()) {
+        return {
+          ...parsed,
+          immutable: true,
+          deletable: false
+        };
+      }
+    }
+    const initialConfig = {
+      apiKey: NELI_AI_PERMANENT_KEY,
+      immutable: true,
+      deletable: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      voiceProfile: {
+        gender: 'female',
+        age_group: '10-14',
+        language: 'en-US',
+        pitch: 1.28,
+        rate: 1.04,
+        free_tts: true
+      }
+    };
+    fs.writeFileSync(NELI_AI_CENTER_FILE, JSON.stringify(initialConfig, null, 2));
+    return initialConfig;
+  } catch {
+    return {
+      apiKey: NELI_AI_PERMANENT_KEY,
+      immutable: true,
+      deletable: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      voiceProfile: {
+        gender: 'female',
+        age_group: '10-14',
+        language: 'en-US',
+        pitch: 1.28,
+        rate: 1.04,
+        free_tts: true
+      }
+    };
+  }
+}
+
+// Initialize immediately on boot so key file always exists
+getImmutableNeliAiCenterConfig();
+
+app.get('/api/neli-ai-center/config', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  const token = extractPortalTokenFromReq(req);
+  const verified = token ? verifyClientToken(token) : null;
+  if (!verified || verified.scope !== 'nelitv-portal') {
+    return res.status(401).json({
+      success: false,
+      unlocked: false,
+      error: 'Ufikiaji umezuiwa. Weka nenosiri kwanza.'
+    });
+  }
+
+  await neliAiKnowledge.syncFirebaseCatalog(false);
+  const cfg = getImmutableNeliAiCenterConfig();
+
+  return res.json({
+    success: true,
+    unlocked: true,
+    apiKey: cfg.apiKey,
+    immutable: true,
+    deletable: false,
+    createdAt: cfg.createdAt,
+    stats: neliAiKnowledge.getStats(),
+    voiceProfile: cfg.voiceProfile,
+    endpoints: {
+      baseUrl: PUBLIC_SITE_URL,
+      command: `${PUBLIC_SITE_URL}/v1/neli-ai/command`,
+      commandLegacy: `${PUBLIC_SITE_URL}/api/ai/command`,
+      knowledge: `${PUBLIC_SITE_URL}/v1/neli-ai/knowledge`,
+      movies: `${PUBLIC_SITE_URL}/v1/neli-ai/movies`
+    }
+  });
+});
+
 registerStreamGeneratorRoutes(
   app,
   {
@@ -1234,7 +1325,7 @@ app.options([
 ], (_req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Id, X-API-Key');
   return res.status(204).end();
 });
 

@@ -19,6 +19,7 @@ import { TermsPage } from './pages/TermsPage.tsx';
 import { ContactPage } from './pages/ContactPage.tsx';
 import { ApiPortalPage } from './pages/ApiPortalPage.tsx';
 import { EmbedStudioPage } from './pages/EmbedStudioPage.tsx';
+import { NeliAiCenterPage } from './pages/NeliAiCenterPage.tsx';
 import { EmbedPlayerView } from './components/EmbedPlayerView.tsx';
 import { MobileApkLandingView } from './components/MobileApkLandingView.tsx';
 import { DownloadAppModal } from './components/DownloadAppModal.tsx';
@@ -44,6 +45,7 @@ type ActiveRouteTab =
   | 'server'
   | 'stream-generator'
   | 'embed'
+  | 'neli-ai'
   | 'download'
   | 'embed-player';
 
@@ -90,6 +92,7 @@ function resolveCurrentRoute(): RouteResolution {
   if (lowerPath === '/server/stream-generator') return { tab: 'stream-generator', channel: null };
   if (lowerPath === '/server' || lowerPath === '/nelitv-server') return { tab: 'server', channel: null };
   if (lowerPath === '/embed') return { tab: 'embed', channel: null };
+  if (lowerPath === '/neli-ai' || queryView === 'neli-ai') return { tab: 'neli-ai', channel: null };
   if (lowerPath === '/privacy') return { tab: 'home', channel: null, openPrivacyModal: true };
 
   // Deep links from Neli AI / Android App Links: /watch/channel/:id or /watch/:id
@@ -274,6 +277,8 @@ function MainApp() {
       document.title = 'Temporary Stream Generator — NeliTv Server | NeliTv';
     } else if (activeTab === 'api') {
       document.title = 'NeliTv API & SDK | NeliTv';
+    } else if (activeTab === 'neli-ai') {
+      document.title = 'NeliTv AI Data Center & Voice API | NeliTv';
     }
   }, [activeTab, selectedChannel]);
 
@@ -393,10 +398,14 @@ function MainApp() {
             onNavigateToApi={() => navigateToTab('api')}
           />
         )}
+
+        {activeTab === 'neli-ai' && (
+          <NeliAiCenterPage onBack={() => navigateToTab('home')} />
+        )}
       </main>
 
       {/* Clean Footer Navigation for Legal, Privacy & Tools */}
-      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'stream-generator' && activeTab !== 'embed' && (
+      {activeTab !== 'watch' && activeTab !== 'api' && activeTab !== 'server' && activeTab !== 'stream-generator' && activeTab !== 'embed' && activeTab !== 'neli-ai' && (
         <footer className="border-t border-white/[0.08] bg-[#090c11] text-slate-400 pb-24 md:pb-8 pt-7 px-4 sm:px-8">
           <div className="max-w-[1680px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <div className="text-center sm:text-left">

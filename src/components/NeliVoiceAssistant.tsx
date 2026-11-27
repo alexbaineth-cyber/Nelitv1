@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Mic, MicOff, Volume2, Radio } from 'lucide-react';
 import { Channel } from '../data/channels.ts';
 import { dispatchVoicePlayerCommand } from '../utils/neliVoiceBridge.ts';
+import { speakAsYouthFemaleEnglish } from '../utils/neliVoiceTts.ts';
 import type { FirebaseMovieItem, NeliAiCommandResponse } from '../server/neliAiBrain.ts';
 
 interface NeliVoiceAssistantProps {
@@ -14,21 +15,6 @@ interface NeliVoiceAssistantProps {
 }
 
 type VoiceStatus = 'idle' | 'listening' | 'wake-listening' | 'processing' | 'speaking';
-
-function pickSpeechSynthesisVoice(lang: 'sw' | 'en'): SpeechSynthesisVoice | null {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-  if (lang === 'sw') {
-    return (
-      voices.find((v) => v.lang.toLowerCase().startsWith('sw')) ||
-      voices.find((v) => v.lang.toLowerCase().includes('ke') || v.lang.toLowerCase().includes('tz')) ||
-      voices.find((v) => v.lang.toLowerCase().startsWith('en')) ||
-      voices[0]
-    );
-  }
-  return voices.find((v) => v.lang.toLowerCase().startsWith('en')) || voices[0];
-}
 
 export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   channels,
@@ -77,32 +63,23 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   }, []);
 
   const speakReply = useCallback(
-    (text: string, lang: 'sw' | 'en') => {
-      showTransientBanner(text, 4000);
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      try {
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        const voice = pickSpeechSynthesisVoice(lang);
-        if (voice) utter.voice = voice;
-        utter.lang = lang === 'sw' ? 'sw-KE' : 'en-US';
-        utter.rate = 1.04;
-        utter.pitch = 1.02;
-        isSpeakingRef.current = true;
-        setStatus('speaking');
-        utter.onend = () => {
+    (displayText: string, speechEnglishText?: string) => {
+      showTransientBanner(displayText, 4000);
+      const textToSpeak = (speechEnglishText || displayText).trim();
+      speakAsYouthFemaleEnglish(textToSpeak, {
+        onStart: () => {
+          isSpeakingRef.current = true;
+          setStatus('speaking');
+        },
+        onEnd: () => {
           isSpeakingRef.current = false;
           setStatus(handsFreeRef.current ? 'wake-listening' : 'idle');
-        };
-        utter.onerror = () => {
+        },
+        onError: () => {
           isSpeakingRef.current = false;
           setStatus(handsFreeRef.current ? 'wake-listening' : 'idle');
-        };
-        window.speechSynthesis.speak(utter);
-      } catch {
-        isSpeakingRef.current = false;
-        setStatus(handsFreeRef.current ? 'wake-listening' : 'idle');
-      }
+        }
+      });
     },
     [showTransientBanner]
   );
@@ -282,12 +259,15 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         const data: NeliAiCommandResponse = await resp.json();
         if (data?.success || data?.reply_text || data?.speech_text) {
           executeBrainAction(data);
-          speakReply(data.speech_text || data.spokenReply || data.reply_text, data.language || 'sw');
+          speakReply(
+            data.reply_text || data.speech_text || data.spokenReply,
+            data.speech_text_en || data.speech_text || data.spokenReply || data.reply_text
+          );
         } else {
-          speakReply('Samahani, jaribu tena.', 'sw');
+          speakReply('Samahani, jaribu tena.', 'Sorry, please try again.');
         }
       } catch {
-        speakReply('Mtandao unasuasua kidogo, jaribu tena.', 'sw');
+        speakReply('Mtandao unasuasua kidogo, jaribu tena.', 'Network is a bit slow, please try again.');
       }
     },
     [currentChannel, executeBrainAction, speakReply]

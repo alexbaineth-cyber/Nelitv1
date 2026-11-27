@@ -113,6 +113,16 @@ export interface NeliAiRecommendation {
   deep_link?: string;
 }
 
+export interface NeliAiVoiceProfile {
+  gender: 'female';
+  age_group: '10-14';
+  language: 'en-US';
+  pitch: number;
+  rate: number;
+  free_tts: true;
+  preferred_voices: string[];
+}
+
 export interface NeliAiCommandResponse {
   success: boolean;
   engine: 'nelitv-brain-v1';
@@ -125,10 +135,13 @@ export interface NeliAiCommandResponse {
   normalizedQuery: string;
   reply_text: string;
   speech_text: string;
+  speech_text_en: string;
   spokenReply: string;
   language: 'sw' | 'en';
   intent: string;
   confidence: number;
+  fuzzy_matched?: boolean;
+  voice_profile: NeliAiVoiceProfile;
   action: NeliAiAction;
   actionAlias: string;
   recommendations: NeliAiRecommendation[];
@@ -469,49 +482,107 @@ function getOnlineChannelPool(): Channel[] {
   return online.length > 0 ? online : CHANNELS_DATA;
 }
 
+function phoneticSkeleton(raw: string): string {
+  return normalizeSpeechText(raw)
+    .replace(/ph/g, 'f')
+    .replace(/qu/g, 'kw')
+    .replace(/ck/g, 'k')
+    .replace(/[cq]/g, 'k')
+    .replace(/x/g, 'ks')
+    .replace(/z/g, 's')
+    .replace(/v/g, 'f')
+    .replace(/oo/g, 'u')
+    .replace(/ee|ea/g, 'i')
+    .replace(/ai|ay/g, 'e')
+    .replace(/th/g, 't')
+    .replace(/(.)\1+/g, '$1')
+    .trim();
+}
+
+function bigramDice(a: string, b: string): number {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a[0] === b[0] ? 0.5 : 0;
+  const bigramsA = new Map<string, number>();
+  for (let i = 0; i < a.length - 1; i++) {
+    const bg = a.slice(i, i + 2);
+    bigramsA.set(bg, (bigramsA.get(bg) || 0) + 1);
+  }
+  let hits = 0;
+  for (let i = 0; i < b.length - 1; i++) {
+    const bg = b.slice(i, i + 2);
+    const count = bigramsA.get(bg) || 0;
+    if (count > 0) {
+      hits += 1;
+      bigramsA.set(bg, count - 1);
+    }
+  }
+  return (2 * hits) / (a.length - 1 + (b.length - 1));
+}
+
+function fuzzyScorePair(queryRaw: string, targetRaw: string): number {
+  const qNorm = normalizeSpeechText(queryRaw);
+  const tNorm = normalizeSpeechText(targetRaw);
+  if (!qNorm || !tNorm) return 0;
+  if (qNorm === tNorm) return 100;
+  if (tNorm.includes(qNorm)) return 88 - Math.min(18, Math.abs(tNorm.length - qNorm.length));
+  if (qNorm.includes(tNorm) && tNorm.length >= 3) return 82;
+
+  const qSkel = phoneticSkeleton(qNorm);
+  const tSkel = phoneticSkeleton(tNorm);
+  if (qSkel === tSkel && qSkel.length >= 2) return 93;
+  if (tSkel.includes(qSkel) && qSkel.length >= 3) return 84;
+
+  const qTokens = qNorm.split(/\s+/).filter((t) => t.length >= 2 || /^\d+$/.test(t));
+  const tTokens = tNorm.split(/\s+/).filter(Boolean);
+  let tokenScoreSum = 0;
+  for (const qt of qTokens) {
+    const qtSkel = phoneticSkeleton(qt);
+    let bestTok = 0;
+    for (const tt of tTokens) {
+      const ttSkel = phoneticSkeleton(tt);
+      if (qt === tt || qtSkel === ttSkel) {
+        bestTok = 1;
+        break;
+      }
+      const maxLen = Math.max(qtSkel.length, ttSkel.length, 1);
+      const levSim = 1 - levenshtein(qtSkel, ttSkel) / maxLen;
+      const diceSim = bigramDice(qtSkel, ttSkel);
+      bestTok = Math.max(bestTok, levSim * 0.65 + diceSim * 0.35);
+    }
+    if (bestTok >= 0.56) {
+      tokenScoreSum += bestTok;
+    }
+  }
+  const tokenCoverage = qTokens.length > 0 ? (tokenScoreSum / qTokens.length) * 80 : 0;
+
+  const fullMax = Math.max(qSkel.length, tSkel.length, 1);
+  const fullLevSim = 1 - levenshtein(qSkel, tSkel) / fullMax;
+  const fullDice = bigramDice(qSkel, tSkel);
+  const fullPhoneticScore = Math.round((fullLevSim * 0.6 + fullDice * 0.4) * 84);
+
+  return Math.max(Math.round(tokenCoverage), fullPhoneticScore);
+}
+
 function matchBestChannel(rawQuery: string): { channel: Channel; score: number } | null {
   const candidate = normalizeChannelCandidate(rawQuery);
   if (!candidate) return null;
 
   const pool = getOnlineChannelPool();
-  const tokens = candidate.split(/\s+/).filter(Boolean);
-
   let best: { channel: Channel; score: number } | null = null;
 
   for (const ch of pool) {
     const nameNorm = normalizeSpeechText(ch.name);
     const slugNorm = getChannelRouteSlug(ch).replace(/-/g, ' ');
-    const kwNorm = (ch.searchKeywords || []).map(normalizeSpeechText);
-
-    let score = 0;
-
-    if (nameNorm === candidate || slugNorm === candidate) {
-      score = 100;
-    } else if (nameNorm.includes(candidate) || slugNorm.includes(candidate)) {
-      score = 86 - Math.min(18, Math.abs(nameNorm.length - candidate.length));
-    } else if (candidate.includes(nameNorm) && nameNorm.length >= 3) {
-      score = 80;
-    } else {
-      let tokenHits = 0;
-      for (const tok of tokens) {
-        if (tok.length < 2 && !/^\d+$/.test(tok)) continue;
-        if (nameNorm.includes(tok) || slugNorm.includes(tok)) {
-          tokenHits += 1;
-        } else if (kwNorm.some((k) => k.includes(tok))) {
-          tokenHits += 0.65;
-        }
-      }
-      if (tokens.length > 0 && tokenHits > 0) {
-        score = Math.round((tokenHits / tokens.length) * 76);
-      }
-
-      const dist = levenshtein(candidate, nameNorm.slice(0, candidate.length + 4));
-      if (dist <= 2 && candidate.length >= 4) {
-        score = Math.max(score, 74 - dist * 8);
-      }
+    let score = Math.max(
+      fuzzyScorePair(candidate, nameNorm),
+      fuzzyScorePair(candidate, slugNorm)
+    );
+    for (const kw of ch.searchKeywords || []) {
+      score = Math.max(score, Math.round(fuzzyScorePair(candidate, kw) * 0.9));
     }
 
-    if (score >= 45 && (!best || score > best.score)) {
+    if (score >= 46 && (!best || score > best.score)) {
       best = { channel: ch, score };
     }
   }
@@ -533,13 +604,13 @@ const GENRE_SYNONYMS: Record<string, string[]> = {
   adventure: ['adventure']
 };
 
-function matchFirebaseMovies(rawQuery: string): FirebaseMovieItem[] {
+function matchFirebaseMovies(rawQuery: string): Array<FirebaseMovieItem & { _score?: number }> {
   const movies = [...neliAiKnowledge.getMovies(), ...neliAiKnowledge.getSeries()];
   if (movies.length === 0) return [];
 
   const wantsNarrated = /\b(kiswahili|swahili|narrated|tafsiri|dj|zilizotafsiriwa|iliyotafsiriwa|imetafsiriwa)\b/i.test(rawQuery);
   const q = rawQuery
-    .replace(/\b(open|fungua|play|cheza|watch|tazama|niwekee|weka|tafuta|search|recommend|nipendekezee|nionyeshe|show|movie|movies|filamu|film|series|tamthilia|sinema|ya|za|zenye|ambazo|new|mpya|kiswahili|swahili|narrated|tafsiri|dj|zilizotafsiriwa|iliyotafsiriwa|imetafsiriwa)\b/gi, ' ')
+    .replace(/\b(open|fungua|play|cheza|watch|tazama|niwekee|weka|tafuta|search|recommend|nipendekezee|nionyeshe|show|change|switch|to|movie|movies|muvi|filamu|film|series|tamthilia|sinema|ya|za|zenye|ambazo|new|mpya|kiswahili|swahili|narrated|tafsiri|dj|zilizotafsiriwa|iliyotafsiriwa|imetafsiriwa)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -560,17 +631,23 @@ function matchFirebaseMovies(rawQuery: string): FirebaseMovieItem[] {
       const genreText = normalizeSpeechText(m.genres.join(' '));
       const overviewNorm = normalizeSpeechText(m.overview);
 
-      if (q && (titleNorm === q || origNorm === q)) {
-        score += 100;
-      } else if (q && (titleNorm.includes(q) || origNorm.includes(q))) {
-        score += 75;
-      } else if (expandedTokens.length > 0) {
+      if (q) {
+        const fuzzyTitle = Math.max(
+          fuzzyScorePair(q, titleNorm),
+          origNorm ? fuzzyScorePair(q, origNorm) : 0
+        );
+        if (fuzzyTitle >= 48) {
+          score += fuzzyTitle;
+        }
+      }
+
+      if (score < 70 && expandedTokens.length > 0) {
         for (const tok of expandedTokens) {
           if (titleNorm.includes(tok) || origNorm.includes(tok)) score += 32;
           else if (genreText.includes(tok)) score += 26;
           else if (overviewNorm.includes(tok)) score += 12;
         }
-      } else {
+      } else if (!q) {
         score += (m.featured ? 25 : 10) + (m.rating || 0) * 2;
       }
 
@@ -586,10 +663,10 @@ function matchFirebaseMovies(rawQuery: string): FirebaseMovieItem[] {
     });
 
   return scored
-    .filter((s) => s.score > 0)
+    .filter((s) => s.score >= 38)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
-    .map((s) => s.movie);
+    .map((s) => ({ ...s.movie, _score: s.score }));
 }
 
 function extractNumericTarget(text: string): number | null {
@@ -693,6 +770,27 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
     }
   };
 
+  const DEFAULT_VOICE_PROFILE: NeliAiVoiceProfile = {
+    gender: 'female',
+    age_group: '10-14',
+    language: 'en-US',
+    pitch: 1.28,
+    rate: 1.04,
+    free_tts: true,
+    preferred_voices: [
+      'Microsoft Ana Online (Natural) - English (United States)',
+      'Microsoft Ana',
+      'Microsoft Maisie Online (Natural) - English (United Kingdom)',
+      'Microsoft Maisie',
+      'Google UK English Female',
+      'Google US English',
+      'Samantha',
+      'Victoria',
+      'Karen',
+      'Microsoft Zira'
+    ]
+  };
+
   const buildReply = (
     intent: string,
     confidence: number,
@@ -700,12 +798,78 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
     partialAction: Partial<NeliAiAction> & { type: StandardizedActionType },
     options?: {
       speechText?: string;
+      speechTextEn?: string;
+      fuzzyMatched?: boolean;
       matchedChannel?: NeliAiAction['channel'] | null;
       matchedMovies?: FirebaseMovieItem[];
       recommendations?: NeliAiRecommendation[];
     }
   ): NeliAiCommandResponse => {
     const speech = options?.speechText || replyText;
+    const targetName = partialAction.target_name || '';
+    const autoEn = (() => {
+      if (options?.speechTextEn) return options.speechTextEn;
+      if (lang === 'en') return speech;
+      switch (partialAction.type) {
+        case 'PLAY_CHANNEL':
+        case 'OPEN_CHANNEL':
+        case 'NEXT_CHANNEL':
+        case 'PREV_CHANNEL':
+          return targetName
+            ? options?.fuzzyMatched
+              ? `Opening closest match, ${targetName}, right now.`
+              : `Okay, opening ${targetName} for you now.`
+            : 'Switching channel now.';
+        case 'OPEN_MOVIE':
+        case 'OPEN_SERIES':
+          return targetName
+            ? options?.fuzzyMatched
+              ? `Playing closest movie match, ${targetName}.`
+              : `Okay, playing ${targetName} now.`
+            : 'Opening your movie now.';
+        case 'OPEN_APP_LINK':
+          return targetName
+            ? `${targetName} is ready in the NeliTv Android App, or watch Sinema Zetu live here.`
+            : 'Open the NeliTv Android App for the full movie library.';
+        case 'VOLUME_UP':
+        case 'STEP_VOLUME':
+          return partialAction.direction === 'down' ? 'Turning volume down.' : 'Turning volume up.';
+        case 'VOLUME_DOWN':
+          return 'Turning volume down.';
+        case 'SET_VOLUME':
+          return 'Volume updated.';
+        case 'MUTE':
+          return 'Audio muted.';
+        case 'UNMUTE':
+          return 'Audio unmuted.';
+        case 'STEP_BRIGHTNESS':
+        case 'SET_BRIGHTNESS':
+          return partialAction.direction === 'down' ? 'Lowering screen brightness.' : 'Increasing screen brightness.';
+        case 'SET_QUALITY':
+        case 'STEP_QUALITY':
+          return partialAction.quality
+            ? `Quality set to ${partialAction.quality}.`
+            : partialAction.direction === 'down'
+            ? 'Lowering video quality.'
+            : 'Increasing video quality.';
+        case 'PAUSE':
+          return 'Playback paused.';
+        case 'RESUME':
+        case 'PLAY':
+          return 'Resuming playback.';
+        case 'SET_FULLSCREEN':
+          return partialAction.fullscreen ? 'Entering fullscreen.' : 'Exiting fullscreen.';
+        case 'GO_HOME':
+          return 'Going back to home screen.';
+        case 'OPEN_DOWNLOAD':
+          return 'Opening the NeliTv download page.';
+        case 'OPEN_PREMIUM':
+          return 'NeliTv VIP plans start at one thousand shillings via mobile money.';
+        default:
+          return 'I am ready. Tell me which channel or movie you want to watch.';
+      }
+    })();
+
     const action: NeliAiAction = {
       target_id: '',
       target_name: '',
@@ -725,10 +889,13 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       normalizedQuery: query,
       reply_text: replyText,
       speech_text: speech,
+      speech_text_en: autoEn,
       spokenReply: speech,
       language: lang,
       intent,
       confidence,
+      fuzzy_matched: Boolean(options?.fuzzyMatched),
+      voice_profile: DEFAULT_VOICE_PROFILE,
       action,
       actionAlias: toActionAlias(action.type),
       recommendations: options?.recommendations || [],
@@ -1065,16 +1232,32 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
     );
   }
 
-  // 9. LIVE CHANNEL MATCH ("neli change channel to azam two", "niwekee azam sports 1", etc.)
+  // 9. UNIFIED PHONETIC & MISSPELLING AUTO-MATCH (Channels vs Firebase Movies)
   const channelMatch = matchBestChannel(query);
-  if (channelMatch) {
+  const movieFallback = matchFirebaseMovies(query);
+  const topMovieFallback = movieFallback[0];
+  const topMovieScore = topMovieFallback?._score || 0;
+  const channelScore = channelMatch?.score || 0;
+
+  // Pick whichever catalog item has stronger match (so misspelled movie titles beat weak channel guesses and vice versa)
+  if (channelMatch && (channelScore >= topMovieScore || !topMovieFallback)) {
     const ch = channelMatch.channel;
     const brief = serializeChannelBrief(ch);
     const slug = getChannelRouteSlug(ch);
     const prog = ch.currentProgram ? ` — ${ch.currentProgram}` : '';
-    const reply = lang === 'sw' ? `Sawa, nafungua ${ch.name}${prog}.` : `Opening ${ch.name}.`;
+    const isFuzzy = channelMatch.score < 85;
+    const reply = lang === 'sw'
+      ? (isFuzzy
+        ? `Nadhani ulikusudia ${ch.name}${prog}, naifungua sasa.`
+        : `Sawa, nafungua ${ch.name}${prog}.`)
+      : (isFuzzy
+        ? `Playing closest match: ${ch.name}.`
+        : `Opening ${ch.name}.`);
+    const related = getOnlineChannelPool()
+      .filter((c) => c.id !== ch.id && c.category.some((cat) => ch.category.includes(cat)))
+      .slice(0, 2);
     return buildReply(
-      'PLAY_LIVE_CHANNEL',
+      isFuzzy ? 'FUZZY_PLAY_CHANNEL' : 'PLAY_LIVE_CHANNEL',
       Math.min(0.99, Number((channelMatch.score / 100).toFixed(2))),
       reply,
       {
@@ -1085,49 +1268,60 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
         channel: brief
       },
       {
-        speechText: lang === 'sw' ? `Sawa, nafungua ${ch.name}.` : `Opening ${ch.name}.`,
+        speechText: lang === 'sw' ? `Nafungua ${ch.name}.` : `Opening ${ch.name}.`,
+        speechTextEn: isFuzzy ? `I found closest channel ${ch.name}, playing it now.` : `Okay, opening ${ch.name} for you.`,
+        fuzzyMatched: isFuzzy,
         matchedChannel: brief,
-        recommendations: [channelToRecommendation(ch)]
+        recommendations: [channelToRecommendation(ch), ...related.map(channelToRecommendation)]
       }
     );
   }
 
-  // 10. SECONDARY CHECK: spoken movie title without saying "movie"
-  if (/\b(open|fungua|play|cheza|watch|tazama|niwekee|weka)\b/i.test(query)) {
-    const movieFallback = matchFirebaseMovies(query);
-    if (movieFallback.length > 0 && movieFallback[0].streamUrl) {
-      const top = movieFallback[0];
-      if (appId === 'nelitv-web' && !canPlayMoviesInApp) {
-        return buildReply(
-          'OPEN_MOVIE_IN_APP',
-          0.84,
-          lang === 'sw' ? `Filamu ya ${top.title} inapatikana kwenye NeliTv Android App.` : `${top.title} is available in the NeliTv Android App.`,
-          {
-            type: 'OPEN_APP_LINK',
-            target_id: top.id,
-            target_name: top.title,
-            deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(top.id)}`,
-            movie: top,
-            movies: movieFallback
-          },
-          { matchedMovies: movieFallback, recommendations: movieFallback.slice(0, 3).map(movieToRecommendation) }
-        );
-      }
+  // 10. FIREBASE MOVIE AUTO-PLAY ON MISSPELLINGS / PARTIAL TITLES (even without saying "movie")
+  if (topMovieFallback && topMovieFallback.streamUrl && topMovieScore >= 46) {
+    const isFuzzy = topMovieScore < 82;
+    if (appId === 'nelitv-web' && !canPlayMoviesInApp) {
       return buildReply(
-        'OPEN_MOVIE',
-        0.84,
-        lang === 'sw' ? `Nafungua filamu ya ${top.title}.` : `Opening ${top.title}.`,
+        'OPEN_MOVIE_IN_APP',
+        Number((Math.min(95, topMovieScore) / 100).toFixed(2)),
+        lang === 'sw' ? `Filamu ya ${topMovieFallback.title} inapatikana kwenye NeliTv Android App.` : `${topMovieFallback.title} is available in the NeliTv Android App.`,
         {
-          type: 'OPEN_MOVIE',
-          target_id: top.id,
-          target_name: top.title,
-          deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(top.id)}`,
-          movie: top,
+          type: 'OPEN_APP_LINK',
+          target_id: topMovieFallback.id,
+          target_name: topMovieFallback.title,
+          deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(topMovieFallback.id)}`,
+          movie: topMovieFallback,
           movies: movieFallback
         },
-        { matchedMovies: movieFallback, recommendations: movieFallback.slice(0, 3).map(movieToRecommendation) }
+        {
+          fuzzyMatched: isFuzzy,
+          matchedMovies: movieFallback,
+          recommendations: movieFallback.slice(0, 4).map(movieToRecommendation)
+        }
       );
     }
+    const actionType: StandardizedActionType = topMovieFallback.type === 'series' ? 'OPEN_SERIES' : 'OPEN_MOVIE';
+    return buildReply(
+      isFuzzy ? 'FUZZY_OPEN_MOVIE' : 'OPEN_MOVIE',
+      Number((Math.min(96, topMovieScore) / 100).toFixed(2)),
+      lang === 'sw'
+        ? (isFuzzy ? `Nimepata movie inayofanana: ${topMovieFallback.title}, naifungua sasa.` : `Nafungua filamu ya ${topMovieFallback.title}.`)
+        : (isFuzzy ? `Playing closest movie match: ${topMovieFallback.title}.` : `Opening ${topMovieFallback.title}.`),
+      {
+        type: actionType,
+        target_id: topMovieFallback.id,
+        target_name: topMovieFallback.title,
+        deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(topMovieFallback.id)}`,
+        movie: topMovieFallback,
+        movies: movieFallback
+      },
+      {
+        speechTextEn: isFuzzy ? `I found ${topMovieFallback.title}, playing it for you now.` : `Okay, playing ${topMovieFallback.title} now.`,
+        fuzzyMatched: isFuzzy,
+        matchedMovies: movieFallback,
+        recommendations: movieFallback.slice(0, 4).map(movieToRecommendation)
+      }
+    );
   }
 
   // 11. LIVE SCHEDULE / EPG / MATCHES STATUS QUESTIONS
