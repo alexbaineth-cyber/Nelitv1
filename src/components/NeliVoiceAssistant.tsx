@@ -119,9 +119,9 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         case 'NEXT_CHANNEL':
         case 'PREV_CHANNEL': {
           const chanRef = act.channel || data.matchedChannel;
-          const targetId = act.channelId || chanRef?.id;
+          const targetId = act.target_id || act.channelId || chanRef?.id;
           const targetSlug = act.slug || chanRef?.slug;
-          const targetName = act.channelName || chanRef?.name;
+          const targetName = act.target_name || act.channelName || chanRef?.name;
           const found =
             channels.find((c) => targetId && c.id === targetId) ||
             channels.find((c) => targetSlug && c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === String(targetSlug).toLowerCase()) ||
@@ -133,6 +133,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
           break;
         }
         case 'OPEN_MOVIE':
+        case 'OPEN_SERIES':
         case 'PLAY_MOVIE': {
           const targetMovie = act.movie || data.matchedMovies?.[0];
           if (targetMovie && targetMovie.streamUrl) {
@@ -140,12 +141,46 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
           }
           break;
         }
+        case 'OPEN_APP_LINK': {
+          if (act.channel) {
+            const found = channels.find((c) => c.id === act.channel.id);
+            if (found) onSelectChannel(found);
+          } else {
+            onNavigateDownload();
+          }
+          break;
+        }
         case 'GO_HOME': {
           onNavigateHome();
           break;
         }
-        case 'OPEN_DOWNLOAD': {
-          onNavigateDownload();
+        case 'OPEN_DOWNLOAD':
+        case 'OPEN_PREMIUM': {
+          if (actType === 'OPEN_DOWNLOAD') {
+            onNavigateDownload();
+          } else if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/account');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+          break;
+        }
+        case 'OPEN_SEARCH': {
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/search');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+          break;
+        }
+        case 'VOLUME_UP': {
+          dispatchVoicePlayerCommand({ type: 'STEP_VOLUME', direction: 'up', delta: 0.2 });
+          break;
+        }
+        case 'VOLUME_DOWN': {
+          dispatchVoicePlayerCommand({ type: 'STEP_VOLUME', direction: 'down', delta: -0.2 });
+          break;
+        }
+        case 'RESUME': {
+          dispatchVoicePlayerCommand({ type: 'PLAY' });
           break;
         }
         case 'VOLUME': {
@@ -231,17 +266,23 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
             'X-App-Id': 'nelitv-web'
           },
           body: JSON.stringify({
+            app_id: 'nelitv-web',
+            platform: 'web',
+            capabilities: ['live_tv', 'movies', 'series', 'player_controls', 'vip_support'],
+            user_locale: 'auto',
+            input_mode: 'voice',
+            input_text: cleaned,
             transcript: cleaned,
-            text: cleaned,
-            appId: 'nelitv-web',
-            currentChannelId: currentChannel?.id,
-            locale: 'auto'
+            context: {
+              current_screen: currentChannel ? 'player' : 'home',
+              current_channel_id: currentChannel?.id
+            }
           })
         });
         const data: NeliAiCommandResponse = await resp.json();
-        if (data?.success) {
+        if (data?.success || data?.reply_text || data?.speech_text) {
           executeBrainAction(data);
-          speakReply(data.spokenReply, data.language || 'sw');
+          speakReply(data.speech_text || data.spokenReply || data.reply_text, data.language || 'sw');
         } else {
           speakReply('Samahani, jaribu tena.', 'sw');
         }
@@ -249,7 +290,7 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         speakReply('Mtandao unasuasua kidogo, jaribu tena.', 'sw');
       }
     },
-    [currentChannel?.id, executeBrainAction, speakReply]
+    [currentChannel, executeBrainAction, speakReply]
   );
 
   const ensureMicPermission = useCallback(async (): Promise<boolean> => {

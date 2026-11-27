@@ -1242,36 +1242,55 @@ app.post(['/api/ai/command', '/api/ai/voice', '/v1/neli-ai/command'], async (req
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const transcript = typeof req.body?.transcript === 'string'
-      ? req.body.transcript
-      : typeof req.body?.text === 'string'
-      ? req.body.text
-      : typeof req.body?.command === 'string'
-      ? req.body.command
-      : typeof req.body?.query === 'string'
-      ? req.body.query
-      : '';
+    const b = req.body || {};
+    const transcript =
+      typeof b.input_text === 'string'
+        ? b.input_text
+        : typeof b.transcript === 'string'
+        ? b.transcript
+        : typeof b.text === 'string'
+        ? b.text
+        : typeof b.command === 'string'
+        ? b.command
+        : typeof b.query === 'string'
+        ? b.query
+        : '';
     if (!transcript.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'transcript or text is required'
+        error: 'input_text or transcript is required'
       });
     }
     const appIdRaw =
-      typeof req.body?.appId === 'string'
-        ? req.body.appId
-        : typeof req.body?.app_id === 'string'
-        ? req.body.app_id
+      typeof b.app_id === 'string'
+        ? b.app_id
+        : typeof b.appId === 'string'
+        ? b.appId
         : req.get('x-app-id') || 'nelitv-web';
+    const localeRaw = String(b.user_locale || b.locale || 'auto').toLowerCase();
+    const locale: 'sw' | 'en' | 'auto' =
+      localeRaw.startsWith('sw') ? 'sw' : localeRaw.startsWith('en') ? 'en' : 'auto';
+
     const result = await processNeliVoiceCommand({
       transcript,
       appId: appIdRaw,
-      currentChannelId: typeof req.body?.currentChannelId === 'string' ? req.body.currentChannelId : undefined,
-      currentQuality: typeof req.body?.currentQuality === 'string' ? req.body.currentQuality : undefined,
-      volume: typeof req.body?.volume === 'number' ? req.body.volume : undefined,
-      brightness: typeof req.body?.brightness === 'number' ? req.body.brightness : undefined,
-      isFullscreen: typeof req.body?.isFullscreen === 'boolean' ? req.body.isFullscreen : undefined,
-      locale: req.body?.locale === 'sw' || req.body?.locale === 'en' ? req.body.locale : 'auto'
+      platform: b.platform === 'android' || b.platform === 'android-tv' || b.platform === 'web' ? b.platform : undefined,
+      capabilities: Array.isArray(b.capabilities) ? b.capabilities : undefined,
+      deviceId: typeof b.device_id === 'string' ? b.device_id : undefined,
+      inputMode: b.input_mode === 'text' ? 'text' : 'voice',
+      currentChannelId:
+        typeof b.context?.current_channel_id === 'string'
+          ? b.context.current_channel_id
+          : typeof b.currentChannelId === 'string'
+          ? b.currentChannelId
+          : undefined,
+      currentQuality: typeof b.currentQuality === 'string' ? b.currentQuality : undefined,
+      volume: typeof b.volume === 'number' ? b.volume : undefined,
+      brightness: typeof b.brightness === 'number' ? b.brightness : undefined,
+      isFullscreen: typeof b.isFullscreen === 'boolean' ? b.isFullscreen : undefined,
+      isVip: typeof b.context?.is_vip === 'boolean' ? b.context.is_vip : undefined,
+      context: typeof b.context === 'object' && b.context !== null ? b.context : undefined,
+      locale
     });
     return res.json(result);
   } catch (err: any) {

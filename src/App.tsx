@@ -92,6 +92,15 @@ function resolveCurrentRoute(): RouteResolution {
   if (lowerPath === '/embed') return { tab: 'embed', channel: null };
   if (lowerPath === '/privacy') return { tab: 'home', channel: null, openPrivacyModal: true };
 
+  // Deep links from Neli AI / Android App Links: /watch/channel/:id or /watch/:id
+  if (lowerPath.startsWith('/watch/channel/')) {
+    const slugOrId = pathname.slice('/watch/channel/'.length);
+    const ch =
+      CHANNELS_DATA.find((c) => c.id.toLowerCase() === slugOrId.toLowerCase()) ||
+      findChannelFromRoute(slugOrId, CHANNELS_DATA);
+    if (ch) return { tab: 'watch', channel: ch };
+  }
+
   // Query param ?ch=slug
   if (queryChannel) {
     const ch = findChannelFromRoute(queryChannel, CHANNELS_DATA);
