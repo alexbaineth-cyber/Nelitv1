@@ -27,7 +27,9 @@ import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
 import { CinematicSplash } from './components/CinematicSplash.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
 import { AdsterraGlobalScripts } from './components/AdsterraAds.tsx';
-import { Home, Search, Download, User } from 'lucide-react';
+import { NeliVoiceAssistant } from './components/NeliVoiceAssistant.tsx';
+import type { FirebaseMovieItem } from './server/neliAiBrain.ts';
+import { Home, Search, Download, User, X } from 'lucide-react';
 
 type ActiveRouteTab =
   | 'home'
@@ -126,6 +128,7 @@ function MainApp() {
 
   const [offlineIds, setOfflineIds] = useState<Set<string>>(() => new Set());
   const [proxyPreferredIds, setProxyPreferredIds] = useState<Set<string>>(() => new Set());
+  const [activeVoiceMovie, setActiveVoiceMovie] = useState<FirebaseMovieItem | null>(null);
 
   useEffect(() => {
     warmLiveCdnToken();
@@ -490,6 +493,70 @@ function MainApp() {
       />
 
       <OfflineIndicator />
+
+      <NeliVoiceAssistant
+        channels={healthyChannels}
+        currentChannel={activeTab === 'watch' ? resolvedSelectedChannel : null}
+        onSelectChannel={(ch) => {
+          setActiveVoiceMovie(null);
+          handleSelectChannel(ch);
+        }}
+        onOpenMovie={(movie) => setActiveVoiceMovie(movie)}
+        onNavigateHome={() => {
+          setActiveVoiceMovie(null);
+          navigateToTab('home');
+        }}
+        onNavigateDownload={() => {
+          setActiveVoiceMovie(null);
+          navigateToTab('download');
+        }}
+      />
+
+      {/* Firebase Movie Voice Player Overlay (triggered by Neli Voice AI) */}
+      {activeVoiceMovie && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-4xl rounded-2xl bg-[#0e1420] border border-white/15 overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-bold text-white truncate">
+                  {activeVoiceMovie.title}
+                </h2>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {[
+                    activeVoiceMovie.year,
+                    activeVoiceMovie.genres.slice(0, 2).join(', '),
+                    activeVoiceMovie.narrated ? 'Imetafsiriwa Kiswahili' : null
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveVoiceMovie(null)}
+                className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                aria-label="Funga Movie"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="aspect-video bg-black">
+              <video
+                src={activeVoiceMovie.streamUrl}
+                poster={activeVoiceMovie.backdropPath || activeVoiceMovie.posterPath}
+                controls
+                autoPlay
+                playsInline
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

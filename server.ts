@@ -17,6 +17,10 @@ import {
   manifestEdgeCache,
   segmentEdgeCache
 } from './src/server/streamResilience.ts';
+import {
+  neliAiKnowledge,
+  processNeliVoiceCommand
+} from './src/server/neliAiBrain.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
 
@@ -853,8 +857,9 @@ setInterval(() => {
   void triggerBackgroundTokenRefresh('').catch(() => {});
 }, TOKEN_SOFT_TTL_MS);
 
-// Start 24/7 Channel Health Guardian
+// Start 24/7 Channel Health Guardian & Neli AI Knowledge Sync (Channels + Firebase Movies)
 channelHealthGuardian.start();
+neliAiKnowledge.start();
 
 // InMobi authorized digital sellers (ads.txt) endpoint
 const INMOBI_ADS_TXT_FALLBACK = `inmobi.com, 6db4aff5416d4bb7b0ba0b274749cc7c, DIRECT, 83e75a7ae333ca9d
@@ -1214,6 +1219,120 @@ app.get('/api/channels/health', (_req: Request, res: Response) => {
     onlineIds: snap.onlineIds,
     offlineIds: snap.offlineIds,
     proxyPreferredIds: snap.proxyPreferredIds
+  });
+});
+
+// 0.1 Central NeliTv Voice AI Brain API (Zero external LLM; shared by Web, Android App, Smart TV & Neli Company)
+app.options(['/api/ai/command', '/api/ai/voice', '/api/ai/knowledge', '/api/ai/movies'], (_req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Id');
+  return res.status(204).end();
+});
+
+app.post(['/api/ai/command', '/api/ai/voice'], async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const transcript = typeof req.body?.transcript === 'string'
+      ? req.body.transcript
+      : typeof req.body?.query === 'string'
+      ? req.body.query
+      : '';
+    if (!transcript.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'transcript is required'
+      });
+    }
+    const result = await processNeliVoiceCommand({
+      transcript,
+      appId: typeof req.body?.appId === 'string' ? req.body.appId : req.get('x-app-id') || 'nelitv-web',
+      currentChannelId: typeof req.body?.currentChannelId === 'string' ? req.body.currentChannelId : undefined,
+      currentQuality: typeof req.body?.currentQuality === 'string' ? req.body.currentQuality : undefined,
+      volume: typeof req.body?.volume === 'number' ? req.body.volume : undefined,
+      brightness: typeof req.body?.brightness === 'number' ? req.body.brightness : undefined,
+      isFullscreen: typeof req.body?.isFullscreen === 'boolean' ? req.body.isFullscreen : undefined,
+      locale: req.body?.locale === 'sw' || req.body?.locale === 'en' ? req.body.locale : 'auto'
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Neli AI Brain error'
+    });
+  }
+});
+
+app.get('/api/ai/movies', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  await neliAiKnowledge.syncFirebaseCatalog(req.query.refresh === '1');
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  const genre = typeof req.query.genre === 'string' ? req.query.genre.trim().toLowerCase() : '';
+  const narratedOnly = req.query.narrated === '1' || req.query.narrated === 'true';
+
+  const all = [...neliAiKnowledge.getMovies(), ...neliAiKnowledge.getSeries()];
+  const filtered = all.filter((m) => {
+    if (narratedOnly && !m.narrated) return false;
+    if (genre && !m.genres.some((g) => g.toLowerCase().includes(genre))) return false;
+    if (q) {
+      const hay = `${m.title} ${m.originalTitle || ''} ${m.overview} ${m.genres.join(' ')}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  res.json({
+    success: true,
+    source: 'firebase-firestore-neliplay',
+    stats: neliAiKnowledge.getStats(),
+    total: filtered.length,
+    movies: filtered.slice(0, 120)
+  });
+});
+
+app.get('/api/ai/knowledge', async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  await neliAiKnowledge.syncFirebaseCatalog(req.query.refresh === '1');
+
+  const onlineChannels = CHANNELS_DATA.filter((ch) => channelHealthGuardian.isChannelOnline(ch.id)).map((ch) => ({
+    id: ch.id,
+    slug: getChannelRouteSlug(ch),
+    name: ch.name,
+    category: ch.category,
+    language: ch.language,
+    currentProgram: ch.currentProgram || '',
+    nextProgram: ch.nextProgram || '',
+    keywords: ch.searchKeywords || []
+  }));
+
+  res.json({
+    success: true,
+    engine: 'nelitv-brain-v1',
+    zeroExternalLlm: true,
+    voiceOnlyAssistant: true,
+    supportedApps: ['nelitv-web', 'nelitv-android', 'nelitv-tv', 'neli-company'],
+    stats: neliAiKnowledge.getStats(),
+    supportedVoiceIntents: [
+      'OPEN_CHANNEL (e.g. Neli open Azam Two / fungua Sinema Zetu)',
+      'NEXT_CHANNEL / PREV_CHANNEL (change channel / badili kituo)',
+      'OPEN_MOVIE (Firebase movies/series search & play)',
+      'SET_VOLUME / STEP_VOLUME / MUTE / UNMUTE',
+      'SET_BRIGHTNESS / STEP_BRIGHTNESS',
+      'SET_QUALITY / STEP_QUALITY (auto, 1080p, 720p, 480p, 360p, 240p, saver)',
+      'SET_LANGUAGE (sw / en)',
+      'SET_FULLSCREEN / PAUSE / PLAY / GO_HOME / OPEN_DOWNLOAD'
+    ],
+    channels: onlineChannels,
+    movies: neliAiKnowledge.getMovies(),
+    series: neliAiKnowledge.getSeries(),
+    endpoints: {
+      voiceCommand: `${PUBLIC_SITE_URL}/api/ai/command`,
+      moviesCatalog: `${PUBLIC_SITE_URL}/api/ai/movies`,
+      knowledgeExport: `${PUBLIC_SITE_URL}/api/ai/knowledge`
+    }
   });
 });
 

@@ -20,6 +20,19 @@ import {
 import { useServiceWorkerOnline } from '../hooks/useServiceWorkerOnline.ts';
 import { OfflineWatchPlaceholder } from './OfflineWatchPlaceholder.tsx';
 import { AdsterraFullscreenBanner } from './AdsterraAds.tsx';
+import { NELI_VOICE_PLAYER_EVENT, VoicePlayerCommandDetail } from '../utils/neliVoiceBridge.ts';
+
+const BRIGHTNESS_LEVELS = [0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5] as const;
+const BRIGHTNESS_CLASSES = [
+  'brightness-50',
+  'brightness-75',
+  'brightness-90',
+  'brightness-100',
+  'brightness-110',
+  'brightness-125',
+  'brightness-150'
+] as const;
+const QUALITY_LADDER: QualityOption[] = ['240', '360', '480', '720', '1080'];
 
 // Install shaka polyfill once at module initialization
 try {
@@ -116,6 +129,14 @@ function persistAbrBandwidthEstimate(bps: number) {
       return v !== null ? Math.max(0, Math.min(1, parseFloat(v))) : 1;
     } catch {
       return 1;
+    }
+  });
+  const [brightnessIdx, setBrightnessIdx] = useState<number>(() => {
+    try {
+      const b = parseInt(localStorage.getItem('nelitv_player_brightness_idx') || '3', 10);
+      return Number.isFinite(b) && b >= 0 && b < BRIGHTNESS_LEVELS.length ? b : 3;
+    } catch {
+      return 3;
     }
   });
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
@@ -1523,6 +1544,129 @@ function persistAbrBandwidthEstimate(bps: number) {
     return () => clearTimeout(midStallTimer);
   }, [hasFirstFrame, isBuffering, isOffline, errorMessage, isUserPaused, isEmbedded]);
 
+  // Listen to voice commands from NeliVoiceAssistant
+  useEffect(() => {
+    const handleVoiceCmd = (ev: Event) => {
+      const detail = (ev as CustomEvent<VoicePlayerCommandDetail>).detail;
+      if (!detail) return;
+      const vid = videoRef.current;
+
+      switch (detail.type) {
+        case 'MUTE': {
+          if (vid) vid.muted = true;
+          setIsMuted(true);
+          break;
+        }
+        case 'UNMUTE': {
+          if (vid) {
+            vid.muted = false;
+            if (vid.volume === 0) vid.volume = 0.7;
+          }
+          setIsMuted(false);
+          break;
+        }
+        case 'SET_VOLUME': {
+          const nextVol = Math.max(0, Math.min(1, detail.value ?? 0.8));
+          setVolume(nextVol);
+          setIsMuted(nextVol === 0);
+          if (vid) {
+            vid.volume = nextVol;
+            vid.muted = nextVol === 0;
+          }
+          try { localStorage.setItem('nelitv_player_volume', String(nextVol)); } catch {}
+          break;
+        }
+        case 'STEP_VOLUME': {
+          const delta = detail.delta ?? (detail.direction === 'down' ? -0.2 : 0.2);
+          setVolume((prev) => {
+            const nextVol = Math.max(0, Math.min(1, Number((prev + delta).toFixed(2))));
+            setIsMuted(nextVol === 0);
+            if (vid) {
+              vid.volume = nextVol;
+              vid.muted = nextVol === 0;
+            }
+            try { localStorage.setItem('nelitv_player_volume', String(nextVol)); } catch {}
+            return nextVol;
+          });
+          break;
+        }
+        case 'SET_BRIGHTNESS': {
+          const target = detail.value ?? 1.0;
+          let bestIdx = 3;
+          let minDiff = 99;
+          BRIGHTNESS_LEVELS.forEach((lvl, i) => {
+            const d = Math.abs(lvl - target);
+            if (d < minDiff) {
+              minDiff = d;
+              bestIdx = i;
+            }
+          });
+          setBrightnessIdx(bestIdx);
+          try { localStorage.setItem('nelitv_player_brightness_idx', String(bestIdx)); } catch {}
+          break;
+        }
+        case 'STEP_BRIGHTNESS': {
+          const step = detail.direction === 'down' ? -1 : 1;
+          setBrightnessIdx((prev) => {
+            const nextIdx = Math.max(0, Math.min(BRIGHTNESS_LEVELS.length - 1, prev + step));
+            try { localStorage.setItem('nelitv_player_brightness_idx', String(nextIdx)); } catch {}
+            return nextIdx;
+          });
+          break;
+        }
+        case 'SET_QUALITY': {
+          if (detail.quality) {
+            handleSelectQuality(detail.quality);
+          }
+          break;
+        }
+        case 'STEP_QUALITY': {
+          const curIdx = QUALITY_LADDER.indexOf(selectedQuality);
+          const baseIdx = curIdx >= 0 ? curIdx : 2; // default ~480p
+          const nextIdx = Math.max(
+            0,
+            Math.min(QUALITY_LADDER.length - 1, baseIdx + (detail.direction === 'down' ? -1 : 1))
+          );
+          handleSelectQuality(QUALITY_LADDER[nextIdx]);
+          break;
+        }
+        case 'SET_LANGUAGE': {
+          if (detail.language && detail.language !== selectedLanguage) {
+            toggleLanguage();
+          }
+          break;
+        }
+        case 'SET_FULLSCREEN': {
+          const wantFs = Boolean(detail.fullscreen);
+          if (wantFs !== isFullscreen) {
+            void toggleFullscreen();
+          }
+          break;
+        }
+        case 'PAUSE': {
+          if (vid) {
+            vid.pause();
+            setIsUserPaused(true);
+            setIsPlaying(false);
+          }
+          break;
+        }
+        case 'PLAY': {
+          if (vid) {
+            setIsUserPaused(false);
+            vid.play().then(() => setIsPlaying(true)).catch(() => {});
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener(NELI_VOICE_PLAYER_EVENT, handleVoiceCmd);
+    return () => window.removeEventListener(NELI_VOICE_PLAYER_EVENT, handleVoiceCmd);
+  }, [selectedQuality, selectedLanguage, isFullscreen]);
+
   return (
     <div
       ref={containerRef}
@@ -1622,7 +1766,9 @@ function persistAbrBandwidthEstimate(bps: number) {
             playsInline
             autoPlay
             preload="auto"
-            className={`relative z-[1] w-full h-full object-contain transition-opacity duration-300 ${
+            className={`relative z-[1] w-full h-full object-contain transition-all duration-300 ${
+              BRIGHTNESS_CLASSES[brightnessIdx] || 'brightness-100'
+            } ${
               hasFirstFrame ? 'opacity-100 bg-black' : 'opacity-0 bg-transparent'
             }`}
           />
