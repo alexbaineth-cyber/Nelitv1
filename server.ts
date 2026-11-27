@@ -1093,6 +1093,31 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord, includeOffline = fal
   const builtAll = CHANNELS_DATA.map((ch) => buildLiveAzamChannelForApp(ch, tokenData, proxyTicket));
   const liveChannels = includeOffline ? builtAll : builtAll.filter((c) => c.isOnline !== false);
 
+  const playerConfig = {
+    preferDirectCdnForNativeApp: true,
+    avoidProxyBottleneckOnNative: true,
+    abr: {
+      mode: 'youtube-stable',
+      initialQualityTarget: '480p',
+      initialBandwidthEstimateBps: 950000,
+      switchIntervalMs: 18000,
+      upgradeBandwidthFraction: 0.55,
+      downgradeBandwidthFraction: 0.90,
+      minBufferMs: 18000,
+      maxBufferMs: 36000,
+      bufferForPlaybackMs: 1800,
+      bufferForPlaybackAfterRebufferMs: 3500,
+      backgroundSilentSwitch: true,
+      hideSpinnerDuringAbrSwitch: true
+    },
+    networkStability: {
+      hysteresisWindowMs: 18000,
+      avoidSuddenSourceSwitchOnSlowNetwork: true,
+      slowNetworkHoldQualityFloor: '360p',
+      maxDirectRetryBeforeProxyFallback: 2
+    }
+  };
+
   const channelsJson = JSON.stringify({
     success: true,
     server: 'NeliTv App Server',
@@ -1102,6 +1127,7 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord, includeOffline = fal
     expiresAt: new Date(exposedExp * 1000).toISOString(),
     neverExpires: isPermanent,
     source: tokenData.source,
+    playerConfig,
     total: liveChannels.length,
     offlineFilteredCount: builtAll.length - liveChannels.length,
     data: liveChannels,
@@ -1121,6 +1147,7 @@ function getMemoizedLiveChannels(tokenData: CdnTokenRecord, includeOffline = fal
     source: tokenData.source,
     provider: 'NeliTv Server',
     refreshIntervalSeconds: isPermanent ? 3600 : 45,
+    playerConfig,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'Referer': `${PUBLIC_SITE_URL}/`
@@ -1584,25 +1611,64 @@ app.all('/api/proxy-relay/:dirToken/*', async (req: Request, res: Response) => {
     const rangeHeader = req.headers.range as string | undefined;
     if (req.method === 'GET' && !rangeHeader) {
       const segKey = `relay:${targetUrl}`;
-      const alreadyCached = Boolean(segmentEdgeCache.get(segKey));
-      const entry = await segmentEdgeCache.coalesce(segKey, async () => {
-        const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
-        if (!response.ok) {
-          throw Object.assign(new Error(`Upstream segment HTTP ${response.status}`), { upstreamStatus: response.status });
-        }
-        const buf = Buffer.from(await response.arrayBuffer());
-        const ctype = response.headers.get('content-type') || 'video/mp4';
-        return segmentEdgeCache.set(segKey, buf, ctype, response.status);
-      });
-      if (entry) {
-        res.status(entry.status);
-        if (entry.contentType) res.setHeader('Content-Type', entry.contentType);
-        res.setHeader('Content-Length', String(entry.bytes));
+      const cachedEntry = segmentEdgeCache.get(segKey);
+      if (cachedEntry) {
+        res.status(cachedEntry.status);
+        if (cachedEntry.contentType) res.setHeader('Content-Type', cachedEntry.contentType);
+        res.setHeader('Content-Length', String(cachedEntry.bytes));
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Cache-Control', 'public, max-age=15');
-        res.setHeader('X-Neli-Cache', alreadyCached ? 'hit' : 'miss');
-        return res.send(entry.buffer);
+        res.setHeader('X-Neli-Cache', 'hit');
+        return res.send(cachedEntry.buffer);
       }
+
+      segmentEdgeCache.misses += 1;
+      const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Proxy relay failed: Upstream segment HTTP ${response.status}` });
+      }
+      res.status(response.status);
+      const ctype = response.headers.get('content-type') || 'video/mp4';
+      res.setHeader('Content-Type', ctype);
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      const acceptRanges = response.headers.get('accept-ranges');
+      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+      res.setHeader('Cache-Control', 'public, max-age=15');
+      res.setHeader('X-Neli-Cache', 'miss');
+
+      if (!response.body) {
+        return res.end();
+      }
+      // Stream immediately byte-for-byte (zero buffering wait) while teeing chunks <= 2.5MB into edge cache
+      // @ts-ignore
+      const nodeStream = Readable.fromWeb(response.body);
+      const chunks: Buffer[] = [];
+      let totalTeeBytes = 0;
+      let abortTee = false;
+      nodeStream.on('data', (chunk: Buffer) => {
+        if (abortTee) return;
+        totalTeeBytes += chunk.length;
+        if (totalTeeBytes > 2.5 * 1024 * 1024) {
+          abortTee = true;
+          chunks.length = 0;
+        } else {
+          chunks.push(chunk);
+        }
+      });
+      nodeStream.on('end', () => {
+        if (!abortTee && totalTeeBytes > 0) {
+          segmentEdgeCache.set(segKey, Buffer.concat(chunks), ctype, response.status);
+        }
+      });
+      nodeStream.on('error', () => {
+        if (!res.headersSent) res.status(502).end();
+        else res.end();
+      });
+      req.on('close', () => {
+        try { nodeStream.destroy(); } catch {}
+      });
+      return nodeStream.pipe(res);
     }
 
     const { response } = await fetchUpstreamWithAutoHeal(targetUrl, req.method, rangeHeader);
@@ -1757,25 +1823,63 @@ app.all('/api/proxy-stream', async (req: Request, res: Response) => {
     const rangeHeader = req.headers.range as string | undefined;
     if (req.method === 'GET' && !rangeHeader && !looksLikeMpd && !looksLikeHls) {
       const segKey = `seg:${targetUrl}`;
-      const alreadyCached = Boolean(segmentEdgeCache.get(segKey));
-      const cachedSeg = await segmentEdgeCache.coalesce(segKey, async () => {
-        const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
-        if (!response.ok) {
-          throw Object.assign(new Error(`Upstream segment HTTP ${response.status}`), { upstreamStatus: response.status });
-        }
-        const buf = Buffer.from(await response.arrayBuffer());
-        const ctype = response.headers.get('content-type') || 'application/octet-stream';
-        return segmentEdgeCache.set(segKey, buf, ctype, response.status);
-      });
+      const cachedSeg = segmentEdgeCache.get(segKey);
       if (cachedSeg) {
         res.status(cachedSeg.status);
         if (cachedSeg.contentType) res.setHeader('Content-Type', cachedSeg.contentType);
         res.setHeader('Content-Length', String(cachedSeg.bytes));
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Cache-Control', 'public, max-age=15');
-        res.setHeader('X-Neli-Cache', alreadyCached ? 'hit' : 'miss');
+        res.setHeader('X-Neli-Cache', 'hit');
         return res.send(cachedSeg.buffer);
       }
+
+      segmentEdgeCache.misses += 1;
+      const { response } = await fetchUpstreamWithAutoHeal(targetUrl, 'GET');
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Upstream segment HTTP ${response.status}` });
+      }
+      res.status(response.status);
+      const ctype = response.headers.get('content-type') || 'application/octet-stream';
+      res.setHeader('Content-Type', ctype);
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      const acceptRanges = response.headers.get('accept-ranges');
+      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+      res.setHeader('Cache-Control', 'public, max-age=15');
+      res.setHeader('X-Neli-Cache', 'miss');
+
+      if (!response.body) {
+        return res.end();
+      }
+      // @ts-ignore
+      const nodeStream = Readable.fromWeb(response.body);
+      const chunks: Buffer[] = [];
+      let totalTeeBytes = 0;
+      let abortTee = false;
+      nodeStream.on('data', (chunk: Buffer) => {
+        if (abortTee) return;
+        totalTeeBytes += chunk.length;
+        if (totalTeeBytes > 2.5 * 1024 * 1024) {
+          abortTee = true;
+          chunks.length = 0;
+        } else {
+          chunks.push(chunk);
+        }
+      });
+      nodeStream.on('end', () => {
+        if (!abortTee && totalTeeBytes > 0) {
+          segmentEdgeCache.set(segKey, Buffer.concat(chunks), ctype, response.status);
+        }
+      });
+      nodeStream.on('error', () => {
+        if (!res.headersSent) res.status(502).end();
+        else res.end();
+      });
+      req.on('close', () => {
+        try { nodeStream.destroy(); } catch {}
+      });
+      return nodeStream.pipe(res);
     }
 
     const { response, activeUrl: activeTargetUrl } = await fetchUpstreamWithAutoHeal(
@@ -2315,6 +2419,13 @@ function buildPlayerApiPayload(ch: typeof CHANNELS_DATA[number], opts: { autopla
       width: opts.width,
       height: opts.height,
       autoplay: opts.autoplay,
+      abrProfile: {
+        mode: 'youtube-stable',
+        initialQualityTarget: '480p',
+        switchIntervalMs: 18000,
+        backgroundSilentSwitch: true,
+        hideSpinnerDuringAbrSwitch: true
+      },
       iframeHtml,
       sdkCode
     }

@@ -73,6 +73,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+function getBalancedStartBandwidthEstimate(): number {
+  try {
+    const saved = Number(localStorage.getItem('nelitv_abr_bw_bps'));
+    if (Number.isFinite(saved) && saved > 250_000) {
+      // Clamp startup estimate to normal balanced range (~360p-576p) so playback starts cleanly without ladder reloads
+      return Math.max(650_000, Math.min(1_550_000, Math.round(saved)));
+    }
+  } catch {}
+  return 950_000;
+}
+
+function persistAbrBandwidthEstimate(bps: number) {
+  if (!Number.isFinite(bps) || bps < 200_000) return;
+  try {
+    localStorage.setItem('nelitv_abr_bw_bps', String(Math.round(bps)));
+  } catch {}
+}
+
   const shakaPlayerRef = useRef<any>(null);
   const hlsPlayerRef = useRef<any>(null);
   const hlsAudioPlayerRef = useRef<any>(null);
@@ -82,13 +100,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const activeProviderRef = useRef<string>(initialToken.provider || 'cdn77');
   const hasFirstFrameRef = useRef<boolean>(false);
   const useSegmentProxyRef = useRef<boolean>(false);
-  const lastDownshiftAtRef = useRef<number>(0);
   const loadPercentRef = useRef<number>(12);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [hasFirstFrame, setHasFirstFrame] = useState<boolean>(false);
   const [loadPercent, setLoadPercent] = useState<number>(12);
   const [isBuffering, setIsBuffering] = useState<boolean>(false);
+  const [showRebufferBadge, setShowRebufferBadge] = useState<boolean>(false);
   const [isUserPaused, setIsUserPaused] = useState<boolean>(false);
   const [needsUserTapToPlay, setNeedsUserTapToPlay] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -153,12 +171,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           } else if (stats && stats.estimatedBandwidth) {
             setBitrateKbps(Math.round(stats.estimatedBandwidth / 1000));
           }
+          if (stats && stats.estimatedBandwidth && hasFirstFrameRef.current && videoRef.current && !videoRef.current.paused) {
+            persistAbrBandwidthEstimate(stats.estimatedBandwidth);
+          }
+        } catch {}
+      } else if (hlsPlayerRef.current) {
+        try {
+          const bw = hlsPlayerRef.current.bandwidthEstimate;
+          if (Number.isFinite(bw) && bw > 0) {
+            setBitrateKbps(Math.round(bw / 1000));
+            if (hasFirstFrameRef.current && videoRef.current && !videoRef.current.paused) {
+              persistAbrBandwidthEstimate(bw);
+            }
+          }
         } catch {}
       }
-    }, 1500);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, []);
+
+  // Only show mid-stream rebuffer badge if real playback stall persists >= 2.6s (never during background quality shifts)
+  useEffect(() => {
+    if (!hasFirstFrame || !isBuffering || errorMessage || isOffline || isUserPaused) {
+      setShowRebufferBadge(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const vid = videoRef.current;
+      if (vid && vid.readyState < 3 && !vid.paused) {
+        setShowRebufferBadge(true);
+      }
+    }, 2600);
+    return () => clearTimeout(timer);
+  }, [hasFirstFrame, isBuffering, errorMessage, isOffline, isUserPaused]);
 
   const resetControlsTimeout = () => {
     setShowControls(true);
@@ -526,27 +572,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             },
             streaming: {
-              bufferingGoal: 6,
-              rebufferingGoal: 1.5,
-              bufferBehind: 12,
-              safeSeekOffset: 8,
+              bufferingGoal: 18,
+              rebufferingGoal: 2.5,
+              bufferBehind: 20,
+              safeSeekOffset: 10,
               startAtSegmentBoundary: true,
-              gapDetectionThreshold: 0.5,
+              gapDetectionThreshold: 0.6,
               stallEnabled: true,
-              stallThreshold: 1.0,
+              stallThreshold: 1.5,
               stallSkip: 0.25,
               segmentPrefetchLimit: 2,
               ignoreTextStreamFailures: true,
               retryParameters: {
                 maxAttempts: 3,
-                baseDelay: 200,
-                backoffFactor: 1.4,
-                timeout: 8000
+                baseDelay: 250,
+                backoffFactor: 1.5,
+                timeout: 9000
               }
             },
             manifest: {
               disableText: true,
-              defaultPresentationDelay: 10,
+              defaultPresentationDelay: 12,
               dash: {
                 autoCorrectDrift: true,
                 ignoreMinBufferTime: true,
@@ -554,17 +600,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               },
               retryParameters: {
                 maxAttempts: 3,
-                baseDelay: 200,
-                backoffFactor: 1.4,
-                timeout: 8000
+                baseDelay: 250,
+                backoffFactor: 1.5,
+                timeout: 9000
               }
             },
             abr: {
               enabled: selectedQuality === 'auto',
-              defaultBandwidthEstimate: 280000,
-              switchInterval: 3,
-              bandwidthDowngradeTarget: 0.95,
-              bandwidthUpgradeTarget: 0.65
+              defaultBandwidthEstimate: getBalancedStartBandwidthEstimate(),
+              switchInterval: 18,
+              bandwidthDowngradeTarget: 0.90,
+              bandwidthUpgradeTarget: 0.55
             }
           });
 
@@ -620,11 +666,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             });
           });
 
-          // Background failover to clean ClearKey-normalized proxy MPD if direct CDN fails or stalls > 9s
+          // Background failover to clean ClearKey-normalized proxy MPD ONLY if direct CDN delivers zero bytes after 12s
           fastProxyFailoverTimer = setTimeout(async () => {
             if (!isMounted || hasFirstFrameRef.current || !shakaPlayerRef.current) return;
             const vid = videoRef.current;
-            if (vid && (vid.readyState >= 2 || vid.buffered.length > 0)) {
+            if (vid && (vid.readyState >= 1 || vid.buffered.length > 0)) {
               if (vid.readyState >= 2) markFrameReady();
               return;
             }
@@ -637,7 +683,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 if (isMounted) await attemptAutoPlay();
               } catch {}
             }
-          }, 9000);
+          }, 12000);
 
           // Hard timeout prevents infinite 96% hang if upstream & proxy both fail
           hardTimeoutTimer = setTimeout(() => {
@@ -688,7 +734,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             } catch {}
           });
 
-          // Only downshift quality mid-stream AFTER initial playback has started (never disrupt initial startup)
+          // Track buffering quietly without panic-dropping quality or disabling ABR on minor network jitter
           player.addEventListener('buffering', (event: any) => {
             if (!isMounted) return;
             if (!event.buffering && videoRef.current && videoRef.current.readyState >= 2) {
@@ -697,21 +743,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }
             if (hasFirstFrameRef.current) {
               setIsBuffering(Boolean(event.buffering));
-              const now = Date.now();
-              if (event.buffering && now - lastDownshiftAtRef.current > 3500) {
-                lastDownshiftAtRef.current = now;
-                try {
-                  const tracks = player.getVariantTracks();
-                  if (tracks && tracks.length > 1) {
-                    const sorted = [...tracks].sort((a: any, b: any) => (a.bandwidth || 0) - (b.bandwidth || 0));
-                    const lowest = sorted[0];
-                    if (lowest && !lowest.active && lowest.id !== undefined) {
-                      player.selectVariantTrack(lowest, false);
-                      if (lowest.height) setCurrentResolution(`${lowest.height}p`);
-                    }
-                  }
-                } catch {}
-              }
             }
           });
 
@@ -881,20 +912,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           const hls = new Hls({
             enableWorker: true,
-            startLevel: 0,
-            maxBufferLength: 6,
-            maxMaxBufferLength: 16,
-            liveSyncDurationCount: 2,
-            liveMaxLatencyDurationCount: 5,
+            startLevel: -1,
+            abrEwmaDefaultEstimate: getBalancedStartBandwidthEstimate(),
+            abrEwmaSlowLive: 9.0,
+            abrEwmaFastLive: 4.5,
+            abrMaxWithRealBitrate: true,
+            maxBufferLength: 20,
+            maxMaxBufferLength: 36,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 8,
             lowLatencyMode: false,
-            backBufferLength: 8,
+            backBufferLength: 12,
             autoStartLoad: true,
             capLevelToPlayerSize: false,
-            abrBandWidthFactor: 0.75,
-            abrBandWidthUpFactor: 0.65,
-            manifestLoadingTimeOut: 6000,
+            abrBandWidthFactor: 0.85,
+            abrBandWidthUpFactor: 0.52,
+            manifestLoadingTimeOut: 7500,
             manifestLoadingMaxRetry: 2,
-            fragLoadingTimeOut: 7000,
+            fragLoadingTimeOut: 8500,
             fragLoadingMaxRetry: 2,
           });
           hlsPlayerRef.current = hls;
@@ -904,9 +939,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           hls.on(Hls.Events.MANIFEST_PARSED, async () => {
             if (!isMounted) return;
+            // Start at balanced ~480p level while keeping Auto ABR active (prevents 240p->480p->720p ladder jumps)
+            try {
+              if (selectedQuality === 'auto' && hls.levels && hls.levels.length > 2) {
+                let bestNormalIdx = Math.floor(hls.levels.length / 2);
+                let bestDiff = 99999;
+                hls.levels.forEach((lvl: any, idx: number) => {
+                  const diff = Math.abs((lvl.height || 0) - 480);
+                  if (lvl.height && diff < bestDiff) {
+                    bestDiff = diff;
+                    bestNormalIdx = idx;
+                  }
+                });
+                hls.nextAutoLevel = bestNormalIdx;
+              }
+            } catch {}
             advanceProgress(58);
             setErrorMessage(null);
             await attemptAutoPlay();
+          });
+
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_e: any, data: any) => {
+            if (!isMounted) return;
+            try {
+              const lvl = hls.levels?.[data.level];
+              if (lvl?.height) {
+                setCurrentResolution(`${lvl.height}p`);
+              }
+            } catch {}
           });
 
           hls.on(Hls.Events.FRAG_BUFFERED, () => {
@@ -917,12 +977,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           });
 
           hls.on(Hls.Events.BUFFER_STALLED, () => {
-            if (!isMounted) return;
-            try {
-              if (hls.levels && hls.levels.length > 1) {
-                hls.nextLevel = 0;
-              }
-            } catch {}
+            // Do not yank manual nextLevel = 0; allow YouTube-style smooth ABR buffer recovery in background
           });
 
           hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
@@ -1118,10 +1173,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         player.configure({
           abr: {
             enabled: true,
-            defaultBandwidthEstimate: 350000,
-            switchInterval: 5,
-            bandwidthDowngradeTarget: 0.95,
-            bandwidthUpgradeTarget: 0.65
+            defaultBandwidthEstimate: getBalancedStartBandwidthEstimate(),
+            switchInterval: 18,
+            bandwidthDowngradeTarget: 0.90,
+            bandwidthUpgradeTarget: 0.55
           }
         });
         setCurrentResolution('Auto');
@@ -1440,48 +1495,33 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [isOffline, channel]);
 
-  // Mid-stream zero-freeze watchdog: if buffering persists > 7.5s after playback started,
-  // silently self-heal via proxy failover / CDN retry without waiting for user intervention.
+  // Gentle stall recovery: only nudge active player after 14s of true freeze (readyState < 3 & empty buffer)
+  // without forcibly reloading working direct CDN streams onto nelitv.online proxy on slow user networks.
   useEffect(() => {
     if (!hasFirstFrame || !isBuffering || isOffline || errorMessage || isUserPaused || isEmbedded) {
       return;
     }
 
-    const midStallTimer = setTimeout(async () => {
+    const startTimeSnapshot = videoRef.current?.currentTime ?? 0;
+    const midStallTimer = setTimeout(() => {
+      const vid = videoRef.current;
+      if (!vid || vid.paused) return;
+      const hasProgressed = Math.abs(vid.currentTime - startTimeSnapshot) > 0.2;
+      if (hasProgressed || vid.readyState >= 3) return;
+
       if (shakaPlayerRef.current) {
         try {
-          if (!useSegmentProxyRef.current) {
-            useSegmentProxyRef.current = true;
-            const fresh = await getLiveCdnToken(true).catch(() => null);
-            const activeTok = fresh?.token ? fresh : getInstantCdnToken();
-            if (fresh?.token) {
-              activeTokenRef.current = fresh.token;
-              activeCdnHostRef.current = fresh.cdnHost || activeCdnHostRef.current;
-              activeProviderRef.current = fresh.provider || activeProviderRef.current;
-            }
-            const nextUrl = buildPlayableStreamUrl(channel, activeTok);
-            await shakaPlayerRef.current.load(`/api/proxy-stream?url=${encodeURIComponent(nextUrl)}&app=nelitv`);
-            if (videoRef.current) {
-              videoRef.current.play().catch(() => {});
-            }
-            return;
-          }
           shakaPlayerRef.current.retryStreaming();
         } catch {}
       } else if (hlsPlayerRef.current) {
         try {
-          const hls = hlsPlayerRef.current;
-          const curUrl = hls.url || channel.streamUrl;
-          if (curUrl && !curUrl.includes('/api/proxy-stream') && !curUrl.startsWith('/')) {
-            hls.loadSource(`/api/proxy-stream?url=${encodeURIComponent(curUrl)}&app=nelitv`);
-          }
-          hls.startLoad(-1);
+          hlsPlayerRef.current.startLoad(-1);
         } catch {}
       }
-    }, 7500);
+    }, 14000);
 
     return () => clearTimeout(midStallTimer);
-  }, [hasFirstFrame, isBuffering, isOffline, errorMessage, isUserPaused, isEmbedded, channel]);
+  }, [hasFirstFrame, isBuffering, isOffline, errorMessage, isUserPaused, isEmbedded]);
 
   return (
     <div
@@ -1610,19 +1650,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Compact mid-stream rebuffer indicator with live percentage if buffering happens during playback */}
-      {!isEmbedded && hasFirstFrame && isBuffering && !errorMessage && !isPaywallTriggered && !isOffline && (
+      {/* Subtle rebuffer indicator shown ONLY if playback truly stalls >= 2.6s (hidden during silent ABR switches) */}
+      {!isEmbedded && hasFirstFrame && showRebufferBadge && !errorMessage && !isPaywallTriggered && !isOffline && (
         <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-col gap-1 px-3 py-1.5 rounded-lg bg-black/75 border border-white/15 min-w-[130px]">
           <div className="flex items-center justify-between gap-2 text-[11px] font-semibold">
             <span className="text-slate-200">Inapakia...</span>
             <span className="text-[#1ce783] font-bold tabular-nums">
-              {Math.min(98, Math.max(25, Math.round((bufferSeconds / 1.5) * 100)))}%
+              {Math.min(98, Math.max(25, Math.round((bufferSeconds / 2.5) * 100)))}%
             </span>
           </div>
           <div className="h-1 w-full rounded-full bg-white/15 overflow-hidden">
             <div
               className="h-full rounded-full bg-[#1ce783] transition-all duration-200 ease-out"
-              style={{ width: `${Math.min(98, Math.max(25, Math.round((bufferSeconds / 1.5) * 100)))}%` }}
+              style={{ width: `${Math.min(98, Math.max(25, Math.round((bufferSeconds / 2.5) * 100)))}%` }}
             />
           </div>
         </div>
