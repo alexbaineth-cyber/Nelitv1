@@ -1,6 +1,12 @@
 import { CHANNELS_DATA, Channel, VIFURUSHI_PLANS } from '../data/channels.ts';
 import { getChannelRouteSlug } from '../utils/channelRoute.ts';
 import { channelHealthGuardian } from './streamResilience.ts';
+import { askGroqGroundedReasoner, isGroqConfigured } from './neliGroqEngine.ts';
+import {
+  getCatalogCommandCount,
+  matchBuiltInAppIntent,
+  matchCustomTrainedRule
+} from './neliCommandCatalog.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
 
@@ -125,8 +131,9 @@ export interface NeliAiVoiceProfile {
 
 export interface NeliAiCommandResponse {
   success: boolean;
-  engine: 'nelitv-brain-v1';
-  zeroExternalLlm: true;
+  engine: 'nelitv-brain-v1' | 'nelitv-brain-v1+groq';
+  zeroExternalLlm: boolean;
+  groq_used?: boolean;
   app_id: string;
   appId: string;
   platform: NeliPlatform;
@@ -153,6 +160,7 @@ export interface NeliAiCommandResponse {
     firebaseSeries: number;
     firebaseEpisodes: number;
     faqCount: number;
+    supportedCommands: number;
     lastFirebaseSyncAt: string | null;
   };
 }
@@ -395,6 +403,7 @@ class NeliAiKnowledgeBase {
       firebaseSeries: this.series.length,
       firebaseEpisodes: this.episodes.length,
       faqCount: NELITV_FAQ_KNOWLEDGE_BASE.length,
+      supportedCommands: getCatalogCommandCount(),
       lastFirebaseSyncAt: this.lastSyncAtIso
     };
   }
@@ -422,7 +431,7 @@ function stripWakeWord(text: string): string {
 function detectLanguage(raw: string, localeHint?: 'sw' | 'en' | 'auto'): 'sw' | 'en' {
   if (localeHint === 'sw' || localeHint === 'en') return localeHint;
   const swHints = /\b(fungua|weka|niwekee|ongeza|pandisha|punguza|zima|washa|badili|badilisha|hamia|kituo|sauti|mwanga|ubora|bando|okoa|nyumbani|rudi|tafuta|nipendekezee|filamu|tamthilia|kipindi|mechi|mpira|hewani|simamisha|endelea|skrini|lugha|kiswahili|inayofuata|nyuma|bure|pakua|habari|mambo|nani|gani|ipi|kifurushi|nalipia|nalipiaje|mapigano|ucheshi)\b/i;
-  const enHints = /\b(open|play|watch|change|switch|next|previous|increase|decrease|turn up|turn down|raise|lower|mute|unmute|volume|brightness|quality|fullscreen|pause|resume|home|search|recommend|movie|movies|film|channel|live|match|download|english|language|premium|subscribe)\b/i;
+  const enHints = /\b(open|play|playing|watch|change|switch|next|previous|increase|decrease|turn up|turn down|raise|lower|mute|unmute|volume|brightness|quality|fullscreen|pause|resume|home|search|recommend|movie|movies|film|channel|live|match|download|english|language|premium|subscribe|what|whats|now|currently|who|your|name)\b/i;
   const swScore = (raw.match(new RegExp(swHints.source, 'gi')) || []).length;
   const enScore = (raw.match(new RegExp(enHints.source, 'gi')) || []).length;
   if (swScore > enScore) return 'sw';
@@ -465,7 +474,7 @@ const PHONETIC_CHANNEL_SYNONYMS: Array<[RegExp, string]> = [
 
 function normalizeChannelCandidate(query: string): string {
   let out = query
-    .replace(/\b(open|fungua|weka|niwekee|cheza|play|watch|tazama|change|switch|put|turn|go|badili|badilisha|hamia|nenda|to|into|on|the|a|kwenda|kwenye|hadi|channel|chaneli|kituo|sasa|hivi|pliz|please)\b/gi, ' ')
+    .replace(/\b(open|fungua|weka|niwekee|cheza|play|playing|watch|tazama|change|switch|put|turn|go|badili|badilisha|hamia|nenda|to|into|on|in|at|for|from|of|the|a|kwenda|kwenye|hadi|katika|channel|chaneli|kituo|sasa|hivi|pliz|please|what|whats|is|are|now|next|currently|airing|showing|schedule|program|programme|show|nini|kinacheza|kinaonyeshwa|kinachoendelea|vipindi|kipindi|kipo|kijacho|baadaye|gani|tell|me|about|info)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -801,6 +810,8 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       speechText?: string;
       speechTextEn?: string;
       fuzzyMatched?: boolean;
+      engineOverride?: 'nelitv-brain-v1' | 'nelitv-brain-v1+groq';
+      groqUsed?: boolean;
       matchedChannel?: NeliAiAction['channel'] | null;
       matchedMovies?: FirebaseMovieItem[];
       recommendations?: NeliAiRecommendation[];
@@ -878,10 +889,12 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       deep_link: PUBLIC_SITE_URL,
       ...partialAction
     };
+    const engineUsed = options?.engineOverride || 'nelitv-brain-v1';
     return {
       success: true,
-      engine: 'nelitv-brain-v1',
-      zeroExternalLlm: true,
+      engine: engineUsed,
+      zeroExternalLlm: engineUsed === 'nelitv-brain-v1',
+      groq_used: Boolean(options?.groqUsed),
       app_id: appId,
       appId,
       platform,
@@ -915,6 +928,84 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
         ? 'Ready. Tell me what channel or movie to play.'
         : 'I am listening. Tell me which channel or movie to open, or adjust volume, brightness, or quality.');
     return buildReply('WAKE_GREETING', 0.95, msg, { type: 'NONE' });
+  }
+
+  // 0. CUSTOM TAUGHT / TRAINED RULES (Admin-taught rules in Neli AI Center take priority)
+  const customRule = matchCustomTrainedRule(query);
+  if (customRule) {
+    const pool = getOnlineChannelPool();
+    const matchedCh =
+      customRule.targetId
+        ? pool.find((c) => c.id === customRule.targetId) ||
+          (customRule.targetName ? matchBestChannel(customRule.targetName)?.channel : undefined)
+        : undefined;
+    const brief = matchedCh ? serializeChannelBrief(matchedCh) : undefined;
+    const slug = matchedCh ? getChannelRouteSlug(matchedCh) : '';
+    const replyDisplay = lang === 'sw' ? customRule.replySw : customRule.replyEn;
+    return buildReply(
+      'CUSTOM_TRAINED_RULE',
+      0.98,
+      replyDisplay,
+      {
+        type: customRule.actionType as StandardizedActionType,
+        target_id: matchedCh?.id || customRule.targetId || '',
+        target_name: matchedCh?.name || customRule.targetName || '',
+        deep_link: matchedCh ? `${PUBLIC_SITE_URL}/watch/channel/${slug}` : PUBLIC_SITE_URL,
+        channel: brief
+      },
+      {
+        speechText: replyDisplay,
+        speechTextEn: customRule.speechEn,
+        matchedChannel: brief || null,
+        recommendations: matchedCh ? [channelToRecommendation(matchedCh)] : []
+      }
+    );
+  }
+
+  // 0.5 CHANNEL-SPECIFIC EPG ("what now playing on azam two", "nini kinacheza sinema zetu", "what is next on...")
+  const isSpecificEpgQuery =
+    /\b(now playing|what(?:'s|s| is)?\s*(?:now\s+)?playing|what(?:'s|s| is)?\s+on|what(?:'s|s| is)?\s+next|currently\s+(?:playing|airing|showing)|schedule|nini\s+kinacheza|kinaonyeshwa|kinachoendelea|kipindi\s+(?:gani|kijacho|kipo)|vipindi\s+vya)\b/i.test(
+      query
+    );
+  if (isSpecificEpgQuery) {
+    const epgChannelMatch = matchBestChannel(query);
+    if (epgChannelMatch && epgChannelMatch.score >= 52) {
+      const ch = epgChannelMatch.channel;
+      const brief = serializeChannelBrief(ch);
+      const slug = getChannelRouteSlug(ch);
+      const wantsPlayToo = /\b(open|play|watch|fungua|weka|cheza)\b/i.test(query);
+      const nowProg = ch.currentProgram || ch.description || 'Matangazo ya moja kwa moja (Live)';
+      const nextProg = ch.nextProgram || '';
+      const replySw = nextProg
+        ? `Kwenye ${ch.name} sasa hivi kuna: ${nowProg}. Kinachofuata ni: ${nextProg}.`
+        : `Kwenye ${ch.name} sasa hivi kuna: ${nowProg}.`;
+      const replyEn = nextProg
+        ? `Now playing on ${ch.name}: ${nowProg}. Coming up next: ${nextProg}.`
+        : `Now playing on ${ch.name}: ${nowProg}.`;
+      const speechEn = nextProg
+        ? `Now playing on ${ch.name} is ${nowProg}. Next up is ${nextProg}.`
+        : `Now playing on ${ch.name} is ${nowProg}.`;
+
+      return buildReply(
+        wantsPlayToo ? 'EPG_AND_PLAY_CHANNEL' : 'CHANNEL_NOW_PLAYING',
+        0.96,
+        lang === 'sw' ? replySw : replyEn,
+        {
+          type: wantsPlayToo ? 'PLAY_CHANNEL' : 'NONE',
+          target_id: ch.id,
+          target_name: ch.name,
+          query,
+          deep_link: `${PUBLIC_SITE_URL}/watch/channel/${slug}`,
+          channel: brief
+        },
+        {
+          speechText: lang === 'sw' ? replySw : replyEn,
+          speechTextEn: speechEn,
+          matchedChannel: brief,
+          recommendations: [channelToRecommendation(ch)]
+        }
+      );
+    }
   }
 
   // 1. MUTE / UNMUTE
@@ -1223,24 +1314,363 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       );
     }
 
-    return buildReply(
-      'MOVIE_NOT_FOUND',
-      0.7,
-      lang === 'sw'
-        ? 'Samahani, sijapata filamu yenye jina hilo kwa sasa kwenye maktaba yetu.'
-        : 'Sorry, I could not find a matching movie right now.',
-      { type: 'OPEN_SEARCH', query, deep_link: `${PUBLIC_SITE_URL}/search` }
-    );
+    if (!isGroqConfigured()) {
+      return buildReply(
+        'MOVIE_NOT_FOUND',
+        0.7,
+        lang === 'sw'
+          ? 'Samahani, sijapata filamu yenye jina hilo kwa sasa kwenye maktaba yetu.'
+          : 'Sorry, I could not find a matching movie right now.',
+        { type: 'OPEN_SEARCH', query, deep_link: `${PUBLIC_SITE_URL}/search` }
+      );
+    }
   }
 
-  // 9. UNIFIED PHONETIC & MISSPELLING AUTO-MATCH (Channels vs Firebase Movies)
+  // 9. PRE-COMPUTE LOCAL FUZZY MATCHES (Channels vs Firebase Movies)
   const channelMatch = matchBestChannel(query);
   const movieFallback = matchFirebaseMovies(query);
   const topMovieFallback = movieFallback[0];
   const topMovieScore = topMovieFallback?._score || 0;
   const channelScore = channelMatch?.score || 0;
+  const looksConversational =
+    /\b(kwani|kwanini|vipi|gani|nipe|pendekeza|suggest|recommend|explain|msaada|bando|nataka|leo kuna|habari|nini|ipi|je|please help|unaweza|how|why|what|which)\b/i.test(query) ||
+    query.split(/\s+/).length >= 5;
 
-  // Pick whichever catalog item has stronger match (so misspelled movie titles beat weak channel guesses and vice versa)
+  // Stage 2 Hybrid Groq Grounded Reasoner (used when Groq key is set AND query is conversational, complex, or local fuzzy confidence < 78)
+  const strongLocalMatch =
+    !looksConversational &&
+    ((channelMatch && channelScore >= 78) || (topMovieFallback && topMovieScore >= 78));
+
+  if (isGroqConfigured() && !strongLocalMatch) {
+    const pool = getOnlineChannelPool();
+    const allCatalogMovies = [...neliAiKnowledge.getMovies(), ...neliAiKnowledge.getSeries()];
+    const groqRes = await askGroqGroundedReasoner({
+      query,
+      language: lang,
+      appId,
+      platform,
+      capabilities,
+      isTvFreeMode,
+      canPlayMoviesInApp,
+      channels: pool,
+      movies: allCatalogMovies
+    });
+
+    if (groqRes) {
+      const sinemaZetu = pool.find((c) => c.id.includes('sinema') || c.name.toLowerCase().includes('sinema'));
+      const recs: NeliAiRecommendation[] = [];
+      for (const recId of groqRes.recommendedIds || []) {
+        const chRec = pool.find((c) => c.id === recId);
+        if (chRec) {
+          recs.push(channelToRecommendation(chRec));
+          continue;
+        }
+        const movRec = allCatalogMovies.find((m) => m.id === recId);
+        if (movRec) recs.push(movieToRecommendation(movRec));
+      }
+
+      const replyDisplay = lang === 'sw' ? groqRes.replySw : groqRes.replyEn;
+      const speechEn = groqRes.speechEn || groqRes.replyEn;
+
+      if (groqRes.actionType === 'PLAY_CHANNEL') {
+        const matchedCh =
+          pool.find((c) => groqRes.targetId && c.id === groqRes.targetId) ||
+          (groqRes.targetName ? matchBestChannel(groqRes.targetName)?.channel : undefined);
+        if (matchedCh) {
+          const brief = serializeChannelBrief(matchedCh);
+          const slug = getChannelRouteSlug(matchedCh);
+          return buildReply(
+            groqRes.intent || 'GROQ_PLAY_CHANNEL',
+            0.91,
+            replyDisplay,
+            {
+              type: 'PLAY_CHANNEL',
+              target_id: matchedCh.id,
+              target_name: matchedCh.name,
+              query,
+              deep_link: `${PUBLIC_SITE_URL}/watch/channel/${slug}`,
+              channel: brief
+            },
+            {
+              speechText: replyDisplay,
+              speechTextEn: speechEn,
+              fuzzyMatched: true,
+              engineOverride: 'nelitv-brain-v1+groq',
+              groqUsed: true,
+              matchedChannel: brief,
+              recommendations: recs.length > 0 ? recs : [channelToRecommendation(matchedCh)]
+            }
+          );
+        }
+      } else if (groqRes.actionType === 'OPEN_MOVIE' || groqRes.actionType === 'OPEN_SERIES' || groqRes.actionType === 'OPEN_APP_LINK') {
+        const matchedMov =
+          allCatalogMovies.find((m) => groqRes.targetId && m.id === groqRes.targetId) ||
+          (groqRes.targetName ? matchFirebaseMovies(groqRes.targetName)[0] : undefined) ||
+          topMovieFallback;
+        if (matchedMov && matchedMov.streamUrl) {
+          if (appId === 'nelitv-web' && !canPlayMoviesInApp) {
+            return buildReply(
+              'GROQ_OPEN_MOVIE_IN_APP',
+              0.9,
+              replyDisplay,
+              {
+                type: 'OPEN_APP_LINK',
+                target_id: matchedMov.id,
+                target_name: matchedMov.title,
+                query,
+                deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(matchedMov.id)}`,
+                channel: sinemaZetu ? serializeChannelBrief(sinemaZetu) : undefined,
+                movie: matchedMov,
+                movies: [matchedMov]
+              },
+              {
+                speechText: replyDisplay,
+                speechTextEn: speechEn,
+                engineOverride: 'nelitv-brain-v1+groq',
+                groqUsed: true,
+                matchedChannel: sinemaZetu ? serializeChannelBrief(sinemaZetu) : null,
+                matchedMovies: [matchedMov],
+                recommendations: recs.length > 0 ? recs : [movieToRecommendation(matchedMov)]
+              }
+            );
+          }
+          const movAct: StandardizedActionType = matchedMov.type === 'series' ? 'OPEN_SERIES' : 'OPEN_MOVIE';
+          return buildReply(
+            groqRes.intent || movAct,
+            0.91,
+            replyDisplay,
+            {
+              type: movAct,
+              target_id: matchedMov.id,
+              target_name: matchedMov.title,
+              query,
+              deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(matchedMov.id)}`,
+              movie: matchedMov,
+              movies: [matchedMov]
+            },
+            {
+              speechText: replyDisplay,
+              speechTextEn: speechEn,
+              fuzzyMatched: true,
+              engineOverride: 'nelitv-brain-v1+groq',
+              groqUsed: true,
+              matchedMovies: [matchedMov],
+              recommendations: recs.length > 0 ? recs : [movieToRecommendation(matchedMov)]
+            }
+          );
+        }
+      } else if (groqRes.actionType === 'NEXT_CHANNEL' || groqRes.actionType === 'PREV_CHANNEL') {
+        const curIdx = pool.findIndex((c) => c.id === currentChannelId);
+        const idx =
+          groqRes.actionType === 'PREV_CHANNEL'
+            ? (curIdx > 0 ? curIdx - 1 : pool.length - 1)
+            : (curIdx >= 0 ? (curIdx + 1) % pool.length : 0);
+        const target = pool[idx];
+        const brief = serializeChannelBrief(target);
+        const slug = getChannelRouteSlug(target);
+        return buildReply(
+          groqRes.actionType,
+          0.9,
+          replyDisplay,
+          {
+            type: groqRes.actionType,
+            target_id: target.id,
+            target_name: target.name,
+            deep_link: `${PUBLIC_SITE_URL}/watch/channel/${slug}`,
+            channel: brief
+          },
+          {
+            speechText: replyDisplay,
+            speechTextEn: speechEn,
+            engineOverride: 'nelitv-brain-v1+groq',
+            groqUsed: true,
+            matchedChannel: brief,
+            recommendations: recs
+          }
+        );
+      } else if (groqRes.actionType === 'OPEN_PREMIUM' && isTvFreeMode) {
+        const tvMsg =
+          lang === 'sw'
+            ? 'NeliTv kwenye Smart TV ni bure asilimia mia moja bila usajili wala malipo.'
+            : 'NeliTv on Smart TV is 100 percent free with no login or payment needed.';
+        return buildReply(
+          'TV_FREE_MODE_INFO',
+          0.94,
+          tvMsg,
+          { type: 'NONE', deep_link: PUBLIC_SITE_URL },
+          {
+            speechText: tvMsg,
+            speechTextEn: 'NeliTv on Smart TV is 100 percent free with no login or payment needed.',
+            engineOverride: 'nelitv-brain-v1+groq',
+            groqUsed: true
+          }
+        );
+      } else {
+        const mappedAction: Partial<NeliAiAction> & { type: StandardizedActionType } = {
+          type: groqRes.actionType,
+          target_id: groqRes.targetId || '',
+          target_name: groqRes.targetName || '',
+          query: groqRes.query || query,
+          quality: groqRes.quality,
+          direction: groqRes.direction,
+          delta:
+            groqRes.actionType === 'VOLUME_DOWN'
+              ? -0.2
+              : groqRes.actionType === 'VOLUME_UP'
+              ? 0.2
+              : groqRes.actionType === 'STEP_BRIGHTNESS'
+              ? (groqRes.direction === 'down' ? -0.15 : 0.15)
+              : undefined,
+          deep_link:
+            groqRes.actionType === 'OPEN_DOWNLOAD'
+              ? `${PUBLIC_SITE_URL}/download`
+              : groqRes.actionType === 'OPEN_PREMIUM'
+              ? `${PUBLIC_SITE_URL}/account`
+              : groqRes.actionType === 'OPEN_SEARCH'
+              ? `${PUBLIC_SITE_URL}/search`
+              : PUBLIC_SITE_URL
+        };
+        return buildReply(
+          groqRes.intent || 'GROQ_ASSIST',
+          0.88,
+          replyDisplay,
+          mappedAction,
+          {
+            speechText: replyDisplay,
+            speechTextEn: speechEn,
+            engineOverride: 'nelitv-brain-v1+groq',
+            groqUsed: true,
+            recommendations: recs
+          }
+        );
+      }
+    }
+  }
+
+  const runBuiltInAppIntents = (): NeliAiCommandResponse | null => {
+    const appIntent = matchBuiltInAppIntent(query);
+    if (!appIntent) return null;
+    const pool = getOnlineChannelPool();
+    const matchedCategoryCh = appIntent.channelCategoryHint
+      ? pool.find((c) => c.category.some((cat) => cat.toLowerCase().includes(appIntent.channelCategoryHint!))) ||
+        (appIntent.targetName ? matchBestChannel(appIntent.targetName)?.channel : undefined)
+      : appIntent.targetName && appIntent.actionType === 'PLAY_CHANNEL'
+      ? matchBestChannel(appIntent.targetName)?.channel
+      : undefined;
+
+    if (appIntent.actionType === 'PLAY_CHANNEL' && matchedCategoryCh) {
+      const brief = serializeChannelBrief(matchedCategoryCh);
+      const slug = getChannelRouteSlug(matchedCategoryCh);
+      const related = pool
+        .filter((c) => c.category.some((cat) => matchedCategoryCh.category.includes(cat)))
+        .slice(0, 3);
+      return buildReply(
+        appIntent.intent,
+        appIntent.confidence,
+        lang === 'sw' ? appIntent.replySw : appIntent.replyEn,
+        {
+          type: 'PLAY_CHANNEL',
+          target_id: matchedCategoryCh.id,
+          target_name: matchedCategoryCh.name,
+          query,
+          deep_link: `${PUBLIC_SITE_URL}/watch/channel/${slug}`,
+          channel: brief
+        },
+        {
+          speechText: lang === 'sw' ? appIntent.replySw : appIntent.replyEn,
+          speechTextEn: appIntent.speechEn,
+          matchedChannel: brief,
+          recommendations: related.map(channelToRecommendation)
+        }
+      );
+    }
+
+    if (appIntent.actionType === 'OPEN_MOVIE') {
+      const narratedMovies = matchFirebaseMovies(appIntent.movieGenreHint === 'swahili' ? 'kiswahili' : query);
+      const topMov = narratedMovies[0];
+      if (topMov) {
+        if (appId === 'nelitv-web' && !canPlayMoviesInApp) {
+          const sinemaZetu = pool.find((c) => c.id.includes('sinema') || c.name.toLowerCase().includes('sinema'));
+          return buildReply(
+            'OPEN_MOVIE_IN_APP',
+            0.9,
+            lang === 'sw'
+              ? `Filamu za Kiswahili kama "${topMov.title}" zinapatikana kwenye NeliTv Android App.`
+              : `Swahili movies like "${topMov.title}" are in the NeliTv Android App.`,
+            {
+              type: 'OPEN_APP_LINK',
+              target_id: topMov.id,
+              target_name: topMov.title,
+              deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(topMov.id)}`,
+              channel: sinemaZetu ? serializeChannelBrief(sinemaZetu) : undefined,
+              movie: topMov,
+              movies: narratedMovies
+            },
+            {
+              matchedChannel: sinemaZetu ? serializeChannelBrief(sinemaZetu) : null,
+              matchedMovies: narratedMovies,
+              recommendations: narratedMovies.slice(0, 4).map(movieToRecommendation)
+            }
+          );
+        }
+        return buildReply(
+          appIntent.intent,
+          0.91,
+          lang === 'sw' ? `Nafungua filamu ya Kiswahili: ${topMov.title}.` : `Opening Swahili movie ${topMov.title}.`,
+          {
+            type: topMov.type === 'series' ? 'OPEN_SERIES' : 'OPEN_MOVIE',
+            target_id: topMov.id,
+            target_name: topMov.title,
+            deep_link: `${PUBLIC_SITE_URL}/watch/movie/${encodeURIComponent(topMov.id)}`,
+            movie: topMov,
+            movies: narratedMovies
+          },
+          {
+            speechTextEn: `Opening ${topMov.title} for you now.`,
+            matchedMovies: narratedMovies,
+            recommendations: narratedMovies.slice(0, 4).map(movieToRecommendation)
+          }
+        );
+      }
+    }
+
+    const replyMsg =
+      isTvFreeMode && appIntent.tvReplySw
+        ? (lang === 'sw' ? appIntent.tvReplySw : appIntent.tvReplyEn || appIntent.replyEn)
+        : (lang === 'sw' ? appIntent.replySw : appIntent.replyEn);
+    const speechMsgEn =
+      isTvFreeMode && appIntent.tvSpeechEn ? appIntent.tvSpeechEn : appIntent.speechEn;
+    const resolvedType: StandardizedActionType =
+      isTvFreeMode && appIntent.actionType === 'OPEN_PREMIUM' ? 'NONE' : (appIntent.actionType as StandardizedActionType);
+
+    return buildReply(
+      appIntent.intent,
+      appIntent.confidence,
+      replyMsg,
+      {
+        type: resolvedType,
+        target_id: appIntent.targetId || '',
+        target_name: appIntent.targetName || '',
+        quality: appIntent.quality,
+        direction: appIntent.direction,
+        delta: appIntent.delta,
+        value: appIntent.value,
+        deep_link: appIntent.deepLinkPath ? `${PUBLIC_SITE_URL}${appIntent.deepLinkPath}` : PUBLIC_SITE_URL
+      },
+      {
+        speechText: replyMsg,
+        speechTextEn: speechMsgEn
+      }
+    );
+  };
+
+  // Run rich app/category/greeting intents before lower-confidence (<76) fuzzy channel/movie guesses
+  if (channelScore < 76 && topMovieScore < 76) {
+    const appIntentReply = runBuiltInAppIntents();
+    if (appIntentReply) return appIntentReply;
+  }
+
+  // Pick whichever catalog item has stronger local match (so misspelled movie titles beat weak channel guesses and vice versa)
   if (channelMatch && (channelScore >= topMovieScore || !topMovieFallback)) {
     const ch = channelMatch.channel;
     const brief = serializeChannelBrief(ch);
@@ -1325,6 +1755,17 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
     );
   }
 
+  if (explicitMovieRequest) {
+    return buildReply(
+      'MOVIE_NOT_FOUND',
+      0.7,
+      lang === 'sw'
+        ? 'Samahani, sijapata filamu yenye jina hilo kwa sasa kwenye maktaba yetu.'
+        : 'Sorry, I could not find a matching movie right now.',
+      { type: 'OPEN_SEARCH', query, deep_link: `${PUBLIC_SITE_URL}/search` }
+    );
+  }
+
   // 11. LIVE SCHEDULE / EPG / MATCHES STATUS QUESTIONS
   if (/\b(what is live|whats live|mechi|vipindi|kipindi|hewani|online|channels|live sasa)\b/i.test(query)) {
     const pool = getOnlineChannelPool();
@@ -1347,6 +1788,10 @@ export async function processNeliVoiceCommand(req: NeliAiCommandRequest): Promis
       }
     );
   }
+
+  const remainingIntentReply = runBuiltInAppIntents();
+  if (remainingIntentReply) return remainingIntentReply;
+
 
   // 12. DEFAULT FALLBACK
   const fallbackSw = isTvFreeMode

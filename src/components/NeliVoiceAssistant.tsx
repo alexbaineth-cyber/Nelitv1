@@ -31,6 +31,8 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   const [spokenBanner, setSpokenBanner] = useState<string>('');
 
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSpeakingRef = useRef<boolean>(false);
   const handsFreeRef = useRef<boolean>(false);
   const micUnlockedRef = useRef<boolean>(false);
@@ -49,7 +51,8 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
   useEffect(() => {
     const SpeechRec =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    setSupported(Boolean(SpeechRec));
+    const hasMediaRecorder = typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+    setSupported(Boolean(SpeechRec || hasMediaRecorder));
     try {
       window.speechSynthesis?.getVoices();
     } catch {}
@@ -344,6 +347,15 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
 
   const stopRecognition = useCallback(() => {
     dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+    if (mediaRecordTimerRef.current) {
+      clearTimeout(mediaRecordTimerRef.current);
+      mediaRecordTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
     releaseDspStream();
     if (recognitionRef.current) {
       try {
@@ -362,6 +374,132 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
     setStatus(handsFreeRef.current ? 'wake-listening' : 'idle');
   }, [releaseDspStream, sendTranscriptToBrain]);
 
+  const startWhisperFallbackRecording = useCallback(async () => {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      showTransientBanner('Maikrofoni kwenye web inahitaji HTTPS salama.', 4500);
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      showTransientBanner('Kivinjari hiki hakina sauti ya Mic (tumia Chrome, Edge, au NeliTv APK).', 4500);
+      return;
+    }
+
+    try {
+      dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+      releaseDspStream();
+      dspStreamRef.current = stream;
+      micUnlockedRef.current = true;
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : '';
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      const chunks: BlobPart[] = [];
+
+      setStatus('listening');
+      setLiveTranscript('');
+      setSpokenBanner('Sema amri yako sasa (sekunde 4)...');
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+
+      recorder.onstop = async () => {
+        if (mediaRecordTimerRef.current) {
+          clearTimeout(mediaRecordTimerRef.current);
+          mediaRecordTimerRef.current = null;
+        }
+        releaseDspStream();
+        mediaRecorderRef.current = null;
+
+        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+        if (blob.size < 800) {
+          dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+          setStatus('idle');
+          showTransientBanner('Sikusikia sauti — bonyeza mic kisha sema amri yako.', 3000);
+          return;
+        }
+
+        setStatus('processing');
+        try {
+          const base64Audio = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Failed to read audio'));
+            reader.readAsDataURL(blob);
+          });
+
+          const resp = await fetch('/v1/neli-ai/transcribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-App-Id': 'nelitv-web'
+            },
+            body: JSON.stringify({
+              audioBase64: base64Audio,
+              mimeType: blob.type || 'audio/webm',
+              language: 'auto',
+              autoExecute: true,
+              app_id: 'nelitv-web',
+              platform: 'web',
+              capabilities: ['live_tv', 'movies', 'series', 'player_controls', 'vip_support'],
+              context: {
+                current_screen: currentChannel ? 'player' : 'home',
+                current_channel_id: currentChannel?.id
+              }
+            })
+          });
+
+          const data = await resp.json().catch(() => null);
+          if (resp.ok && data?.success && data.commandResult) {
+            if (data.text) setLiveTranscript(data.text);
+            executeBrainAction(data.commandResult);
+            speakReply(
+              data.commandResult.reply_text || data.commandResult.speech_text,
+              data.commandResult.speech_text_en || data.commandResult.speech_text || data.commandResult.reply_text
+            );
+          } else if (data?.groqConfigured === false) {
+            dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+            setStatus('idle');
+            showTransientBanner('Kivinjari hiki hakina Web Speech; weka GROQ_API_KEY au tumia Chrome/APK.', 4500);
+          } else {
+            dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+            setStatus('idle');
+            showTransientBanner('Sikusikia vizuri, jaribu kusema tena.', 3200);
+          }
+        } catch {
+          dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+          setStatus('idle');
+          showTransientBanner('Hitilafu ya mtandao kwenye maikrofoni.', 3500);
+        }
+      };
+
+      recorder.start();
+      mediaRecordTimerRef.current = setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+          try {
+            recorder.stop();
+          } catch {}
+        }
+      }, 4200);
+    } catch {
+      dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+      setStatus('idle');
+      showTransientBanner('Ruhusa ya maikrofoni imezuiwa. Ruhusu mic kwenye browser yako kisha jaribu tena.', 4500);
+    }
+  }, [currentChannel, executeBrainAction, releaseDspStream, showTransientBanner, speakReply]);
+
   const isBackgroundFillerNoise = (text: string): boolean => {
     const cleaned = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').trim();
     if (cleaned.length < 3) return true;
@@ -377,10 +515,14 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
       const SpeechRec =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRec) {
-        showTransientBanner(
-          'Kivinjari hiki hakina Web Speech Mic (tumia Chrome, Edge, au NeliTv APK).',
-          4500
-        );
+        if (!continuousWakeMode) {
+          void startWhisperFallbackRecording();
+        } else {
+          showTransientBanner(
+            'Kivinjari hiki hakina Web Speech Mic (tumia Chrome, Edge, au NeliTv APK).',
+            4500
+          );
+        }
         return;
       }
 
@@ -512,6 +654,10 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         }
         if (code === 'network') {
           dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+          if (!continuousWakeMode) {
+            void startWhisperFallbackRecording();
+            return;
+          }
           setStatus('idle');
           showTransientBanner('Huduma ya kutambua sauti inahitaji mtandao thabiti.', 3800);
           return;
@@ -562,12 +708,18 @@ export const NeliVoiceAssistant: React.FC<NeliVoiceAssistantProps> = ({
         );
       }
     },
-    [ensureMicPermission, releaseDspStream, sendTranscriptToBrain, showTransientBanner]
+    [ensureMicPermission, releaseDspStream, sendTranscriptToBrain, showTransientBanner, startWhisperFallbackRecording]
   );
 
   useEffect(() => {
     return () => {
       dispatchVoicePlayerCommand({ type: 'DUCK_AUDIO', ducked: false });
+      if (mediaRecordTimerRef.current) clearTimeout(mediaRecordTimerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {}
+      }
       releaseDspStream();
       if (recognitionRef.current) {
         try {

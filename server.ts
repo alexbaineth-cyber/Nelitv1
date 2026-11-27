@@ -21,6 +21,17 @@ import {
   neliAiKnowledge,
   processNeliVoiceCommand
 } from './src/server/neliAiBrain.ts';
+import {
+  getGroqModelConfig,
+  transcribeAudioWithGroqWhisper
+} from './src/server/neliGroqEngine.ts';
+import {
+  addCustomTrainedRule,
+  deleteCustomTrainedRule,
+  getCatalogCommandCount,
+  getCommandSamplesByCategory,
+  getCustomTrainedRules
+} from './src/server/neliCommandCatalog.ts';
 
 const PUBLIC_SITE_URL = (process.env.NELITV_PUBLIC_URL || 'https://nelitv.online').replace(/\/+$/, '');
 
@@ -59,7 +70,7 @@ if (supabase) {
   console.log('[Supabase] Running with persistent file-backed store until SUPABASE_URL & SUPABASE_KEY are provided.');
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
 
 // Global Security Headers for Browser Safety, Certificate Compliance & Anti-Scam Protection
 app.use((req, res, next) => {
@@ -1044,13 +1055,90 @@ app.get('/api/neli-ai-center/config', async (req: Request, res: Response) => {
     createdAt: cfg.createdAt,
     stats: neliAiKnowledge.getStats(),
     voiceProfile: cfg.voiceProfile,
+    groq: getGroqModelConfig(),
+    commandCatalog: getCommandSamplesByCategory(),
+    trainedRules: getCustomTrainedRules(),
     endpoints: {
       baseUrl: PUBLIC_SITE_URL,
       command: `${PUBLIC_SITE_URL}/v1/neli-ai/command`,
       commandLegacy: `${PUBLIC_SITE_URL}/api/ai/command`,
+      commandsCatalog: `${PUBLIC_SITE_URL}/v1/neli-ai/commands`,
+      transcribe: `${PUBLIC_SITE_URL}/v1/neli-ai/transcribe`,
       knowledge: `${PUBLIC_SITE_URL}/v1/neli-ai/knowledge`,
       movies: `${PUBLIC_SITE_URL}/v1/neli-ai/movies`
     }
+  });
+});
+
+function isAuthorizedTrainingReq(req: Request): boolean {
+  const token = extractPortalTokenFromReq(req);
+  const verified = token ? verifyClientToken(token) : null;
+  if (verified && verified.scope === 'nelitv-portal') return true;
+  const apiKeyHeader = (req.get('X-API-Key') || '').trim();
+  const cfg = getImmutableNeliAiCenterConfig();
+  return Boolean(apiKeyHeader && apiKeyHeader === cfg.apiKey);
+}
+
+app.get('/api/neli-ai-center/training', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isAuthorizedTrainingReq(req)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  return res.json({
+    success: true,
+    totalSupportedCommands: getCatalogCommandCount(),
+    rules: getCustomTrainedRules()
+  });
+});
+
+app.post('/api/neli-ai-center/training', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isAuthorizedTrainingReq(req)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  const b = req.body || {};
+  const phrasesRaw = Array.isArray(b.phrases)
+    ? b.phrases
+    : typeof b.phrases === 'string'
+    ? b.phrases.split(',')
+    : typeof b.phrase === 'string'
+    ? [b.phrase]
+    : [];
+  const phrases = phrasesRaw.map((p: any) => String(p).trim()).filter(Boolean);
+  const replySw = typeof b.replySw === 'string' ? b.replySw.trim() : '';
+  if (phrases.length === 0 || !replySw) {
+    return res.status(400).json({
+      success: false,
+      error: 'phrases and replySw are required to teach Neli AI'
+    });
+  }
+  const created = addCustomTrainedRule({
+    phrases,
+    actionType: b.actionType || 'NONE',
+    targetId: typeof b.targetId === 'string' ? b.targetId : undefined,
+    targetName: typeof b.targetName === 'string' ? b.targetName : undefined,
+    replySw,
+    replyEn: typeof b.replyEn === 'string' ? b.replyEn : undefined,
+    speechEn: typeof b.speechEn === 'string' ? b.speechEn : undefined
+  });
+  return res.json({
+    success: true,
+    rule: created,
+    totalSupportedCommands: getCatalogCommandCount(),
+    rules: getCustomTrainedRules()
+  });
+});
+
+app.delete('/api/neli-ai-center/training/:id', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isAuthorizedTrainingReq(req)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  const deleted = deleteCustomTrainedRule(String(req.params.id || ''));
+  return res.json({
+    success: deleted,
+    totalSupportedCommands: getCatalogCommandCount(),
+    rules: getCustomTrainedRules()
   });
 });
 
@@ -1317,9 +1405,11 @@ app.get('/api/channels/health', (_req: Request, res: Response) => {
 app.options([
   '/api/ai/command',
   '/api/ai/voice',
+  '/api/ai/transcribe',
   '/api/ai/knowledge',
   '/api/ai/movies',
   '/v1/neli-ai/command',
+  '/v1/neli-ai/transcribe',
   '/v1/neli-ai/knowledge',
   '/v1/neli-ai/movies'
 ], (_req: Request, res: Response) => {
@@ -1327,6 +1417,158 @@ app.options([
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Id, X-API-Key');
   return res.status(204).end();
+});
+
+app.post(['/api/ai/transcribe', '/v1/neli-ai/transcribe'], async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const groqCfg = getGroqModelConfig();
+    if (!groqCfg.configured) {
+      return res.status(503).json({
+        success: false,
+        groqConfigured: false,
+        error: 'GROQ_API_KEY not configured on server'
+      });
+    }
+
+    const b = req.body || {};
+    const rawAudio = typeof b.audioBase64 === 'string' ? b.audioBase64.trim() : '';
+    if (!rawAudio) {
+      return res.status(400).json({
+        success: false,
+        groqConfigured: true,
+        error: 'audioBase64 is required'
+      });
+    }
+    if (rawAudio.length > 8 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        groqConfigured: true,
+        error: 'Audio payload exceeds 8MB limit'
+      });
+    }
+
+    const base64Clean = rawAudio.replace(/^data:[^;]+;base64,/i, '');
+    const audioBuffer = Buffer.from(base64Clean, 'base64');
+    if (!audioBuffer.length) {
+      return res.status(400).json({
+        success: false,
+        groqConfigured: true,
+        error: 'Invalid base64 audio payload'
+      });
+    }
+
+    const mimeType = typeof b.mimeType === 'string' ? b.mimeType : 'audio/webm';
+    const language = typeof b.language === 'string' ? b.language : 'auto';
+    const transcription = await transcribeAudioWithGroqWhisper({
+      audioBuffer,
+      mimeType,
+      language
+    });
+
+    if (!transcription || !transcription.text) {
+      return res.status(422).json({
+        success: false,
+        groqConfigured: true,
+        error: 'Could not transcribe clear speech from audio'
+      });
+    }
+
+    if (b.autoExecute) {
+      const commandResult = await processNeliVoiceCommand({
+        transcript: transcription.text,
+        appId: typeof b.app_id === 'string' ? b.app_id : typeof b.appId === 'string' ? b.appId : req.get('x-app-id') || 'nelitv-web',
+        platform: b.platform === 'android' || b.platform === 'android-tv' || b.platform === 'web' ? b.platform : undefined,
+        capabilities: Array.isArray(b.capabilities) ? b.capabilities : undefined,
+        inputMode: 'voice',
+        context: typeof b.context === 'object' && b.context !== null ? b.context : undefined,
+        locale: language.startsWith('sw') ? 'sw' : language.startsWith('en') ? 'en' : 'auto'
+      });
+      return res.json({
+        success: true,
+        groqConfigured: true,
+        text: transcription.text,
+        model: transcription.model,
+        commandResult
+      });
+    }
+
+    return res.json({
+      success: true,
+      groqConfigured: true,
+      text: transcription.text,
+      model: transcription.model
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Transcription error'
+    });
+  }
+});
+
+app.get(['/api/ai/command', '/api/ai/voice', '/v1/neli-ai/command'], async (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  const qRaw =
+    typeof req.query.input_text === 'string'
+      ? req.query.input_text
+      : typeof req.query.transcript === 'string'
+      ? req.query.transcript
+      : typeof req.query.q === 'string'
+      ? req.query.q
+      : typeof req.query.text === 'string'
+      ? req.query.text
+      : typeof req.query.command === 'string'
+      ? req.query.command
+      : '';
+
+  if (qRaw.trim()) {
+    const appIdRaw = typeof req.query.app_id === 'string' ? req.query.app_id : typeof req.query.appId === 'string' ? req.query.appId : 'nelitv-web';
+    const platformRaw = req.query.platform === 'android' || req.query.platform === 'android-tv' || req.query.platform === 'web' ? req.query.platform : undefined;
+    const result = await processNeliVoiceCommand({
+      transcript: qRaw,
+      appId: appIdRaw,
+      platform: platformRaw,
+      inputMode: 'text',
+      locale: 'auto'
+    });
+    return res.json(result);
+  }
+
+  await neliAiKnowledge.syncFirebaseCatalog(false);
+  return res.json({
+    success: true,
+    status: 'online',
+    name: 'NeliTv AI Command API',
+    engine: 'nelitv-brain-v1',
+    outsideApiPaused: getGroqModelConfig().paused,
+    stats: neliAiKnowledge.getStats(),
+    usage: {
+      postEndpoint: `${PUBLIC_SITE_URL}/v1/neli-ai/command`,
+      getExampleWithQuery: `${PUBLIC_SITE_URL}/v1/neli-ai/command?q=${encodeURIComponent('hey neli open azam two')}`,
+      epgExampleWithQuery: `${PUBLIC_SITE_URL}/v1/neli-ai/command?q=${encodeURIComponent('neli what now playing on azam two')}`,
+      dataCenter: `${PUBLIC_SITE_URL}/neli-ai`,
+      commandsCatalog: `${PUBLIC_SITE_URL}/v1/neli-ai/commands`,
+      samplePostBody: {
+        app_id: 'nelitv-android',
+        platform: 'android',
+        input_mode: 'voice',
+        input_text: 'hey neli open azam two'
+      }
+    }
+  });
+});
+
+app.get(['/api/ai/commands', '/v1/neli-ai/commands'], async (_req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  return res.json({
+    success: true,
+    engine: 'nelitv-brain-v1',
+    ...getCommandSamplesByCategory()
+  });
 });
 
 app.post(['/api/ai/command', '/api/ai/voice', '/v1/neli-ai/command'], async (req: Request, res: Response) => {
@@ -1439,19 +1681,23 @@ app.get(['/api/ai/knowledge', '/v1/neli-ai/knowledge'], async (req: Request, res
   res.json({
     success: true,
     engine: 'nelitv-brain-v1',
-    zeroExternalLlm: true,
+    groq: getGroqModelConfig(),
+    zeroExternalLlm: !getGroqModelConfig().configured,
     voiceOnlyAssistant: true,
     supportedApps: ['nelitv-web', 'nelitv-android', 'nelitv-tv', 'neli-company'],
     stats: neliAiKnowledge.getStats(),
+    commandCatalog: getCommandSamplesByCategory(),
     supportedVoiceIntents: [
-      'OPEN_CHANNEL / PLAY_CHANNEL (e.g. Neli change channel to Azam Two / fungua Sinema Zetu)',
+      'OPEN_CHANNEL / PLAY_CHANNEL (e.g. hey neli open azam two / fungua Sinema Zetu)',
+      'CHANNEL_NOW_PLAYING / EPG (e.g. neli what now playing on azam two / nini kinacheza)',
       'NEXT_CHANNEL / PREV_CHANNEL (change channel / badili kituo)',
       'OPEN_MOVIE (Firebase movies/series search & play)',
       'SET_VOLUME / STEP_VOLUME / VOLUME / MUTE / UNMUTE',
       'SET_BRIGHTNESS / STEP_BRIGHTNESS / BRIGHTNESS',
       'SET_QUALITY / STEP_QUALITY / QUALITY (auto, 1080p, 720p, 480p, 360p, 240p, saver)',
       'SET_LANGUAGE (sw / en)',
-      'SET_FULLSCREEN / PAUSE / PLAY / GO_HOME / OPEN_DOWNLOAD'
+      'SET_FULLSCREEN / PAUSE / PLAY / GO_HOME / OPEN_DOWNLOAD',
+      'CUSTOM_TRAINED_RULE (Admin-taught Swahili & English commands)'
     ],
     channels: onlineChannels,
     movies: neliAiKnowledge.getMovies(),
@@ -1459,6 +1705,8 @@ app.get(['/api/ai/knowledge', '/v1/neli-ai/knowledge'], async (req: Request, res
     endpoints: {
       voiceCommand: `${PUBLIC_SITE_URL}/v1/neli-ai/command`,
       voiceCommandLegacy: `${PUBLIC_SITE_URL}/api/ai/command`,
+      commandsCatalog: `${PUBLIC_SITE_URL}/v1/neli-ai/commands`,
+      transcribeAudio: `${PUBLIC_SITE_URL}/v1/neli-ai/transcribe`,
       moviesCatalog: `${PUBLIC_SITE_URL}/v1/neli-ai/movies`,
       knowledgeExport: `${PUBLIC_SITE_URL}/v1/neli-ai/knowledge`
     }
